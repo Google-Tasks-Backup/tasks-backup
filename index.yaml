@@ -1,0 +1,5 @@
+indexes:
+- kind: TasklistsData
+  ancestor: yes
+  properties:
+  - name: idx

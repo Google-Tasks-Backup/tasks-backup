@@ -1,0 +1,19 @@
+{% comment %}
+Copyright 2011 Google Inc.  All Rights Reserved.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http,
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+
+This Django template dumps all the Google Tasks fields as a CSV file.
+
+{% endcomment %}{% autoescape off %}"tasklist","kind","id","etag","title","updated","selfLink","parent","position","notes","status","due","completed","deleted","hidden"{% for tasklist in tasklists %}{% for task in tasklist.tasks %}
+{% if tasklist.title %}"{{ tasklist.title|replacecsv }}"{% endif %},{% if task.kind %}"{{ task.kind }}"{% endif %},{% if task.id %}"{{ task.id }}"{% endif %},{% if task.etag %}"{{ task.etag }}"{% endif %},{% if task.title %}"{{ task.title|replacecsv }}"{% endif %},{% if task.updated %}"{{ task.updated }}"{% endif %},{% if task.selfLink %}"{{ task.selfLink }}"{% endif %},{% if task.parent %}"{{ task.parent }}"{% endif %},{% if task.position %}"{{ task.position }}"{% endif %},{% if task.notes %}"{{ task.notes|replacecsv }}"{% endif %},{% if task.status %}"{{ task.status }}"{% endif %},{% if task.due %}"{{ task.due }}"{% endif %},{% if task.completed %}"{{ task.completed }}"{% endif %},{% if task.deleted %}"{{ task.deleted }}"{% endif %},{% if task.hidden %}"{{ task.hidden }}"{% endif %}{% endfor %}{% endfor %}{% endautoescape %}

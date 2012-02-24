@@ -1,0 +1,99 @@
+{% comment %}
+Copyright 2011 Google Inc.  All Rights Reserved.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+
+This is the Django template file for HTML tasks with "hTodo" microformatting.
+{% endcomment %}
+<!doctype html>
+<html>
+  <head>
+    <title>{{ app_title }} - List of tasks</title>
+    <link rel="stylesheet" type="text/css" href="/tasks-backup.css"></link>
+  </head>
+  
+  <body>
+    {% if is_authorized %}
+      <div class="usertitle">
+        Authorised user: {{ user_email }} <span class="logout-link">[ <a href="{{ logout_url }}">Log out</a> ]</span>
+      </div>
+    {% endif %}
+
+    <div class="break">
+      <h3>Tasks for {{ user_email }}</h3>
+      </div>
+    {% if tasklists %}
+      <p>{{ tasklists|length }} task lists.</p>
+      <ul>
+        {% for tasklist in tasklists %}
+          <li class="tasklist">
+            <span class="tasklistheading">Task List: {{ tasklist.title }} - {{ tasklist.tasks.count }} tasks.</span>
+            {% for task in tasklist.tasks %}
+              <ul class="task">
+                  <li class="task-status-{{ task.status }}">
+                    <span class="task-title">{{ task.title }}</span>
+                    <br/>
+                    
+                    {% if task.notes %}
+                      <div class="task-notes">{{ task.notes|replacenewlinebr }}</div>
+                    {% endif %}
+                    
+                    {% if task.due %}
+                      <div class="task-attribute"><span class="fieldlabel">Due:</span>  {{ task.due|date:"D, j M Y" }}</div>
+                    {% endif %}
+                    
+                    {% if task.completed %}
+                      <div class="task-attribute"><span class="fieldlabel">Completed:</span>  {{ task.completed|date:"H:i D, j M Y" }} UTC</div>
+                    {% endif %}
+                    
+                    {% if task.updated %}
+                      <div class="task-attribute"><span class="fieldlabel">Updated:</span> {{ task.updated|date:"H:i D, j M Y" }} UTC</div>
+                    {% endif %}
+      <!--
+                    {% if haschildren %}
+                      <ul class="fake">
+                        {% children %}
+                      </ul>
+                    {% endif %}
+      -->              
+                  </li>
+              </ul>
+            {% endfor %}
+          </li>
+        {% endfor %}
+      </ul>
+      <div class="break">
+        NOTE: Due, Updated and Completed dates and times are UTC, because that is how Google stores them.
+      </div>
+    {% else %}
+      No tasklists.
+    {% endif %}
+    <div class="break footer">
+      Produced by {{ app_title }}, version {{ app_version }}
+    </div>
+
+	<div class="project-footer">
+		<div class="break">
+			Questions or comments? Go to <a href="{{ url_discussion_group }}">{{ url_discussion_group }}</a>
+			or email <a href="mailto:{{ email_discussion_group }}">{{ email_discussion_group }}</a>
+		</div>
+		<div class="break">
+			Please report bugs or suggest improvements at <a href="http:/{{ url_issues_page }}">{{ url_issues_page }}</a>
+		</div>
+		<div class="break">
+			Source code for this project is at <a href="http://{{ url_source_code }}">{{ url_source_code }}</a>
+		</div>
+	</div>
+
+  </body>
+</html>

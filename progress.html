@@ -1,0 +1,183 @@
+{% comment %}
+
+This is the Django template used by test-taskqueue.py
+{% endcomment %}
+<!doctype html>
+<html>
+<head>
+    {% if status == "starting" or status == "building" %}
+        <meta http-equiv="refresh" content="12">
+    {% endif %}
+    
+    <title>{{ app_title }}</title>
+    <link rel="stylesheet" type="text/css" href="tasks-backup.css"></link>
+</head>
+
+<body>
+    {% if is_authorized %}
+        <div class="usertitle">
+            Authorised user: {{ user_email }} <span class="logout-link">[ <a href="{{ logout_url }}">Log out</a> ]</span>
+        </div>
+    {% endif %}
+
+    <h2>{{ app_title }}</h2>
+
+    {% if host_msg %}
+        <div class="break">
+            <h3>{{ host_msg }}</h3>
+        </div>
+    {% endif %}
+
+    <div class="break">
+    </div>
+
+    <div class="break">
+        Version {{ app_version }} ({{ upload_timestamp }})
+    </div>
+    
+    {% if msg %}
+        <p>Msg = {{ msg }}</p>
+    {% endif %}
+    <br />
+    
+    {% if status %}
+        <p>Status = {{ status }}</p>
+        <br />
+    {% endif %}
+    
+    {% if error_message %}
+        <div class="take-note break">
+        {{ error_message }}
+        </div>
+		<div class="break">
+			Please report this error at <a href="http:/{{ url_issues_page }}">{{ url_issues_page }}</a>
+		</div>
+        <br />
+   {% endif %}
+    
+    
+    {% if progress %}
+        {% if status == "completed" %}
+            <p>Retrieved {{ progress }} tasks</p>
+        {% else %}
+            <p>Progress = {{ progress }}</p>
+        {% endif %}
+        <br />
+    {% endif %}
+    <br />
+    
+    {% if status == "no-record" %}
+        <form method="POST" action="/">
+            <button type="submit">Start backup</button>
+        </form>
+    {% endif %}
+    
+    {% if status == "completed" %}
+        <div class="break">
+            Note that this backup is a snapshot of tasks at {{ job_timestamp }} UTC and will not reflect changes made after that time. Rerun {{ app_title }} to create a new backup.
+        </div>
+        <div class="break">
+        </div>
+        <!-- Choose format to return backup data -->
+        <form method="POST" action="/results">
+            <table class="format-selection">
+                <!--<col width="20%">
+                <col width="80%">-->
+                <tr>
+                    <td class="format-name">
+                        <input type="radio" name="format" value="outlook" checked="checked" /> Outlook CSV<br />
+                    </td>
+                    <td>
+                        Exports tasks to a CSV file suitable for importing into Outlook.
+                    </td>
+                </tr>
+                <tr>
+                    <td class="format-name">
+                        <input type="radio" name="format" value="ics" /> iCal ICS<br />
+                    </td>
+                    <td>
+                        Exports tasks to an ICS file suitable for importing into many calendar applications.
+                    </td>
+                </tr>
+                <tr>
+                    <td class="format-name">
+                        <input type="radio" name="format" value="raw" /> Raw CSV<br />
+                    </td>
+                    <td>
+                        Exports tasks to a CSV file containing all available properties for each task.
+                        <br />
+                        Google stores up to 15 properties for a task, but not all are used for every task.
+                    </td>
+                </tr>
+                <tr>
+                    <td class="format-name">
+                        <input type="radio" name="format" value="html" /> HTML<br />
+                    </td>
+                    <td>
+                        Displays all tasks as an HTML page.
+                    </td>
+                </tr>
+                <tr>
+                    <td class="format-name">
+                        <input type="radio" name="format" value="RTM" /> RTM email<br />
+                    </td>
+                    <td>
+                        Emails tasks in Remember The Milk format. (See notes below)
+                    </td>
+                </tr>
+                </table>
+
+            <br />
+            <button type="submit" >Retrieve</button>
+        </form>
+        
+        <div class="break">
+        </div>
+        
+        <div class="heading">
+            Remember The Milk notes;
+        </div>
+        <table  class="format-selection">
+            <tr>
+                <td class="note-heading">
+                    Note 1 - 
+                </td>
+                <td>
+                    Attempting to email large tasklists will fail due to App Engine limits.
+                </td>
+            </tr>
+            <tr>
+                <td class="note-heading">
+                    Note 2 - 
+                </td>
+                <td>
+                    It appears that RTM will not import more than 50 tasks.
+                </td>
+            </tr>
+            <tr>
+                <td class="note-heading">
+                    Note 3 - 
+                </td>
+                <td>
+                    Any header text must be removed before forwarding the received email to your RTM import email address. The first line in the email must be a task.
+                </td>
+            </tr>
+        </table>
+    {% endif %}
+
+
+	<div class="project-footer">
+		<div class="break">
+			Questions or comments? Go to <a href="{{ url_discussion_group }}">{{ url_discussion_group }}</a>
+			or email <a href="mailto:{{ email_discussion_group }}">{{ email_discussion_group }}</a>
+		</div>
+		<div class="break">
+			Please report bugs or suggest improvements at <a href="http:/{{ url_issues_page }}">{{ url_issues_page }}</a>
+		</div>
+		<div class="break">
+			Source code for this project is at <a href="http://{{ url_source_code }}">{{ url_source_code }}</a>
+		</div>
+	</div>
+
+</body>
+</html>

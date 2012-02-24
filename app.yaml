@@ -1,0 +1,59 @@
+# Copyright 2011 Google Inc. All Rights Reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# 27 Jan 2012, Google Tasks Backup (tasks-backup), based on Google Tasks Porter
+
+# ===== Production host and version ======
+#application: tasks-backup
+#version: 5
+
+# ===== Test host and version ======
+application: js-tasks
+version: 4
+
+
+# ===== Local host ==========
+#application: tasks-backup-q
+#version: 1
+
+runtime: python
+api_version: 1
+
+handlers:
+- url: /tasks-backup.css
+  static_files: tasks-backup.css
+  upload: tasks-backup.css
+  mime_type: text/css
+  secure: always
+
+- url: /favicon.ico
+  static_files: favicon.ico
+  upload: favicon.ico
+  secure: always
+  
+- url: /worker
+  script: worker.py
+  login: admin
+  secure: always
+
+- url: /.*
+  script: tasks-backup.py
+  login: required
+  secure: always
+
+# ============================
+# For debug on localhost
+# ============================
+#- url: /oauth2callback
+#  script: oauth2client/appengine.py

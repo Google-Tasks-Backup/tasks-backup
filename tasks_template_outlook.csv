@@ -1,0 +1,26 @@
+{% comment %}
+Copyright 2011 Google Inc.  All Rights Reserved.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+
+This is the Django template file for Microsoft Outlook tasks.
+
+Importing CSV into Excel in Australia was causing dates to be incorrectly interpretted, 
+because the originally specified "n/j/Y" format is US-centric. 
+Changed to use "j b Y" which is unambigous for both humans and machines. 
+NOTE: Whilst RFC-2822 and ISO-8601 are both unambiguous, Excel cannot interpret those formats!
+
+For reference, the ^M character in this file exists because Outlook can only import files with Windows-style line breaks.
+
+{% endcomment %}{% autoescape off %}"Subject","Start Date","Due Date","Reminder On/Off","Reminder Date","Reminder Time","Date Completed","% Complete","Total Work","Actual Work","Billing Information","Categories","Companies","Contacts","Mileage","Notes","Priority","Private","Role","Schedule+ Priority","Sensitivity","Status"{% for tasklist in tasklists %}{% for task in tasklist.tasks %}
+"{{ task.title|replacecsv }}",,{% if task.due %}"{{ task.due|date:"Y-m-d" }}"{% endif %},"False",,,{% if task.status == "completed" %}"{{ task.completed|date:"Y-m-d" }}"{% endif %},,,,,{% if tasklist.title %}"{{ tasklist.title|replacecsv }}"{% endif %},,,,{% if task.notes %}"{{ task.notes|replacecsv }}"{% endif %},"Normal","False",,,"Normal",{% if task.status == "completed" %}"Complete"{% else %}"Not Started"{% endif %}{% endfor %}{% endfor %}{% endautoescape %}

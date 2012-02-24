@@ -1,0 +1,148 @@
+{% comment %}
+Copyright 2011 Google Inc.  All Rights Reserved.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+
+The 2nd digit of the version number (line 66 below) should match the version number in app.yaml
+This version number should only increment when making major changes, such as going from alpha to beta,
+or beta to production.
+
+This is the Django template for the landing page.
+{% endcomment %}
+<!doctype html>
+<html>
+<head>
+  <title>{{ app_title }}</title>
+  <link rel="stylesheet" type="text/css" href="tasks-backup.css"></link>
+  <script type="text/javascript">
+  
+    function authorise() {
+        document.getElementById("authorise_button").value = "Authorising, please wait ...";
+        document.getElementById("authorise_button").innerHTML = "Authorising, please wait ...";
+        document.getElementById("authorise_button").disabled = true;
+      window.location.href = "/auth";
+    }
+
+    function startBackup() {
+        document.getElementById("start_backup_button").value = "Backup starting ...";
+        document.getElementById("start_backup_button").innerHTML = "Backup starting ...";
+        document.getElementById("start_backup_button").disabled = true;
+        window.location.href = "{{ start_backup_url }}";
+    }
+    
+</script>
+</head>
+
+<body>
+
+{% if is_authorized %}
+  <div class="usertitle">
+    Authorised user: {{ user_email }} <span class="logout-link">[ <a href="{{ logout_url }}">Log out</a> ]</span>
+  </div>
+{% endif %}
+
+  <h2>{{ app_title }}</h2>
+  
+  {% if host_msg %}
+    <div class="break">
+      <h3>{{ host_msg }}</h3>
+    </div>
+  {% endif %}
+
+  <div class="break">
+  </div>
+  
+  <div class="break">
+    Version {{ app_version }} ({{ upload_timestamp }})
+  </div>
+  <div class="break">
+   {{ app_title }} can be used to back up Google Tasks in one of several formats;
+
+    <ul>
+      <li>Microsoft Outlook (.csv file)</li>
+      <li>iCalendar (.ics file)</li>
+      <li>"Dump" (CSV file containing all 16 Google Tasks attributes)</li>
+      <li>"Dump" (HTML page)</li>
+      <li>Remember The Milk (email)   <span class="comment">{ untested, as I don't have RTM }</span></li>
+    </ul>
+  </div>
+  
+  <div class="break comment">I'll also consider adding hTodo (HTML page) if sufficient people show interest by requesting it on the <a href="http://code.google.com/p/tasks-backup/issues/list">issues page</a>
+  </div>
+  
+  <div class="break">
+    This application is currently (25 Feb 2012) in beta. It is running from my own Google Apps account, and so has quota limitations. You are welcome to try it, but I cannot give any guarantee that data retrieved will be correct or in a usable format. 
+   </div>
+  
+  <div class="break">
+    This application should be safe to try, as it only reads data; it does not write or modify any tasks in your Google account. It uses Google's own authorisation, so nobody else has access to your data. If you are not already logged in, you will need to authenticate yourself using normal Google authentication.
+     </div>
+  
+  
+    <div class="break">
+        {% if msg == "ACCOUNT_ERROR" %}
+            An error occurred authorizing your account.  This could be because
+            your account is not currently in good standing with Google.  If this
+            is not the case, please contact us so we can investigate this issue.
+        {% else %}
+          <div class="break">
+            {% if is_authorized %}
+              Thank you for granting permission. 
+            {% else %}
+              In order to access your tasks, this application asks for permission to access your
+              Google Tasks data. This application is only used for backing up your tasks; It will not modify any of your existing tasks.
+            {% endif %}
+          </div>
+          <div class="break">
+            The permission for this application will be displayed as "{{ app_title }} - Tasks" in your list of 
+            <a href="https://www.google.com/accounts/IssuedAuthSubTokens">Authorised Sites, Apps, and Services</a>
+          </div>
+        {% endif %}
+    </div>
+  
+    {% if is_authorized %}
+      <div class="small-break take-note-larger">
+      Please only click once.
+      </div>
+      
+      <div class="break">
+          The amount of time taken to generate the backup depends on various factors, including server load and the total number of tasks. At a rough estimate, the system processes 50-150 tasks per second. This means that a task list with 5,000 tasks could take almost 2 minutes.
+          
+          When you click the button to start the backup, a background process is started. You will then be redirected to a page which will update regularly to show progress of the backup. 
+      </div>
+      <div class="break">
+        <button id="start_backup_button" class="button" type="button" onclick="startBackup();">Start backup</button> 
+      </div>
+    {% else %}
+      <button id="authorise_button" class="button" type="button" onclick="authorise();">Authorise</button>
+    {% endif %}
+      
+
+ 
+
+
+	<div class="project-footer">
+		<div class="break">
+			Questions or comments? Go to <a href="{{ url_discussion_group }}">{{ url_discussion_group }}</a>
+			or email <a href="mailto:{{ email_discussion_group }}">{{ email_discussion_group }}</a>
+		</div>
+		<div class="break">
+			Please report bugs or suggest improvements at <a href="http:/{{ url_issues_page }}">{{ url_issues_page }}</a>
+		</div>
+		<div class="break">
+			Source code for this project is at <a href="http://{{ url_source_code }}">{{ url_source_code }}</a>
+		</div>
+	</div>
+
+</body>
+</html>

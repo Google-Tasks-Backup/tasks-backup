@@ -1,0 +1,222 @@
+/* Copyright 2011 Google Inc.  All Rights Reserved.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ *
+ * OrigAuthor: dwightguth@google.com (Dwight Guth)
+ * Author: Julie.Smith.1999@gmail.com (Julie Smith)
+ */
+
+body {
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: 10pt;
+  max-width: 1024px;
+  margin: auto;
+}
+
+.take-note {
+  font-weight: bold;
+}
+  
+.take-note-larger {
+  font-weight: bold;
+  font-size: larger;
+}
+  
+.logo {
+  margin-top: 10px;
+}
+
+.heading {
+  font-weight: bold;
+  font-size: 12pt;
+  margin: 6px;
+}
+
+.row1 {
+  background-color: #aeffdg;
+}
+
+.row2 {
+}
+
+.break {
+  margin-bottom: 20px !important;
+}
+
+.small-break {
+  margin-bottom: 6px !important;
+}
+
+.info {
+  padding: 1px 6px;
+}
+
+.alert {
+  color: #C00;
+}
+
+.disabled {
+  color: grey;
+}
+
+.fieldname {
+  font-weight: bold;
+}
+
+.caption {
+  font-weight: normal !important;
+  font-size: smaller !important;
+  font-style: italic !important;
+}
+
+.project-footer {
+	/* Project info at bottom of every page */
+	font-style: italic;
+	font-size: smaller;
+	margin-top: 40px;
+	margin-left: 30px;
+	margin-bottom: 20px;
+	margin-right: 30px;
+}
+
+.logout-link {
+  margin-left: 20px;
+  font-size: smaller;
+}
+
+.comment {
+  margin-left: 20px;
+  font-style:italic;
+}
+
+.usertitle {
+  text-align: right;
+  font-size: 12pt;
+  font-weight: bold;
+  padding-right: 10px;
+  margin-bottom: 20px;
+}
+
+.fieldlabel {
+  font-weight: bold;
+}
+ 
+.task-title  {
+  font-weight: bold;
+}
+ 
+
+form td:first-child {
+  padding-right:20px;
+}
+
+.product-desc {
+  padding: 10px;
+  vertical-align: top;
+}
+
+td.action-button {
+  padding-top: 10px;
+  padding-bottom: 10px;
+  padding-left: 10px;
+  padding-right: 10px;
+}
+
+table.format-selection {
+	border-collapse:separate;
+	border-spacing:5px 10px; /* Horiz, vert */
+}
+
+td.format-name {
+	white-space: nowrap;
+	font-weight: bold;
+}
+
+td.note-heading {
+	white-space: nowrap;
+	font-weight: bold;
+	vertical-align: top;
+}
+	
+button.button {
+  cursor: pointer;
+  width: 100%;
+  font-size: 16pt;
+  font-weight: bold;
+}
+
+li.tasklist {
+  padding-bottom: 10px;
+}
+
+span.tasklistheading {
+  font-size: larger;
+  font-weight: bold;
+}
+
+ul.fake {
+  padding-left: 1.8em;
+  padding-bottom: 20px;
+}
+
+ul.fake > li {
+  padding-top: 10px;
+  list-style-type: none;
+  padding-bottom: 10px;
+}
+
+div.description {
+  margin-left: 20px;
+}
+
+ul.fake > li.status-completed {
+  list-style-type: none;
+}
+
+ul.fake > li > span.summary {
+  font-weight: bold;
+}
+
+ul.fake > li:before {
+  content: "\2013 \a0 \a0";
+}
+
+ul.fake > li.status-completed:before {
+  content: "\2713 \a0";
+}
+
+ul.task {
+  list-style-type: none;
+  padding-left: 1.8em;
+  padding-bottom: 20px;
+}
+
+li.task-status-completed:before {
+  list-style-type: none;
+  content: "\2713 \a0";
+}
+
+li.task-status-needsAction:before {
+  list-style-type: none;
+  content: "\2013 \a0 \a0";
+}
+
+div.task-attribute {
+  margin-top: 3px;
+  margin-bottom: 5px;
+}
+  
+span.completed,
+span.categories,
+span.last-modified {
+  display: none;
+}
