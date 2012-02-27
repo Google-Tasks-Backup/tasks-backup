@@ -37,11 +37,27 @@ class TasksBackupJob(db.Model):
     user = db.UserProperty(indexed=False)
     credentials = appengine.CredentialsProperty(indexed=False)
     
-    # Set status default="building" and progress default=0
+    # Used to include/exclude tasks which are completed and/or deleted and/or hidden
+    include_completed = db.BooleanProperty(indexed=False, default=False)
+    include_deleted = db.BooleanProperty(indexed=False, default=False)
+    include_hidden = db.BooleanProperty(indexed=False, default=False)
     
-    timestamp = db.DateTimeProperty(auto_now_add=True, indexed=False)
+    # Set automatically when entity is created. Indicates when job was started (i.e., snapshot time)
+    # Also used to track if task exceeds maximum allowed, so we can display message to user
+    job_start_timestamp = db.DateTimeProperty(auto_now_add=True, indexed=False)
+    
+    # Job status, to display to user and control web page and foreground app behaviour
     status = db.StringProperty(choices=("starting", "building", "completed", "error"), default="starting")
-    progress = db.IntegerProperty(indexed=False, default=0) # Number of tasks backed up. Used to display progress to user
+    
+    # Total number of tasks backed up. Used to display progress to user. Updated when an entire tasklist has been backed up
+    total_progress = db.IntegerProperty(indexed=False, default=0) 
+    
+    # Number of tasks in current tasklist. Used to display progress to user. Updated every 'n' seconds
+    tasklist_progress = db.IntegerProperty(indexed=False, default=0) 
+    
+    # When job progress was last updated. Used to ensure that backup job hasn't stalled
+    job_progress_timestamp = db.DateTimeProperty(auto_now_add=True, indexed=False) 
+    
     error_message = db.StringProperty(indexed=False, default=None)
 
 class TasklistsData(db.Model):

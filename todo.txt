@@ -1,33 +1,36 @@
-2012-02-08
-BUG: Server Error when request takes > 60 seconds (see issue #2)
-- Could perhaps parallelise, by creating one task-queue task per tasklist. Would only help if people have roughly similar numbers of tasks in all their task lists. Won't help if they only have one task list, or one task list is significantly bigger than all the others.
+
+======================= TODO ==============================
+
+- Change date format for "Raw" so that it can be interpretted by Outlook to allow sorting and filtering.
+
+- Consideration: If user selects Hidden and/or Deleted, ther is no way to indicate that in Outlook or iCal, so the user may see tasks that they don't expect to see (especially if they select Deleted and they have moved a task to another list, since the original task stays in the roiginal list, marked as deleted)
+-- Need to include a page describing all the various permutations, as described to email to Bard on 25 and 26 Feb 2012.
+        To summarise, a task can be in any one of the following states;
+            ** needsAction (unchecked)
+            ---- Visible in main list
+
+            ** completed (checked) {before clicking [Clear completed]}
+            ---- Visible in main list 
+
+            ** completed (checked) {after clicking [Clear completed]}
+            ---- Visible only in [Completed tasks]
+
+            ** Deleted
+            ---- Visible only in [Trash]
+            
+        -> Marked complete, and then clicked Clear completed = completed, hidden
+        -> Marked complete and deleted (appears in [Trash]) = completed, deleted
 
 
-OPTION (if taskqueue can't finish in time):
-- Use memcache to store;
-    raw tasklists data (would have up to 20 tasklists, + next_tasklists_page token if it exists)
-- At start of processing 100 tasks,
-  - Use memcache to store;
-    raw tasks data (would have up to 100 tasks, + next_tasks_page token if it exists)
-- After processing 100 tasks;
-  - Mark current tasks data completed in memcache (may still need to get another 100 tasks if token exists)
-  - Check elapsed time since "GET"
-      If > 20 seconds, write response page with updated count
-          Include unique ID (to enable next page request to extract data from memcache to continue processing)
-        Use OnLoad event to post (same as when user clicks [Outlook CSV]
-          Post unique ID (to enable next page request to extract data from memcache to continue processing) 
+- Investigate calling ReturnResultsHandler.post() from ReturnResultsHandler.get() 
+-- Sometimes the get() handler is being called
 
-
-TODO
-
-- Put margin/padding/border? around all web pages. Looks very bad when text is right up against windows edge on small screens
 
 
 - Consider using 'fields' to reduce amount of data retrieved and stored.
   Only retrieve fields that we actually use in GTB
     fields ==> Selector specifying a subset of fields to include in the response.	
     From http://code.google.com/apis/tasks/v1/using.html#query-params
-
     
 - Give user option to include/exclude tasks by status from backup job (before starting backup);
     showCompleted
@@ -36,11 +39,8 @@ TODO
 -- Also consider giving user option to include/exclude particular properties.
     We can then use 'fields' selector to specify a subset of fields to include in the response to reduce amount of data retrieved and stored
         From http://code.google.com/apis/tasks/v1/using.html#query-params
-
-        
-        
-- Consider exporting a csv 'dump' format, which includes every Google Tasks attribute.
--- Maybe use check-boxes to allow user to select which fields they need, to limit request and data processing size)
+         
+- Consider using check-boxes to allow user to select which fields they need, to limit request and data processing size)
     From http://code.google.com/apis/tasks/v1/reference.html#resource_tasks
         kind	string	Type of the resource. This is always tasks#task.	
         id	string	Task identifier.	
@@ -84,12 +84,24 @@ TODO
 
 - Catch exception returning results to user and display error page
 -- e.g., malformed Django template was causing error
-
+# It seems that only 3 types of server error can be caught and redirected to a specified web page.
 
     
-IN PROGRESS:    
+========================= In progress ================================
     
-==> Maybe use check-boxes to allow user to select which fields they need, to limit request and data processing size.
+- Consider adding code to ShowProgressHandler() to recognise a "stalled" backup
+-- Currently only gives up if job has exceeded nnn seconds (currently 650 = 10min, 50 sec) 
+--- Could add an 'updated' field to the model.ShowProgressHandler() entity. 
+---- Currently only updating 'progress' after processing each tasklist. This could result in long update gaps for tasklists with many tasks
+   Set 'updated' value every time through get tasks loop in worker.py
+   If 'updated' hasn't changed in 'n' seconds;
+   --- Change status to "stalled"
+   --- Display message to user
+   --- Stop updating progress page
+
+- Put margin/padding/border? around all web pages. Looks very bad when text is right up against windows edge on small screens
+
+
 - Consider exporting a csv 'dump' format, which includes every Google Tasks attribute.
     From http://code.google.com/apis/tasks/v1/reference.html#resource_tasks
         kind	string	Type of the resource. This is always tasks#task.	
@@ -120,44 +132,6 @@ IN PROGRESS:
 - Log progress result in ShowProgressHandler()
 
 
-
-TRIED:
-- Try emailing tasklists, since it is too big to store in the DB
-# Email limit is too small
-
-- Check if memcache can handle larger amount of data
-# No
-
-- Could update status page using JS to get results from a URL in a simple format, and then using DOM to set values of elements on page
-
-- Try Expando to add additional Blobs as needed
-# 2012-02-22; Expando appears to have total size limit ~1MB
-  -- Tested in "C:\Programming\GoogleAppEngine\helloworld\helloworld.py"
-  
-COMPLETED:
-- Use multiple "child" DB entitities to pass back data 'sliced' 'pickled' data to front-end. ANCESTOR wouuld be email address,e.g.,
-    class TasklistsData(db.Model):
-        pickled_tasks_data = db.BlobProperty(indexed=False)
-        idx = db.IntegerProperty(default=0, indexed=True) # To reassemble in order
-    
-    tasklists_records = db.GqlQuery("SELECT * "
-                                "FROM TasklistsData "
-                                "WHERE ANCESTOR IS :1 "
-                                "ORDER BY idx ASC",
-                                db.Key.from_path(__DB_KEY_TASKS_DATA__, user_email))
-
-
-- Retry on failure by putting try-exception 'loop' around code which calls tasks_data = tasks_svc.list() in worker.py
-# 2012-02-21; Done and testing on tasks-backup
-
-- Display progress; every 'n' seconds, refresh page showing "'nnn' tasks retrieved"
-# Done
-
-
-- Display note on progress/results.html to indicate that results are as at {{ SnapshotTimestamp }}, that is, changes to tasks
-  lists since that time will not be included in the backup.
--- Add Backup Timestamp property to TasksBackupJob
-# DONE
 
 ***********************************************************
 
@@ -397,7 +371,53 @@ Create a Google code and Google Groups account for js-tasks
 
 
 
-================== Done ====================
+
+================== Other options / future work ==========================
+OPTION (if taskqueue can't finish in time):
+- Use memcache to store;
+    raw tasklists data (would have up to 20 tasklists, + next_tasklists_page token if it exists)
+- At start of processing 100 tasks,
+  - Use memcache to store;
+    raw tasks data (would have up to 100 tasks, + next_tasks_page token if it exists)
+- After processing 100 tasks;
+  - Mark current tasks data completed in memcache (may still need to get another 100 tasks if token exists)
+  - Check elapsed time since "GET"
+      If > 20 seconds, write response page with updated count
+          Include unique ID (to enable next page request to extract data from memcache to continue processing)
+        Use OnLoad event to post (same as when user clicks [Outlook CSV]
+          Post unique ID (to enable next page request to extract data from memcache to continue processing) 
+
+
+
+
+================== Cancelled ===============
+Pre-fill datetime into email subject input field
+- Perhaps use Javascrip to fill in timestamp in Subject field, so that the time matches the user's time.
+
+TRIED:
+- Try emailing tasklists, since it is too big to store in the DB
+# Email limit is too small
+
+- Check if memcache can handle larger amount of data
+# No
+
+- Could update status page using JS to get results from a URL in a simple format, and then using DOM to set values of elements on page
+
+- Try Expando to add additional Blobs as needed
+# 2012-02-22; Expando appears to have total size limit ~1MB
+  -- Tested in "C:\Programming\GoogleAppEngine\helloworld\helloworld.py"
+  
+
+================== Fixed / Done ===================
+BUG; Generating multiple instances of every task; 1 for each tasklist (category)
+
+BUG; Export for user B includes tasks from user A
+- Need to create a per-user data store, and delete it once we've exported (or at least when user logs off)
+-- It seems that only tasks where the tasklist name is the same for both users (e.g., "Default list")
+
+BUG: Server Error when request takes > 60 seconds (see issue #2)
+- Could perhaps parallelise, by creating one task-queue task per tasklist. Would only help if people have roughly similar numbers of tasks in all their task lists. Won't help if they only have one task list, or one task list is significantly bigger than all the others.
+
 Interpret "2012-01-29T13:58:16.000Z" date format returned by Google API, and
 write back into task fields (due, completed, updated) in format that Django can use. e.g., for task.due|date:"n/j/Y"
 
@@ -411,17 +431,29 @@ create a Python wrapper which writes date-time as a version string to a .py file
 Investigate discrepancy between js-tasks outlook.csv export (373 tasks) and Calengoo (565 tasks)
 - outlook.csv seems to be the same as what's online
 
+- Consider exporting a csv 'dump' format, which includes every Google Tasks attribute.
+
+- Use multiple "child" DB entitities to pass back data 'sliced' 'pickled' data to front-end. ANCESTOR wouuld be email address,e.g.,
+    class TasklistsData(db.Model):
+        pickled_tasks_data = db.BlobProperty(indexed=False)
+        idx = db.IntegerProperty(default=0, indexed=True) # To reassemble in order
+    
+    tasklists_records = db.GqlQuery("SELECT * "
+                                "FROM TasklistsData "
+                                "WHERE ANCESTOR IS :1 "
+                                "ORDER BY idx ASC",
+                                db.Key.from_path(__DB_KEY_TASKS_DATA__, user_email))
 
 
-================== Cancelled ===============
-Pre-fill datetime into email subject input field
-- Perhaps use Javascrip to fill in timestamp in Subject field, so that the time matches the user's time.
+- Retry on failure by putting try-exception 'loop' around code which calls tasks_data = tasks_svc.list() in worker.py
+# 2012-02-21; Done and testing on tasks-backup
+
+- Display progress; every 'n' seconds, refresh page showing "'nnn' tasks retrieved"
+# Done
 
 
-================== Fixed ===================
-BUG; Generating multiple instances of every task; 1 for each tasklist (category)
-
-BUG; Export for user B includes tasks from user A
-- Need to create a per-user data store, and delete it once we've exported (or at least when user logs off)
--- It seems that only tasks where the tasklist name is the same for both users (e.g., "Default list")
+- Display note on progress/results.html to indicate that results are as at {{ SnapshotTimestamp }}, that is, changes to tasks
+  lists since that time will not be included in the backup.
+-- Add Backup Timestamp property to TasksBackupJob
+# DONE
 

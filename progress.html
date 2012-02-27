@@ -6,7 +6,7 @@ This is the Django template used by test-taskqueue.py
 <html>
 <head>
     {% if status == "starting" or status == "building" %}
-        <meta http-equiv="refresh" content="12">
+        <meta http-equiv="refresh" content="{{ refresh_interval }}">
     {% endif %}
     
     <title>{{ app_title }}</title>
@@ -29,20 +29,13 @@ This is the Django template used by test-taskqueue.py
     {% endif %}
 
     <div class="break">
-    </div>
-
-    <div class="break">
         Version {{ app_version }} ({{ upload_timestamp }})
     </div>
     
     {% if msg %}
-        <p>Msg = {{ msg }}</p>
-    {% endif %}
-    <br />
-    
-    {% if status %}
-        <p>Status = {{ status }}</p>
-        <br />
+        <div class="break">
+            <p>Msg = {{ msg }}</p>
+		</div>
     {% endif %}
     
     {% if error_message %}
@@ -52,29 +45,40 @@ This is the Django template used by test-taskqueue.py
 		<div class="break">
 			Please report this error at <a href="http:/{{ url_issues_page }}">{{ url_issues_page }}</a>
 		</div>
-        <br />
-   {% endif %}
-    
-    
-    {% if progress %}
-        {% if status == "completed" %}
-            <p>Retrieved {{ progress }} tasks</p>
-        {% else %}
-            <p>Progress = {{ progress }}</p>
-        {% endif %}
-        <br />
     {% endif %}
-    <br />
     
     {% if status == "no-record" %}
+        <div class="break">
+            No backup for current user. Please start a backup first.
+        </div>
         <form method="POST" action="/">
             <button type="submit">Start backup</button>
         </form>
     {% endif %}
     
+    
+    {% if status == "starting" or status == "building" %}
+        <div class="break">
+            This page will auto-refresh every {{ refresh_interval }} seconds to indicate how many tasks have been retrieved so far.
+		</div>
+    {% endif %}
+    
     {% if status == "completed" %}
         <div class="break">
-            Note that this backup is a snapshot of tasks at {{ job_timestamp }} UTC and will not reflect changes made after that time. Rerun {{ app_title }} to create a new backup.
+            Backup completed. Retrieved {{ progress }} tasks.
+		</div>
+    {% else %}
+        <div class="break">
+            Status = {{ status }}
+		</div>
+        <div class="break">
+            Progress = {{ progress }}
+		</div>
+    {% endif %}
+    
+    {% if status == "completed" %}
+        <div class="break">
+            Note that this backup is a snapshot of tasks at {{ job_start_timestamp }} UTC and will not reflect changes made after that time. Rerun {{ app_title }} to create a new backup.
         </div>
         <div class="break">
         </div>
@@ -168,7 +172,7 @@ This is the Django template used by test-taskqueue.py
 
 	<div class="project-footer">
 		<div class="break">
-			Questions or comments? Go to <a href="{{ url_discussion_group }}">{{ url_discussion_group }}</a>
+			Questions or comments? Go to <a href="http://{{ url_discussion_group }}">{{ url_discussion_group }}</a>
 			or email <a href="mailto:{{ email_discussion_group }}">{{ email_discussion_group }}</a>
 		</div>
 		<div class="break">

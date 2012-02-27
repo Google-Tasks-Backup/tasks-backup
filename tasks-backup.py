@@ -21,18 +21,6 @@
 # Orig __author__ = "dwightguth@google.com (Dwight Guth)"
 __author__ = "julie.smith.1999@gmail.com (Julie Smith)"
 
-# Extra detailed and/or personal details may be logged when user is one of the test accounts
-__testaccounts__ = ["Julie.Smith.1999@gmail.com", "JS1999.Outlook@gmail.com"]
-# Full dumps of returned data id test user AND __DUMP_DATA__ = True
-__DUMP_DATA__ = False
-
-# The default app title may be overridden by a value from app_titles in the settings module
-__DEFAULT_APP_TITLE__ = "Google Tasks Backup"
-
-# The default app title may be overridden by a value from user_agents in the settings module
-__DEFAULT_USER_AGENT__ = "tasks-backup/1.0" # Default user agent
-
-
 import logging
 import os
 import pickle
@@ -62,72 +50,21 @@ import settings
 import datetime
 from datetime import timedelta
 import appversion # appversion.version is set before the upload process to keep the version number consistent
+import shared # Code whis is common between tasks-backup.py and worker.py
 
-
-def GetSettings(hostname):
-  """ Returns a tuple with hostname-specific settings
-  args
-    hostname         -- Name of the host on which this particular app instance is running,
-                        as returned by self.request.host
-  returns
-    client_id        -- The OAuth client ID for app instance running on this particular host
-    client_secret    -- The OAuth client secret for app instance running on this particular host
-    user_agent       -- The user agent string for app instance running on this particular host
-    app_title        -- The page title string for app instance running on this particular host
-    host_msg         -- An optional message which is displayed on some web pages, 
-                        for app instance running on this particular host
-  """
-  
-  if hasattr(settings, 'client_ids'):
-    # New style, multi host settings module
-    if settings.client_ids.has_key(hostname):
-      client_id = settings.client_ids[hostname]
-    else:
-      client_id = None
-      raise KeyError("No ID entry in settings module for host = %s" % hostname)
-  else:
-    raise LookupError("No client_ids in settings")
-  
-  if hasattr(settings, 'client_secrets'):
-    # New style, multi host settings module
-    if settings.client_secrets.has_key(hostname):
-      client_secret = settings.client_secrets[hostname]
-    else:
-      client_secret = None
-      raise KeyError("No secret entry in settings module for host = %s" % hostname)
-  else:
-    raise LookupError("No client_secrets in settings")
-  
-  if hasattr(settings, 'user_agents') and settings.user_agents.has_key(hostname):
-    user_agent = settings.user_agents[hostname]
-  else:
-    user_agent = __DEFAULT_USER_AGENT__
-
-  if hasattr(settings, 'app_titles') and settings.app_titles.has_key(hostname):
-    app_title = settings.app_titles[hostname]
-  else:
-    app_title = __DEFAULT_APP_TITLE__
-  
-  if hasattr(settings, 'host_msgs') and settings.host_msgs.has_key(hostname):
-    host_msg = settings.host_msgs[hostname]
-  else:
-    host_msg = None
-  
-  return client_id, client_secret, user_agent, app_title, host_msg
-  
 
   
 def _RedirectForOAuth(self, user):
   """Redirects the webapp response to authenticate the user with OAuth2."""
   
-  client_id, client_secret, user_agent, app_title, host_msg = GetSettings(self.request.host)
+  client_id, client_secret, user_agent, app_title, product_name, host_msg = shared.GetSettings(self.request.host)
   
   flow = client.OAuth2WebServerFlow(
       client_id=client_id,
       client_secret=client_secret,
       scope="https://www.googleapis.com/auth/tasks",
       user_agent=user_agent,
-      xoauth_displayname=app_title,
+      xoauth_displayname=product_name,
       state=self.request.path_qs)
 
   callback = self.request.relative_url("/oauth2callback")
@@ -162,12 +99,6 @@ def _GetCredentials():
 
   
   
-def isTestUser(user_email):
-  """ Returns True if user_email is one of the defined __testaccounts__ 
-  
-      Used when testing to ensure that only test user's details are logged.
-  """
-  return (user_email.lower() in (email.lower() for email in __testaccounts__))
   
   
 
@@ -181,23 +112,24 @@ class MainHandler(webapp.RequestHandler):
 
         logging.debug(fn_name + "<Start>")
 
-        client_id, client_secret, user_agent, app_title, host_msg = GetSettings(self.request.host)
+        client_id, client_secret, user_agent, app_title, product_name, host_msg = shared.GetSettings(self.request.host)
 
           
         user, credentials = _GetCredentials()
-        user_email = user.email()
+        if user:
+            user_email = user.email()
         path = os.path.join(os.path.dirname(__file__), "index.html")
         if not credentials or credentials.invalid:
             is_authorized = False
-            # logging.debug(fn_name + "is_authorized = False")
         else:
             is_authorized = True
 
-        if isTestUser(user_email):
+        if shared.isTestUser(user_email):
             logging.debug(fn_name + "Started by test user %s" % user_email)
           
         template_values = {'app_title' : app_title,
                            'host_msg' : host_msg,
+                           'product_name' : product_name,
                            'is_authorized': is_authorized,
                            'user_email' : user_email,
                            'start_backup_url' : settings.START_BACKUP_URL,
@@ -239,7 +171,7 @@ class CompletedHandler(webapp.RequestHandler):
         if isUserEmail(user_email):
             logging.debug(fn_name + "user_email = [%s]" % user_email)
 
-        client_id, client_secret, user_agent, app_title, host_msg = GetSettings(self.request.host)
+        client_id, client_secret, user_agent, app_title, product_name, host_msg = shared.GetSettings(self.request.host)
 
         path = os.path.join(os.path.dirname(__file__), "completed.html")
         if not credentials or credentials.invalid:
@@ -249,6 +181,7 @@ class CompletedHandler(webapp.RequestHandler):
             
         template_values = {'app_title' : app_title,
                              'host_msg' : host_msg,
+                             'product_name' : product_name,
                              'is_authorized': is_authorized,
                              'user_email' : user_email,
                              'msg': self.request.get('msg'),
@@ -265,14 +198,14 @@ class StartBackupHandler(webapp.RequestHandler):
     """ Handler to start the backup process. """
     
   
-    def get(self):
+    def post(self):
         """ Handles GET request to settings.START_BACKUP_URL, which starts the backup process. """
         
-        fn_name = "StartBackupHandler.get(): "
+        fn_name = "StartBackupHandler.post(): "
        
         logging.debug(fn_name + "<start>")
 
-        # client_id, client_secret, user_agent, app_title, host_msg = GetSettings(self.request.host)
+        # client_id, client_secret, user_agent, app_title, product_name, host_msg = shared.GetSettings(self.request.host)
         
         user, credentials = _GetCredentials()
         
@@ -282,15 +215,29 @@ class StartBackupHandler(webapp.RequestHandler):
             self.redirect('/')
             
         user_email = user.email()
-        is_test_user = isTestUser(user_email)
+        is_test_user = shared.isTestUser(user_email)
         
+        if is_test_user:
+          logging.debug(fn_name + "POST args: include_hidden = " + str(self.request.get('include_hidden')) +
+                            ", include_completed = " + str(self.request.get('include_completed')) +
+                            ", include_deleted = " + str(self.request.get('include_deleted')))
+                            
         logging.debug(fn_name + "Storing details for " + str(user_email))
+        
   
         # Create a DB record, using the user's email address as the key
         tasks_backup_job = model.TasksBackupJob(key_name=user_email)
+        tasks_backup_job.include_completed = (self.request.get('include_completed') == 'True')
+        tasks_backup_job.include_deleted = (self.request.get('include_deleted') == 'True')
+        tasks_backup_job.include_hidden = (self.request.get('include_hidden') == 'True')
         tasks_backup_job.user = user
         tasks_backup_job.credentials = credentials
         tasks_backup_job.put()
+
+        if is_test_user:
+            logging.debug(fn_name + "tasks_backup_job.include_hidden = " + str(tasks_backup_job.include_hidden) +
+                                    ", tasks_backup_job.include_completed = " + str(tasks_backup_job.include_completed) +
+                                    ", tasks_backup_job.include_deleted = " + str(tasks_backup_job.include_deleted))
 
         # Add the task to the taskqueue
         # Add the request to the tasks queue, passing in the user's email so that the task can access the
@@ -320,7 +267,7 @@ class ShowProgressHandler(webapp.RequestHandler):
     
         logging.debug(fn_name + "<Start>")
         
-        client_id, client_secret, user_agent, app_title, host_msg = GetSettings(self.request.host)
+        client_id, client_secret, user_agent, app_title, product_name, host_msg = shared.GetSettings(self.request.host)
       
           
         user, credentials = _GetCredentials()
@@ -348,25 +295,41 @@ class ShowProgressHandler(webapp.RequestHandler):
             status = 'error'
             progress = 0
             error_message = "No backup job found for " + str(user_email) + ", please restart."
-            job_timestamp = None
+            job_start_timestamp = None
         else:            
-            progress = tasks_backup_job.progress
-            job_timestamp = tasks_backup_job.timestamp
-            job_execution_time = datetime.datetime.now() - job_timestamp
-            if job_execution_time.seconds > settings.MAX_JOB_TIME:
-                logging.error(fn_name + "Job created " + str(job_execution_time.seconds) + " seconds ago. Exceeded max allowed " +
-                    str(settings.MAX_JOB_TIME))
-                error_message = "Job taking too long. Status was " + tasks_backup_job.status
-                if tasks_backup_job.error_message:
-                    error_message = error_message + ", previous error was " + tasks_backup_job.error_message
-                status = 'job_exceeded_max_time'
-            else:
-                status = tasks_backup_job.status
-                error_message = tasks_backup_job.error_message
-
+            # total_progress is only updated once all the tasks have been retrieved in a single tasklist.
+            # tasklist_progress is updated every settings.TASK_COUNT_UPDATE_INTERVAL seconds within the retrieval process
+            # for each tasklist. This ensures progress updates happen at least every settings.TASK_COUNT_UPDATE_INTERVAL seconds,
+            # which wouldn't happen if it takes a long time to retrieve a large number of tasks in a single tasklist.
+            # So, the current progress = total_progress + tasklist_progress
+            status = tasks_backup_job.status
+            error_message = tasks_backup_job.error_message
+            progress = tasks_backup_job.total_progress + tasks_backup_job.tasklist_progress
+            job_start_timestamp = tasks_backup_job.job_start_timestamp
+            job_execution_time = datetime.datetime.now() - job_start_timestamp
             
+            if status != 'completed' and status != 'error':
+                # Check if the job has exceeded either progress or total times
+                if job_execution_time.seconds > settings.MAX_JOB_TIME:
+                    logging.error(fn_name + "Job created " + str(job_execution_time.seconds) + " seconds ago. Exceeded max allowed " +
+                        str(settings.MAX_JOB_TIME))
+                    error_message = "Job taking too long. Status was " + tasks_backup_job.status
+                    if tasks_backup_job.error_message:
+                        error_message = error_message + ", previous error was " + tasks_backup_job.error_message
+                    status = 'job_exceeded_max_time'
+            
+                time_since_last_update = datetime.datetime.now() - tasks_backup_job.job_progress_timestamp
+                if time_since_last_update.seconds > settings.MAX_JOB_PROGRESS_INTERVAL:
+                    logging.error(fn_name + "Last job progress update was " + str(time_since_last_update.seconds) +
+                        " seconds ago. Job appears to have stalled. Job was started " + str(job_execution_time.seconds) + 
+                        " seconds ago at " + str(job_start_timestamp))
+                    error_message = "Job appears to have stalled. Status was " + tasks_backup_job.status
+                    if tasks_backup_job.error_message:
+                        error_message = error_message + ", previous error was " + tasks_backup_job.error_message
+                    status = 'job_stalled'
+                    
         logging.debug(fn_name + "Status = " + str(status) + ", progress = " + str(progress) + 
-            " for " + str(user_email) + ", started at " + str(job_timestamp))
+            " for " + str(user_email) + ", started at " + str(job_start_timestamp))
         
         if error_message:
             logging.warning(fn_name + "Error message: " + str(error_message))
@@ -377,11 +340,13 @@ class ShowProgressHandler(webapp.RequestHandler):
         
         template_values = {'app_title' : app_title,
                            'host_msg' : host_msg,
+                           'product_name' : product_name,
                            'status' : status,
                            'progress' : progress,
                            'error_message' : error_message,
-                           'job_timestamp' : job_timestamp,
+                           'job_start_timestamp' : job_start_timestamp,
                            'is_authorized': is_authorized,
+                           'refresh_interval' : settings.PROGRESS_PAGE_REFRESH_INTERVAL,
                            'user_email' : user_email,
                            #'start_backup_url' : settings.START_BACKUP_URL,
                            #'refresh_url' : settings.PROGRESS_URL,
@@ -401,12 +366,14 @@ class ReturnResultsHandler(webapp.RequestHandler):
     """Handler to return results to user in the requested format """
     
     def get(self):
-        """ Display the page to allow user to choose format for results """
-        fn_name = "ReturnResultsHandler.post(): "
+        # """ Display the page to allow user to choose format for results """
+        fn_name = "ReturnResultsHandler.get(): "
+        logging.warning(fn_name + "Expected POST. Calling post handler")
+        self.post()
         
-        # TODO: Redirect user to page to start a backup
-        logging.warning(fn_name + "TODO - doing nothing")
-        self.response.out.write("TODO - doing nothing")
+        # # TODO: Redirect user to page to start a backup
+        # logging.warning(fn_name + "TODO - doing nothing")
+        # self.response.out.write("TODO - doing nothing")
         
     def post(self):
         """ Return results to the user """
@@ -414,11 +381,11 @@ class ReturnResultsHandler(webapp.RequestHandler):
         
         logging.debug(fn_name + "<Start>")
         
-        client_id, client_secret, user_agent, app_title, host_msg = GetSettings(self.request.host)
+        client_id, client_secret, user_agent, app_title, product_name, host_msg = shared.GetSettings(self.request.host)
         
         user, credentials = _GetCredentials()
         user_email = user.email()
-        is_test_user = isTestUser(user_email)
+        is_test_user = shared.isTestUser(user_email)
         
         # Retrieve the DB record for this user
         logging.debug(fn_name + "Retrieving details for " + str(user_email))
@@ -432,9 +399,9 @@ class ReturnResultsHandler(webapp.RequestHandler):
         num_records = tasklists_records.count()
         
         if num_records is None:
-            # Since we will only execute this function if TasksBackupJob.status == completed,
-            # then there should be at lease one record. Possibly user got here by doing a POST
-            # without starting a backup request first (e.g. page refresh from an old job)
+            # There should be at least one record, since we will only execute this function if TasksBackupJob.status == completed
+            # Possibly user got here by doing a POST without starting a backup request first 
+            # (e.g. page refresh from an old job)
             logging.error(fn_name + "No data records found for " + str(user_email))
             # TODO: Display better error to user &/or redirect to allow user to start a backup job
             self.response.set_status(412, "No data for this user. Please retry backup request.")
@@ -504,6 +471,7 @@ class ReturnResultsHandler(webapp.RequestHandler):
         
         template_values = {'app_title' : app_title,
                            'host_msg' : host_msg,
+                           'product_name' : product_name,
                            'tasklists': tasklists,
                            'user_email' : user_email, 
                            'now' : datetime.datetime.now(),
@@ -546,7 +514,7 @@ class ReturnResultsHandler(webapp.RequestHandler):
                        err_desc = None, 
                        err_details = None,
                        err_msg = None, 
-                       app_title = __DEFAULT_APP_TITLE__,
+                       app_title = settings.DEFAULT_APP_TITLE,
                        host_msg = None):
         """ Display an error page to the user """
         fn_name = "DisplayErrorPage(): "
@@ -591,14 +559,14 @@ class ReturnResultsHandler(webapp.RequestHandler):
         """
         fn_name = "SendEmailUsingTemplate(): "
 
-        # if isTestUser(user_email):
+        # if shared.isTestUser(user_email):
           # logging.debug(fn_name + "Creating email body using template")
         # Use a template to convert all the tasks to the desired format 
         template_filename = "tasks_template_%s.txt" % export_format
         path = os.path.join(os.path.dirname(__file__), template_filename)
         email_body = template.render(path, template_values)
 
-        # if isTestUser(user_email):
+        # if shared.isTestUser(user_email):
           # logging.debug(fn_name + "Sending email")
         # TODO: Catch exception sending & display to user ??
         # According to "C:\Program Files\Google\google_appengine\google\appengine\api\mail.py", 
@@ -608,7 +576,7 @@ class ReturnResultsHandler(webapp.RequestHandler):
                        subject=output_filename_base,
                        body=email_body)
 
-        if isTestUser(user_email):
+        if shared.isTestUser(user_email):
           logging.debug(fn_name + "Email sent to %s" % user_email)
         else:
           logging.debug(fn_name + "Email sent")
@@ -630,7 +598,7 @@ class ReturnResultsHandler(webapp.RequestHandler):
             "Content-Disposition", "attachment; filename=%s" % output_filename)
 
         path = os.path.join(os.path.dirname(__file__), template_filename)
-        if isTestUser(template_values['user_email']):
+        if shared.isTestUser(template_values['user_email']):
           logging.debug(fn_name + "Writing %s format to %s" % (export_format, output_filename))
         else:
           logging.debug(fn_name + "Writing %s format" % export_format)
@@ -650,7 +618,7 @@ class ReturnResultsHandler(webapp.RequestHandler):
             "Content-Disposition", "attachment; filename=%s" % output_filename)
 
         path = os.path.join(os.path.dirname(__file__), template_filename)
-        if isTestUser(template_values['user_email']):
+        if shared.isTestUser(template_values['user_email']):
           logging.debug(fn_name + "Writing %s format to %s" % (export_format, output_filename))
         else:
           logging.debug(fn_name + "Writing %s format" % export_format)
@@ -675,22 +643,22 @@ class ReturnResultsHandler(webapp.RequestHandler):
                              datadump2, 
                              datadump3, 
                              datadump4, 
-                             app_title = __DEFAULT_APP_TITLE__, 
+                             app_title = settings.DEFAULT_APP_TITLE, 
                              host_msg = None):
         fn_name = "WriteDebugHtmlTemplate(): "                       
-        debug_template_values = {"debug_version" : datetime.datetime.now().strftime("%Y-%m-%d %H:%M"),
-                                 "debugmessages": debugmessages,
-                                 "datadump1": datadump1,
-                                 "datadump2": datadump2,
-                                 "datadump3": datadump3,
-                                 "datadump4": datadump4,
+        debug_template_values = {'debug_version' : datetime.datetime.now().strftime("%Y-%m-%d %H:%M"),
+                                 'debugmessages': debugmessages,
+                                 'datadump1': datadump1,
+                                 'datadump2': datadump2,
+                                 'datadump3': datadump3,
+                                 'datadump4': datadump4,
                                  'url_discussion_group' : settings.url_discussion_group,
                                  'email_discussion_group' : settings.email_discussion_group,
                                  'url_issues_page' : settings.url_issues_page,
                                  'url_source_code' : settings.url_source_code,
                                  'app_title' : app_title,
                                  'host_msg' : host_msg}
-        path = os.path.join(os.path.dirname(__file__), "debug_template.html")
+        path = os.path.join(os.path.dirname(__file__), 'debug_template.html')
         logging.debug(fn_name + "Writing debug HTML")
         self.response.out.write(template.render(path, debug_template_values))
 
@@ -698,28 +666,28 @@ class ReturnResultsHandler(webapp.RequestHandler):
                                  
 
 class OAuthHandler(webapp.RequestHandler):
-  """Handler for /oauth2callback."""
+    """Handler for /oauth2callback."""
 
-  def get(self):
-    """Handles GET requests for /oauth2callback."""
-    if not self.request.get("code"):
-      self.redirect("/")
-      return
-    user = users.get_current_user()
-    flow = pickle.loads(memcache.get(user.user_id()))
-    if flow:
-      error = False
-      try:
-        credentials = flow.step2_exchange(self.request.params)
-      except client.FlowExchangeError, e:
-        credentials = None
-        error = True
-      appengine.StorageByKeyName(
-          model.Credentials, user.user_id(), "credentials").put(credentials)
-      if error:
-        self.redirect("/?msg=ACCOUNT_ERROR")
-      else:
-        self.redirect(self.request.get("state"))
+    def get(self):
+        """Handles GET requests for /oauth2callback."""
+        if not self.request.get("code"):
+            self.redirect("/")
+            return
+        user = users.get_current_user()
+        flow = pickle.loads(memcache.get(user.user_id()))
+        if flow:
+            error = False
+            try:
+                credentials = flow.step2_exchange(self.request.params)
+            except client.FlowExchangeError, e:
+                credentials = None
+                error = True
+            appengine.StorageByKeyName(
+                model.Credentials, user.user_id(), "credentials").put(credentials)
+            if error:
+                self.redirect("/?msg=ACCOUNT_ERROR")
+            else:
+                self.redirect(self.request.get("state"))
 
         
 

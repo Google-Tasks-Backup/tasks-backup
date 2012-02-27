@@ -32,24 +32,11 @@ import math
 
 import settings
 import appversion # appversion.version is set before the upload process to keep the version number consistent
-
-
-
+import shared # Code whis is common between tasks-backup.py and worker.py
 
 
 # Orig __author__ = "dwightguth@google.com (Dwight Guth)"
 __author__ = "julie.smith.1999@gmail.com (Julie Smith)"
-
-# Extra detailed and/or personal details may be logged when user is one of the test accounts
-__testaccounts__ = ["Julie.Smith.1999@gmail.com", "JS1999.Outlook@gmail.com", "test@example.com"]
-# Full dumps of returned data id test user AND __DUMP_DATA__ = True
-__DUMP_DATA__ = False
-
-# The default app title may be overridden by a value from app_titles in the settings module
-__DEFAULT_APP_TITLE__ = "Google Tasks Backup"
-
-# The default app title may be overridden by a value from user_agents in the settings module
-__DEFAULT_USER_AGENT__ = "tasks-backup/1.0" # Default user agent
 
 
 
@@ -63,12 +50,12 @@ class CreateBackupWorker(webapp.RequestHandler):
        
         logging.debug(fn_name + "<start>")
 
-        client_id, client_secret, user_agent, app_title, host_msg = GetSettings(self.request.host)
+        client_id, client_secret, user_agent, app_title, project_name, host_msg = shared.GetSettings(self.request.host)
         
         
         user_email = self.request.get(settings.TASKS_QUEUE_KEY_NAME)
         
-        is_test_user = isTestUser(user_email)
+        is_test_user = shared.isTestUser(user_email)
         
         
         
@@ -85,6 +72,7 @@ class CreateBackupWorker(webapp.RequestHandler):
             else:
                 logging.info(fn_name + "Retrieved tasks backup job for " + str(user_email))
                 tasks_backup_job.status = 'building'
+                tasks_backup_job.job_progress_timestamp = datetime.datetime.now()
                 tasks_backup_job.put()
                 
                 user = tasks_backup_job.user
@@ -92,6 +80,7 @@ class CreateBackupWorker(webapp.RequestHandler):
                     logging.error(fn_name + "No user object in DB record for " + str(user_email))
                     tasks_backup_job.status = 'error'
                     tasks_backup_job.error_message = "Problem with user details. Please restart."
+                    tasks_backup_job.job_progress_timestamp = datetime.datetime.now()
                     tasks_backup_job.put()
                     self.response.set_status(401, "No user object")
                     return
@@ -101,6 +90,7 @@ class CreateBackupWorker(webapp.RequestHandler):
                     logging.error(fn_name + "No credentials in DB record for " + str(user_email))
                     tasks_backup_job.status = 'error'
                     tasks_backup_job.error_message = "Problem with user credentials. Please restart."
+                    tasks_backup_job.job_progress_timestamp = datetime.datetime.now()
                     tasks_backup_job.put()
                     self.response.set_status(401, "No credentials")
                     return
@@ -109,10 +99,15 @@ class CreateBackupWorker(webapp.RequestHandler):
                     logging.error(fn_name + "Invalid credentials in DB record for " + str(user_email))
                     tasks_backup_job.status = 'error'
                     tasks_backup_job.error_message = "Invalid credentials. Please restart and re-authenticate."
+                    tasks_backup_job.job_progress_timestamp = datetime.datetime.now()
                     tasks_backup_job.put()
                     self.response.set_status(401, "Invalid credentials")
                     return
               
+                include_hidden = tasks_backup_job.include_hidden
+                include_completed = tasks_backup_job.include_completed
+                include_deleted = tasks_backup_job.include_deleted
+                
                 # User is authorised
                 #logging.debug(fn_name + "Retrieved credentials from DB record")
                 
@@ -120,7 +115,11 @@ class CreateBackupWorker(webapp.RequestHandler):
                 try:
 
                     if is_test_user:
-                      logging.debug(fn_name + "User is test user %s" % user_email)
+                        logging.debug(fn_name + "User is test user %s" % user_email)
+                        
+                    logging.info(fn_name + "include_hidden = " + str(include_hidden) +
+                        ", include_completed = " + str(include_completed) +
+                        ", include_deleted = " + str(include_deleted))
                       
                     #logging.debug(fn_name + "setting up http")
                     http = httplib2.Http()
@@ -180,7 +179,7 @@ class CreateBackupWorker(webapp.RequestHandler):
                                 logging.exception(fn_name + "Still error retrieving list of tasklists after retries. Giving up")
                                 raise e
                     
-                        if is_test_user and __DUMP_DATA__:
+                        if is_test_user and settings.DUMP_DATA:
                             logging.debug(fn_name + "tasklists_data ==>")
                             logging.debug(tasklists_data)
 
@@ -189,7 +188,7 @@ class CreateBackupWorker(webapp.RequestHandler):
                         # tasklists_list is a list containing the details of the user's tasklists. 
                         # We are only interested in the title
                       
-                        if is_test_user and __DUMP_DATA__:
+                        if is_test_user and settings.DUMP_DATA:
                             logging.debug(fn_name + "tasklists_list ==>")
                             logging.debug(tasklists_list)
 
@@ -200,7 +199,7 @@ class CreateBackupWorker(webapp.RequestHandler):
                         for tasklist_data in tasklists_list:
                             total_num_tasklists = total_num_tasklists + 1
                           
-                            if is_test_user and __DUMP_DATA__:
+                            if is_test_user and settings.DUMP_DATA:
                                 logging.debug(fn_name + "tasklist_data ==>")
                                 logging.debug(tasklist_data)
                           
@@ -216,15 +215,17 @@ class CreateBackupWorker(webapp.RequestHandler):
                             tasklist_title = tasklist_data[u'title']
                             tasklist_id = tasklist_data[u'id']
                           
+                            if is_test_user:
+                                logging.debug(fn_name + "Process all the tasks in " + str(tasklist_title))
+                                    
                             # Process all the tasks in this task list
-                            # if is_test_user:
-                                # logging.debug(fn_name + "Process all the tasks in " + str(tasklist_title))
-                            # else:
-                                # logging.debug(fn_name + "Process all the tasks in this tasklist")
+                            tasklist_dict, num_tasks = self.GetTasksInTasklist(tasks_svc, tasklist_title, tasklist_id, is_test_user,
+                                tasks_backup_job, include_hidden, include_completed, include_deleted)
                                 
-                            tasklist_dict, num_tasks = self.GetTasksInTasklist(tasks_svc, tasklist_title, tasklist_id, is_test_user)
                             total_num_tasks = total_num_tasks + num_tasks
-                            tasks_backup_job.progress = total_num_tasks
+                            tasks_backup_job.total_progress = total_num_tasks
+                            tasks_backup_job.tasklist_progress = 0 # Because total_progress now includes num_tasks for current tasklist
+                            tasks_backup_job.job_progress_timestamp = datetime.datetime.now()
                             tasks_backup_job.put()
                             
                             # if is_test_user:
@@ -253,7 +254,7 @@ class CreateBackupWorker(webapp.RequestHandler):
                     logging.info(fn_name + "Retrieved %d tasks from %d tasklists" % (total_num_tasks, total_num_tasklists))
                       
                     # ------------------------------------------------------
-                    #   Store the data, so we can returne it to the user
+                    #   Store the data, so we can return it to the user
                     # ------------------------------------------------------
                       
  
@@ -328,19 +329,22 @@ class CreateBackupWorker(webapp.RequestHandler):
                         
                         # Mark backup completed
                         tasks_backup_job.status = 'completed'
+                        tasks_backup_job.job_progress_timestamp = datetime.datetime.now()
                         tasks_backup_job.put()
                         logging.info(fn_name + "Marked job complete for " + str(user_email) + ", with progress = " + 
-                            str(tasks_backup_job.progress))
+                            str(tasks_backup_job.total_progress))
                     except apiproxy_errors.RequestTooLargeError, e:
                         logging.exception(fn_name + "Error putting results in DB")
                         tasks_backup_job.status = 'error'
                         tasks_backup_job.error_message = "Tasklists data is too large - Unable to store tasklists in DB: " + str(e)
+                        tasks_backup_job.job_progress_timestamp = datetime.datetime.now()
                         tasks_backup_job.put()
                     
                     except Exception, e:
                         logging.exception(fn_name + "Error putting results in DB")
                         tasks_backup_job.status = 'error'
                         tasks_backup_job.error_message = "Unable to store tasklists in DB: " + str(e)
+                        tasks_backup_job.job_progress_timestamp = datetime.datetime.now()
                         tasks_backup_job.put()
 
 
@@ -351,24 +355,28 @@ class CreateBackupWorker(webapp.RequestHandler):
                     logging.exception(fn_name + "urlfetch_errors.DeadlineExceededError:")
                     tasks_backup_job.status = 'error'
                     tasks_backup_job.error_message = "urlfetch_errors.DeadlineExceededError: " + str(e)
+                    tasks_backup_job.job_progress_timestamp = datetime.datetime.now()
                     tasks_backup_job.put()
               
                 except apiproxy_errors.DeadlineExceededError, e:
                     logging.exception(fn_name + "apiproxy_errors.DeadlineExceededError:")
                     tasks_backup_job.status = 'error'
                     tasks_backup_job.error_message = "apiproxy_errors.DeadlineExceededError: " + str(e)
+                    tasks_backup_job.job_progress_timestamp = datetime.datetime.now()
                     tasks_backup_job.put()
                 
                 except DeadlineExceededError, e:
                     logging.exception(fn_name + "DeadlineExceededError:")
                     tasks_backup_job.status = 'error'
                     tasks_backup_job.error_message = "DeadlineExceededError: " + str(e)
+                    tasks_backup_job.job_progress_timestamp = datetime.datetime.now()
                     tasks_backup_job.put()
                 
                 except Exception, e:
                     logging.exception(fn_name + "Exception:") 
                     tasks_backup_job.status = 'error'
                     tasks_backup_job.error_message = "Exception: " + str(e)
+                    tasks_backup_job.job_progress_timestamp = datetime.datetime.now()
                     tasks_backup_job.put()
                 
                 end_time = datetime.datetime.now()
@@ -377,23 +385,28 @@ class CreateBackupWorker(webapp.RequestHandler):
                     str(process_time.microseconds) + " seconds")
 
                 
-                # logging.info(fn_name + "Finished processing. Progress = " + 
-                    # str(tasks_backup_job.progress) + " for " + str(user_email))
+                # logging.info(fn_name + "Finished processing. Total progress = " + 
+                    # str(tasks_backup_job.total_progress) + " for " + str(user_email))
         else:
             logging.error(fn_name + "No processing, as there was no user_email key")
             
         logging.debug(fn_name + "<End>, user = " + str(user_email))
     
     
-    def GetTasksInTasklist(self, tasks_svc, tasklist_title, tasklist_id, is_test_user):
+    def GetTasksInTasklist(self, tasks_svc, tasklist_title, tasklist_id, is_test_user, tasks_backup_job, 
+                           include_hidden, include_completed, include_deleted):
         """ Returns all the tasks in the tasklist 
         
             arguments:
-              tasks_svc     -- reference to the common service used to retrieve tasks ( e.g., service.tasks() )
-              
-              tasklist_title -- Name of the tasklist
-              tasklist_id    -- ID used to retrieve tasks from this tasklist
-                                MUST match the ID returned in the tasklist data
+              tasks_svc                -- reference to the common service used to retrieve tasks ( e.g., service.tasks() )
+              tasklist_title           -- Name of the tasklist
+              tasklist_id              -- ID used to retrieve tasks from this tasklist
+                                          MUST match the ID returned in the tasklist data
+              is_test_user             -- True if the user is a test user, to enable more detailed logging
+              tasks_backup_job         -- DB entity for this backup job. Passed in so this method can updated timestamp and progress
+              include_hidden           -- If true, include hidden tasks in the backup
+              include_completed        -- If true, include completed tasks in the backup
+              include_deleted          -- If true, include deleted tasks in the backup
               
             returns a tuple;
               two-element dictionary;
@@ -412,6 +425,13 @@ class CreateBackupWorker(webapp.RequestHandler):
         more_tasks_data_to_retrieve = True
         next_tasks_page_token = None
         
+        # Keep track of when last updated, to prevent excessive DB access which could exceed quota
+        prev_progress_timestamp = datetime.datetime.now()
+        
+        if is_test_user:
+          logging.debug(fn_name + "include_hidden = " + str(include_hidden) +
+                            ", include_completed = " + str(include_completed) +
+                            ", include_deleted = " + str(include_deleted))
         # ---------------------------------------------------------------------------
         # Retrieve the tasks in this tasklist, and store as "tasks" in the dictionary
         # ---------------------------------------------------------------------------
@@ -426,10 +446,12 @@ class CreateBackupWorker(webapp.RequestHandler):
                 # This happens if there are more than 100 tasks in the list
                 # See http://code.google.com/apis/tasks/v1/using.html#api_params
                 #     "Maximum allowable value: maxResults=100"
-                tasks_data = tasks_svc.list(tasklist = tasklist_id, pageToken=next_tasks_page_token, showHidden=True).execute()
+                tasks_data = tasks_svc.list(tasklist = tasklist_id, pageToken=next_tasks_page_token, 
+                    showHidden=include_hidden, showCompleted=include_completed, showDeleted=include_deleted).execute()
               else:
                 # Get the first (or only) page of results for this tasklist
-                tasks_data = tasks_svc.list(tasklist = tasklist_id, showHidden=True).execute()
+                tasks_data = tasks_svc.list(tasklist = tasklist_id, 
+                    showHidden=include_hidden, showCompleted=include_completed, showDeleted=include_deleted).execute()
               # Succeeded, so continue
               break
             except Exception, e:
@@ -441,13 +463,13 @@ class CreateBackupWorker(webapp.RequestHandler):
                 logging.exception(fn_name + "Still error retrieving tasks for tasklist after retrying. Giving up")
                 raise e
               
-          if is_test_user and __DUMP_DATA__:
+          if is_test_user and settings.DUMP_DATA:
             logging.debug(fn_name + "tasks_data ==>")
             logging.debug(tasks_data)
           
           tasks = tasks_data[u'items'] # Store all the tasks (List of Dict)
           
-          if is_test_user and __DUMP_DATA__:
+          if is_test_user and settings.DUMP_DATA:
             logging.debug(fn_name + "tasks ==>")
             logging.debug(tasks)
           
@@ -482,7 +504,6 @@ class CreateBackupWorker(webapp.RequestHandler):
           # else:
             # logging.debug(fn_name + "Adding %d items to tasklist" % len(tasks))
 
-          
         
           # ---------------------------------------------------------------------
           # Check if there is another page of data (more tasks for this tasklist)
@@ -497,6 +518,14 @@ class CreateBackupWorker(webapp.RequestHandler):
             next_tasks_page_token = tasks_data['nextPageToken']
             # if is_test_user:
               # logging.debug(fn_name + "There is (at least) one more page of data to be retrieved")
+              
+            # More than one page, so update progress
+            # Don't need to update here if no more pages, because calling method updates
+            if (datetime.datetime.now() - prev_progress_timestamp).seconds > settings.TASK_COUNT_UPDATE_INTERVAL:
+              tasks_backup_job.tasklist_progress = num_tasks
+              tasks_backup_job.job_progress_timestamp = datetime.datetime.now()
+              tasks_backup_job.put()
+              prev_progress_timestamp = datetime.datetime.now()
           else:
             # This is the last (or only) page of results (list of tasks) for this task lists
             more_tasks_data_to_retrieve = False
@@ -514,65 +543,6 @@ def urlfetch_timeout_hook(service, call, request, response):
         request.set_deadline(30.0)
 
 
-def isTestUser(user_email):
-    """ Returns True if user_email is one of the defined __testaccounts__ 
-  
-        Used when testing to ensure that only test user's details are logged.
-    """
-    return (user_email.lower() in (email.lower() for email in __testaccounts__))
-  
-  
-def GetSettings(hostname):
-    """ Returns a tuple with hostname-specific settings
-    args
-        hostname         -- Name of the host on which this particular app instance is running,
-                              as returned by self.request.host
-    returns
-        client_id        -- The OAuth client ID for app instance running on this particular host
-        client_secret    -- The OAuth client secret for app instance running on this particular host
-        user_agent       -- The user agent string for app instance running on this particular host
-        app_title        -- The page title string for app instance running on this particular host
-        host_msg         -- An optional message which is displayed on some web pages, 
-                              for app instance running on this particular host
-    """
-    
-    if hasattr(settings, 'client_ids'):
-        # New style, multi host settings module
-        if settings.client_ids.has_key(hostname):
-            client_id = settings.client_ids[hostname]
-        else:
-            client_id = None
-            raise KeyError("No ID entry in settings module for host = %s" % hostname)
-    else:
-        raise LookupError("No client_ids in settings")
-    
-    if hasattr(settings, 'client_secrets'):
-        # New style, multi host settings module
-        if settings.client_secrets.has_key(hostname):
-            client_secret = settings.client_secrets[hostname]
-        else:
-            client_secret = None
-            raise KeyError("No secret entry in settings module for host = %s" % hostname)
-    else:
-        raise LookupError("No client_secrets in settings")
-    
-    if hasattr(settings, 'user_agents') and settings.user_agents.has_key(hostname):
-        user_agent = settings.user_agents[hostname]
-    else:
-        user_agent = __DEFAULT_USER_AGENT__
-
-    if hasattr(settings, 'app_titles') and settings.app_titles.has_key(hostname):
-        app_title = settings.app_titles[hostname]
-    else:
-        app_title = __DEFAULT_APP_TITLE__
-    
-    if hasattr(settings, 'host_msgs') and settings.host_msgs.has_key(hostname):
-        host_msg = settings.host_msgs[hostname]
-    else:
-        host_msg = None
-    
-    return client_id, client_secret, user_agent, app_title, host_msg
-    
 
 
 
@@ -585,7 +555,6 @@ def main():
         ('/worker', CreateBackupWorker),
     ], debug=True))
     
-# __RUNNING_ON_DEV__ = os.environ['SERVER_SOFTWARE'].startswith('Dev')
 
 if __name__ == '__main__':
     main()

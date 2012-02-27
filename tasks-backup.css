@@ -20,6 +20,8 @@ body {
   font-size: 10pt;
   max-width: 1024px;
   margin: auto;
+  padding-left: 15px;
+  padding-right: 15px;
 }
 
 .take-note {
@@ -125,12 +127,17 @@ form td:first-child {
 }
 
 td.action-button {
-  padding-top: 10px;
-  padding-bottom: 10px;
-  padding-left: 10px;
-  padding-right: 10px;
+    padding-top: 10px;
+    padding-bottom: 10px;
+    padding-left: 10px;
+    padding-right: 10px;
 }
 
+table.include-selection {
+	border-collapse:separate;
+	border-spacing:25px 6px; /* Horiz, vert */
+}
+    
 table.format-selection {
 	border-collapse:separate;
 	border-spacing:5px 10px; /* Horiz, vert */
@@ -147,11 +154,11 @@ td.note-heading {
 	vertical-align: top;
 }
 	
-button.button {
-  cursor: pointer;
-  width: 100%;
-  font-size: 16pt;
-  font-weight: bold;
+.big-button {
+    cursor: pointer;
+    width: 100%;
+    font-size: 16pt;
+    font-weight: bold;
 }
 
 li.tasklist {
