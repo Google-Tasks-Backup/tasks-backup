@@ -19,7 +19,7 @@ This is the Django template file for HTML tasks with "hTodo" microformatting.
 <html>
   <head>
     <title>{{ app_title }} - Snapshot</title>
-    <link rel="stylesheet" type="text/css" href="/tasks-backup.css"></link>
+    <link rel="stylesheet" type="text/css" href="hTodo.css"></link>
   </head>
   <body>
     {% if tasklists %}
@@ -27,9 +27,18 @@ This is the Django template file for HTML tasks with "hTodo" microformatting.
     <ul>
       {% for tasklist in tasklists %}
       <li class="tasklist">
-        <span class="tasklistheading">Task List: {{ tasklist.title }} - {{ tasklist.tasks.count }} tasks.</span>
-        {% if tasklist.tasks.count %}
+        <span class="tasklistheading">Task List: {{ tasklist.title }} - {{ tasklist.tasks|length }} tasks.</span>
+        {% if tasklist.tasks %}
         <ul class="fake">
+          {% comment %}
+          recurse item <PARAMS>
+            item: the name of the variable to create for each loop iteration.
+            Parameters:
+              root: the list of root-level items to loop through.
+              children: the name of the attribute which returns the children of each item.
+              parent: the name of an attribute which returns None if the item is a root item.
+              sort: the name of the attribute which returns the sort order of each item.
+          {% endcomment %}
           {% recurse task root:tasklist.tasks parent:"parent_" children:"children" sort:"position" %}
             <li class="vtodo status-{{ task.status }}">
               <span class="summary">{{ task.title }}</span><br/>

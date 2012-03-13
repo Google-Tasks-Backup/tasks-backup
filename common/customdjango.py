@@ -117,12 +117,9 @@ def recurse(parser, token):
     item: the name of the variable to create for each loop iteration.
     Parameters:
       root: the list of root-level items to loop through.
-      children: the name of the attribute which returns the children of each
-        item.
-      parent: the name of an attribute which returns None if the item is a root
-        item.
-      sort: the name of the attribute which returns the sort order of each
-        item.
+      children: the name of the attribute which returns the children of each item.
+      parent: the name of an attribute which returns None if the item is a root item.
+      sort: the name of the attribute which returns the sort order of each item.
 
   This tag sets the haschildren variable to a boolean of whether or not the
   current loop iteration has children.  This value can be used or not as

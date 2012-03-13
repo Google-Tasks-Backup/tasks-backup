@@ -48,7 +48,7 @@ class CreateBackupWorker(webapp.RequestHandler):
         
         start_time = datetime.datetime.now()
        
-        logging.debug(fn_name + "<start>")
+        logging.debug(fn_name + "<start> (app version %s)" %appversion.version)
 
         client_id, client_secret, user_agent, app_title, project_name, host_msg = shared.GetSettings(self.request.host)
         
@@ -183,14 +183,21 @@ class CreateBackupWorker(webapp.RequestHandler):
                             logging.debug(fn_name + "tasklists_data ==>")
                             logging.debug(tasklists_data)
 
-                        tasklists_list = tasklists_data[u'items']
+                        if tasklists_data.has_key(u'items'):
+                          tasklists_list = tasklists_data[u'items']
+                        else:
+                          # If there are no tasklists, then there will be no 'items' element. This could happen if
+                          # the user has deleted all their tasklists. Not sure if this is even possible, but
+                          # checking anyway, since it is possible to have a tasklist without 'items' (see issue #9)
+                          logging.warning(fn_name + "User has no tasklists.")
+                          tasklists_list = []
                       
                         # tasklists_list is a list containing the details of the user's tasklists. 
                         # We are only interested in the title
                       
-                        if is_test_user and settings.DUMP_DATA:
-                            logging.debug(fn_name + "tasklists_list ==>")
-                            logging.debug(tasklists_list)
+                        # if is_test_user and settings.DUMP_DATA:
+                            # logging.debug(fn_name + "tasklists_list ==>")
+                            # logging.debug(tasklists_list)
 
 
                         # ---------------------------------------
@@ -467,42 +474,55 @@ class CreateBackupWorker(webapp.RequestHandler):
             logging.debug(fn_name + "tasks_data ==>")
             logging.debug(tasks_data)
           
-          tasks = tasks_data[u'items'] # Store all the tasks (List of Dict)
-          
-          if is_test_user and settings.DUMP_DATA:
-            logging.debug(fn_name + "tasks ==>")
-            logging.debug(tasks)
-          
-          # ------------------------------------------------------------------------------------------------
-          # Fix date/time format for each task, so that the date/time values can be used in Django templates
-          # Convert the yyyy-mm-ddThh:mm:ss.dddZ format to a datetime object, and store that
-          # ------------------------------------------------------------------------------------------------
-          for t in tasks:
-            num_tasks = num_tasks + 1
-            
-            date_due = t.get(u'due')
-            if date_due:
-              t[u'due'] = datetime.datetime.strptime(date_due, "%Y-%m-%dT00:00:00.000Z").date()
-              
-            datetime_updated = t.get(u'updated')
-            if datetime_updated:
-              t[u'updated'] = datetime.datetime.strptime(datetime_updated, "%Y-%m-%dT%H:%M:%S.000Z")
-              
-            datetime_completed = t.get(u'completed')
-            if datetime_completed:
-              t[u'completed'] = datetime.datetime.strptime(datetime_completed, "%Y-%m-%dT%H:%M:%S.000Z")
-          
-          if tasklist_dict.has_key(u'tasks'):
-            # This is the n'th page of task data for this taslkist, so extend the existing list of tasks
-            tasklist_dict[u'tasks'].extend(tasks)
+          if not tasks_data.has_key(u'items'):
+            # When using the Google Tasks webpage at https://mail.google.com/tasks/canvas, there will always
+            # be at least one task in any tasklist, because when deleting the last task, a new blank task is
+            # automatically created.
+            # However, a third-party app (e.g., Calengoo on Android) CAN delete all the tasks in a task list,
+            # which results in a tasklist without an 'items' element.
+            logging.info(fn_name + "No tasks in tasklist")
           else:
-            # This is the first (or only) list of task for this tasklist
-            tasklist_dict[u'tasks'] = tasks
-          
-          # if is_test_user:
-            # logging.debug(fn_name + "Adding %d items for %s" % (len(tasks), tasklist_title))
-          # else:
-            # logging.debug(fn_name + "Adding %d items to tasklist" % len(tasks))
+            try:
+              tasks = tasks_data[u'items'] # Store all the tasks (List of Dict)
+            except Exception, e:
+              logging.exception(fn_name, "Exception extracting items from tasks_data. Dump follows ==>")
+              logging.error(tasks_data)
+              raise e
+            
+            # if is_test_user and settings.DUMP_DATA:
+              # logging.debug(fn_name + "tasks ==>")
+              # logging.debug(tasks)
+            
+            # ------------------------------------------------------------------------------------------------
+            # Fix date/time format for each task, so that the date/time values can be used in Django templates
+            # Convert the yyyy-mm-ddThh:mm:ss.dddZ format to a datetime object, and store that
+            # ------------------------------------------------------------------------------------------------
+            for t in tasks:
+              num_tasks = num_tasks + 1
+              
+              date_due = t.get(u'due')
+              if date_due:
+                t[u'due'] = datetime.datetime.strptime(date_due, "%Y-%m-%dT00:00:00.000Z").date()
+                
+              datetime_updated = t.get(u'updated')
+              if datetime_updated:
+                t[u'updated'] = datetime.datetime.strptime(datetime_updated, "%Y-%m-%dT%H:%M:%S.000Z")
+                
+              datetime_completed = t.get(u'completed')
+              if datetime_completed:
+                t[u'completed'] = datetime.datetime.strptime(datetime_completed, "%Y-%m-%dT%H:%M:%S.000Z")
+            
+            if tasklist_dict.has_key(u'tasks'):
+              # This is the n'th page of task data for this taslkist, so extend the existing list of tasks
+              tasklist_dict[u'tasks'].extend(tasks)
+            else:
+              # This is the first (or only) list of task for this tasklist
+              tasklist_dict[u'tasks'] = tasks
+            
+            # if is_test_user:
+              # logging.debug(fn_name + "Adding %d items for %s" % (len(tasks), tasklist_title))
+            # else:
+              # logging.debug(fn_name + "Adding %d items to tasklist" % len(tasks))
 
         
           # ---------------------------------------------------------------------

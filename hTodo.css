@@ -1,0 +1,123 @@
+/* Copyright 2011 Google Inc.  All Rights Reserved.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ *
+ * Author: dwightguth@google.com (Dwight Guth) */
+
+body {
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: 10pt;
+  max-width: 800px;
+  margin: auto;
+}
+
+.logo {
+  margin-top: 10px;
+}
+
+.heading {
+  font-weight: bold;
+  font-size: 12pt;
+  margin: 10px;
+}
+
+.row1 {
+  background-color: #aeffdg;
+}
+
+.row2 {
+}
+
+.break {
+  margin-bottom: 20px !important;
+}
+
+.info {
+  padding: 1px 6px;
+}
+
+.alert {
+  color: #C00;
+}
+
+.disabled {
+  color: grey;
+}
+
+.caption {
+  font-weight: normal !important;
+  font-size: smaller !important;
+  font-style: italic !important;
+}
+
+.footer {
+  font-style: italic;
+  font-size: smaller;
+}
+
+form td:first-child {
+  padding-right:20px;
+}
+
+.product-desc {
+  padding: 10px;
+  vertical-align: top;
+}
+
+td.button-left {
+  width: 33%;
+  padding-right: 10px;
+}
+
+td.button-middle {
+  width: 34%;
+  padding-left: 10px;
+  padding-right: 10px;
+}
+
+td.button-right {
+  width: 33%;
+  padding-left: 10px;
+}
+
+button.button {
+  cursor: pointer;
+  width: 100%;
+  font-size: 16pt;
+  font-weight: bold;
+}
+
+ul.fake {
+  padding-left: 1.8em;
+}
+
+ul.fake > li {
+  list-style-type: none;
+}
+
+ul.fake > li.status-completed {
+  list-style-type: none;
+}
+
+ul.fake > li:before {
+  content: "\2013 \a0 \a0";
+}
+
+ul.fake > li.status-completed:before {
+  content: "\2713 \a0";
+}
+
+span.completed,
+span.categories,
+span.last-modified {
+  display: none;
+}

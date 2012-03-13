@@ -1,0 +1,278 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE html PUBLIC
+  "-//W3C//DTD XHTML 1.0 Strict//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en">
+  <head>
+    <title>Information about Google Tasks</title>
+    <link rel="stylesheet" type="text/css" href="tasks-backup.css"></link>
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+    <meta name="description" content="" />
+    <meta name="keywords" content="" />
+    <!--link type="text/css" rel="stylesheet" href="style.css"-->
+  </head>
+  
+  <body>
+    <div class="break">
+    </div>
+    
+    <h2>Background information about Google Tasks data</h2>
+    
+    
+    <div class="break">
+        Note that this information is based on my own discoveries and conclusions as at 27 Feb 2012. I hope that this information helps people, but I cannot guarantee the accuracy or completeness of this information. Note also that Google may change their specifications, in which case this information may be out of date.
+    </div>
+    
+    <h3>Understanding the "Raw" data format</h3>
+    
+    <div class="break">
+        Table 1 lists the various states and the corresponding task attribute values. It is possible to select to download only tasks which match specified task attributes when initiating a backup with {{ app_title }} 
+    </div>
+
+    <div class="break">
+        Normally, when downloading for applications such as Outlook or iCalendar, uncheck <span class="take-note">deleted</span> and <span class="take-note">hidden</span> <span class="take-note-smaller">(note 1)</span>. Check <span class="take-note">completed</span> if you wish to include completed tasks (i.e., to keep a backup of your completed tasks).
+    </div>
+
+    <table border="1" cellpadding="5">
+        <caption class="heading" >Table 1: Task states</caption>
+        <tr>
+            <th colspan="3">Task attributes</th><th rowspan="2">Description</th><th colspan="3">View (Visibility)</th>
+        </tr>
+        <tr>
+        <th>status</th><th>deleted</th><th>hidden</th><th>Main view<br/>(My order/Date Order)</th><th>Completed tasks</th><th>Trash<br/><span class="take-note-smaller">Note 2</span></th>
+        </tr>
+        
+        <tr>
+            <td>needsAction</td><td>False</td><td>False</td><td>To be completed, visible in main window</td><td>Yes</td><td>No</td><td>No</td>
+        </tr>
+        <tr>
+            <td>completed</td><td>False</td><td>False</td><td>Marked complete, before clicking [Clear completed]</td><td>Yes</td><td>Yes</td><td>No</td>
+        </tr>
+        <tr>
+            <td>completed</td><td>False</td><td>True</td><td>Marked complete, after clicking [Clear completed]</td><td>No</td><td>Yes</td><td>No</td>
+        </tr>
+        <tr>
+            <td>needsAction</td><td>True</td><td>False</td><td>Deleted incomplete task. Visible only in [Trash]</td><td>No</td><td>No</td><td>Yes</td>
+        </tr>
+        <tr>
+            <td>completed</td><td>True</td><td>False</td><td>Deleted completed task. Visible only in [Trash]</td><td>No</td><td>No</td><td>Yes</td>
+        </tr>
+        <tr>
+            <td>needsAction</td><td>True</td><td>True</td> <td class="not-valid" colspan="4"> ======= Not valid =======</td>
+        </tr>
+        <tr>
+            <td>needsAction</td><td>False</td><td>True</td><td class="not-valid" colspan="4"> ======= Not valid =======</td>
+        </tr>
+        <tr>
+            <td>completed</td><td>True</td><td>True</td>   <td class="not-valid" colspan="4"> ======= Not valid =======</td>
+        </tr>
+    </table>
+ 
+    <div class="break">
+    </div>
+ 
+ 
+
+    <div class="heading">
+        Notes
+    </div>
+    <table  class="format-selection">
+        <tr>
+            <td class="note-heading-smaller">
+                Note 1 - 
+            </td>
+            <td>
+                The Outlook and iCalendar file formats do not have fields for <span class="take-note">deleted</span> or <span class="take-note">hidden</span>, so programs may display tasks which are not normally visible.
+            </td>
+        </tr>
+        <tr>
+            <td class="note-heading-smaller">
+                Note 2 - 
+            </td>
+            <td>
+                When tasks are deleted, they are marked as Hidden and moved to the [Trash] view.
+                <br/>
+                According to Google, deleted tasks stay in the Trash (deleted = True) for "some period of time" and are then auto deleted. I have noticed deleted task up to six months old. There does not appear to be any way to force a task to be actually deleted. That is, the Trash bin cannot be emptied by the user.
+            </td>
+        </tr>
+    </table>
+
+    <div class="break">
+    </div>
+ 
+ 
+ 
+ 
+ 
+ 
+    <table border="1" cellpadding="5">
+    
+        <tr>
+            <th colspan="3">Task attributes</th><th rowspan="2">Description</th><th colspan="3">View (Visibility)</th>
+        </tr>
+        <tr>
+        <th>status</th><th>deleted</th><th>hidden</th><th>Main view<br/>(My order/Date Order)</th><th>Completed tasks</th><th>Trash</th>
+        </tr>
+        
+        <tr>
+            <td>needsAction</td><td>False</td><td>False</td><td>To be completed, visible in main window</td><td>Yes</td><td>No</td><td>No</td>
+        </tr>
+        <tr>
+            <td>needsAction</td><td>False</td><td>True</td><td class="not-valid" colspan="4">====== Not valid =======</td>
+        </tr>
+        <tr>
+            <td>needsAction</td><td>True</td><td>False</td><td>Visible only in [Trash]</td><td>No</td><td>No</td><td>Yes</td>
+        </tr>
+        <tr>
+            <td>needsAction</td><td>True</td><td>True</td><td class="not-valid" colspan="4">======= Not valid =======</td>
+        </tr>
+        <tr>
+            <td>completed</td><td>False</td><td>False</td><td>Marked complete, before clicking [Clear completed]</td><td>Yes</td><td>Yes</td><td>No</td>
+        </tr>
+        <tr>
+            <td>completed</td><td>False</td><td>True</td><td>Marked complete, after clicking [Clear completed]</td><td>No</td><td>Yes</td><td>No</td>
+        </tr>
+        <tr>
+            <td>completed</td><td>True</td><td>False</td><td>Visible only in [Trash]</td><td>No</td><td>No</td><td>Yes</td>
+        </tr>
+        <tr>
+            <td>completed</td><td>True</td><td>True</td><td class="not-valid" colspan="4">======= Not valid =======</td>
+        </tr>
+    </table>
+ 
+ 
+    <table border="1" cellpadding="5">
+    
+        <tr>
+            <th colspan="3">Task attributes</th><th rowspan="2">Meaning</th><th colspan="3">View (Visibility)</th>
+        </tr>
+        <tr>
+        <th>status</th><th>deleted</th><th>hidden</th><th>Main view<br/>(My order/Date Order)</th><th>Completed tasks</th><th>Trash</th>
+        </tr>
+        
+        <tr>
+            <td>needsAction</td><td>False</td><td>False</td><td>To be completed, visible in main window</td><td>Yes</td><td>No</td><td>No</td>
+        </tr>
+        <tr>
+            <td>needsAction</td><td>False</td><td>True</td><td>== Not valid ==</td><td>N/A</td><td>N/A</td><td>N/A</td>
+        </tr>
+        <tr>
+            <td>needsAction</td><td>True</td><td>False</td><td>Visible only in [Trash]</td><td>No</td><td>No</td><td>Yes</td>
+        </tr>
+        <tr>
+            <td>needsAction</td><td>True</td><td>True</td><td>== Not valid ==</td><td>N/A</td><td>N/A</td><td>N/A</td>
+        </tr>
+        <tr>
+            <td>completed</td><td>False</td><td>False</td><td>Marked complete, visible in main list</td><td>Yes</td><td>No</td><td>No</td>
+        </tr>
+        <tr>
+            <td>completed</td><td>False</td><td>True</td><td>Marked complete, and then clicked [Clear completed]</td><td>Yes</td><td>No</td><td>No</td>
+        </tr>
+        <tr>
+            <td>completed</td><td>True</td><td>False</td><td>Visible only in [Trash]</td><td>No</td><td>No</td><td>Yes</td>
+        </tr>
+        <tr>
+            <td>completed</td><td>True</td><td>True</td><td>== Not valid ==</td><td>N/A</td><td>N/A</td><td>N/A</td>
+        </tr>
+    </table>
+ 
+ 
+ 
+
+        
+    <table border="1" cellpadding="5">
+    
+        <tr>
+            <th colspan="3">Task attributes</th><th rowspan="2">Meaning</th>
+        </tr>
+        <tr>
+            <th>status</th><th>deleted</th><th>hidden</th>
+        </tr>
+        
+        <tr>
+            <td>needsAction</td><td>False</td><td>False</td><td>To be completed, visible in main window</td>
+        </tr>
+        <tr>
+            <td>needsAction</td><td>False</td><td>True</td><td>== Not valid ==</td>
+        </tr>
+        <tr>
+            <td>needsAction</td><td>True</td><td>False</td><td>Visible only in [Trash]</td>
+        </tr>
+        <tr>
+            <td>needsAction</td><td>True</td><td>True</td><td>== Not valid ==</td>
+        </tr>
+        <tr>
+            <td>completed</td><td>False</td><td>False</td><td>Marked complete, visible in main list</td>
+        </tr>
+        <tr>
+            <td>completed</td><td>False</td><td>True</td><td>Marked complete, and then clicked [Clear completed]</td>
+        </tr>
+        <tr>
+            <td>completed</td><td>True</td><td>False</td><td>Visible only in [Trash]</td>
+        </tr>
+        <tr>
+            <td>completed</td><td>True</td><td>True</td><td>== Not valid ==</td>
+        </tr>
+    </table>
+    
+           To summarise, a task can be in any one of the following states;
+            ** needsAction (unchecked)
+            ---- Visible in main list
+
+            ** completed (checked) {before clicking [Clear completed]}
+            ---- Visible in main list 
+
+            ** completed (checked) {after clicking [Clear completed]}
+            ---- Visible only in [Completed tasks]
+
+            ** Deleted
+            ---- Visible only in [Trash]
+            
+        -> Marked complete, and then clicked Clear completed = completed, hidden
+        -> Marked complete and deleted (appears in [Trash]) = completed, deleted
+
+
+- Investigate calling ReturnResultsHandler.post() from ReturnResultsHandler.get() 
+-- Sometimes the get() handler is being called
+
+    
+    <table  class="format-selection">
+        <tr>
+            <td class="note-heading-smaller">
+                Note 1 - 
+            </td>
+            <td>
+                When checked, the backup includes completed tasks. If unchecked, only incomplete tasks are exported.
+            </td>
+        </tr>
+        <tr>
+            <td class="note-heading-smaller">
+                Note 2 - 
+            </td>
+            <td>
+                When tasks are deleted, they are marked as Hidden and moved to the [Trash] view.
+                <br />
+                Outlook and iCal do not differentiate deleted tasks, so they will appear as normal tasks.
+            </td>
+        </tr>
+        <tr>
+            <td class="note-heading-smaller">
+                Note 3 - 
+            </td>
+            <td>
+                According to Google, deleted tasks stay in the Trash (status = deleted) for "some period of time" and are then auto deleted. I have noticed deleted task up to six months old. There does not appear to be any way to force a task to be actually deleted. That is, the Trash bin cannot be emptied by the user.
+            </td>
+        </tr>
+        <tr>
+            <td class="note-heading-smaller">
+                Note 4 - 
+            </td>
+            <td>
+                When tasks which have been marked complete, and then [Clear completed] is clicked, those tasks are marked as Completed AND Hidden. 
+                <br />
+                Outlook and iCal do not differentiate hidden tasks, so they will appear as normal tasks.
+            </td>
+        </tr>
+    </table>
+  </body>
+</html>

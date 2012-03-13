@@ -222,7 +222,8 @@ class OAuth2Credentials(Credentials):
     else:
       # An {'error':...} response body means the token is expired or revoked, so
       # we flag the credentials as such.
-      logging.warning('client._refresh: Failed to retrieve access token: %s' % content)
+      # Julie Smith, 11 Mar 2012: This seems to happen every time, so downgrading from Warning to Info
+      logging.info('client._refresh: Failed to retrieve access token: %s' % content)
       error_msg = 'Invalid response %s.' % resp['status']
       try:
         d = simplejson.loads(content)

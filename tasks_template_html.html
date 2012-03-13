@@ -13,13 +13,14 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 
-This is the Django template file for HTML tasks with "hTodo" microformatting.
+This is the Django template file for HTML tasks.
+
 {% endcomment %}
 <!doctype html>
 <html>
   <head>
     <title>{{ app_title }} - List of tasks</title>
-    <link rel="stylesheet" type="text/css" href="/tasks-backup.css"></link>
+    <link rel="stylesheet" type="text/css" href="tasks-backup.css"></link>
   </head>
   
   <body>
@@ -29,46 +30,71 @@ This is the Django template file for HTML tasks with "hTodo" microformatting.
       </div>
     {% endif %}
 
-    <div class="break">
-      <h3>Tasks for {{ user_email }}</h3>
-      </div>
     {% if tasklists %}
+	  <div class="break">
+        <!-- Display the job timestamp, so that it is clear when the snapshot was taken -->
+		<h3>Tasks for {{ user_email }} as at {{ job_start_timestamp }} UTC</h3>
+      </div>
       <p>{{ tasklists|length }} task lists.</p>
       <ul>
         {% for tasklist in tasklists %}
           <li class="tasklist">
-            <span class="tasklistheading">Task List: {{ tasklist.title }} - {{ tasklist.tasks.count }} tasks.</span>
-            {% for task in tasklist.tasks %}
-              <ul class="task">
-                  <li class="task-status-{{ task.status }}">
-                    <span class="task-title">{{ task.title }}</span>
-                    <br/>
-                    
-                    {% if task.notes %}
-                      <div class="task-notes">{{ task.notes|replacenewlinebr }}</div>
-                    {% endif %}
-                    
-                    {% if task.due %}
-                      <div class="task-attribute"><span class="fieldlabel">Due:</span>  {{ task.due|date:"D, j M Y" }}</div>
-                    {% endif %}
-                    
-                    {% if task.completed %}
-                      <div class="task-attribute"><span class="fieldlabel">Completed:</span>  {{ task.completed|date:"H:i D, j M Y" }} UTC</div>
-                    {% endif %}
-                    
-                    {% if task.updated %}
-                      <div class="task-attribute"><span class="fieldlabel">Updated:</span> {{ task.updated|date:"H:i D, j M Y" }} UTC</div>
-                    {% endif %}
-      <!--
-                    {% if haschildren %}
-                      <ul class="fake">
-                        {% children %}
-                      </ul>
-                    {% endif %}
-      -->              
-                  </li>
-              </ul>
-            {% endfor %}
+			{% if tasklist.tasks %}
+				<div class="tasklistheading">Task List: {{ tasklist.title }} - {{ tasklist.tasks|length }} tasks.</div>
+				{% for task in tasklist.tasks %}
+				  <ul class="task">
+					  <!-- Task will be dim if; 
+							  task is deleted OR 
+							  task is hidden OR 
+							  task is completed AND user checked dim_completed_tasks
+					  -->
+					  <li class="task-status-{{ task.status }}{% if task.completed and dim_completed_tasks %} dim{% endif %}{% if task.deleted or task.hidden %} dim{% endif %}" >
+						{% autoescape on %}
+						  <span class="task-title">{{ task.title }}</span>
+						{% endautoescape %}
+						
+						{% if task.completed and display_completed_date_field %}
+						  <div class="task-attribute"><span class="fieldlabel">COMPLETED:</span>  {{ task.completed|date:"H:i D, j M Y" }} UTC</div>
+						{% endif %}
+						
+						{% if task.notes %}
+						  {% autoescape on %}
+							<div class="task-notes">{{ task.notes|replacenewlinebr }}</div>
+						  {% endautoescape %}
+						{% endif %}
+						
+						{% if task.due and display_due_date_field %}
+						  <div class="task-attribute"><span class="fieldlabel">Due:</span>  {{ task.due|date:"D, j M Y" }}</div>
+						{% endif %}
+						
+						{% if task.updated and display_updated_date_field %}
+						  <div class="task-attribute"><span class="fieldlabel">Updated:</span> {{ task.updated|date:"H:i D, j M Y" }} UTC</div>
+						{% endif %}
+						
+						{% if task.deleted %}
+						  <div class="task-attribute-hidden-or-deleted">- Deleted -</div>
+						{% endif %}
+						
+						{% if task.hidden %}
+						  <div class="task-attribute-hidden-or-deleted">- Hidden -</div>
+						{% endif %}
+						
+		  <!--
+						{% if haschildren %}
+						  <ul class="fake">
+							{% children %}
+						  </ul>
+						{% endif %}
+		  -->              
+					  </li>
+				  </ul>
+				{% endfor %}
+			{% else %}
+				<div class="tasklistheading">Task List: {{ tasklist.title }}</div>
+				<div class="no-tasks">
+					No tasks
+				</div>
+			{% endif %}
           </li>
         {% endfor %}
       </ul>
@@ -76,7 +102,9 @@ This is the Django template file for HTML tasks with "hTodo" microformatting.
         NOTE: Due, Updated and Completed dates and times are UTC, because that is how Google stores them.
       </div>
     {% else %}
-      No tasklists.
+	  <div class="break">
+		<h3>No tasklists found for {{ user_email }}</h3>
+      </div>
     {% endif %}
     <div class="break footer">
       Produced by {{ app_title }}, version {{ app_version }}

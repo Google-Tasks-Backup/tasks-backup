@@ -79,13 +79,14 @@ This is the Django template for the landing page.
             <li>Microsoft Outlook (.csv file)</li>
             <li>iCalendar (.ics file)</li>
             <li>"Dump" (.csv file containing all 15 Google Tasks attributes)</li>
-            <li>"Dump" (HTML page)</li>
-            <li>Remember The Milk (email)   <span class="comment">{ untested, as I don't have RTM }</span></li>
+            <li>Remember The Milk (email)   <span class="comment"> { untested, as I don't have RTM }</span></li>
         </ul>
+        {{ app_title }} can also display tasks as a single web page (e.g., suitable for printing)
     </div>
   
     <div class="break comment">
-        I'll also consider adding hTodo (HTML page) if sufficient people show interest by requesting it on the <a href="http://code.google.com/p/tasks-backup/issues/list">issues page</a>
+        I'll also consider adding hTodo (HTML page) if sufficient people show interest by requesting it on the 
+		<a href="http://code.google.com/p/tasks-backup/issues/list">issues page</a>
     </div>
   
     {% if msg == "ACCOUNT_ERROR" %}
@@ -102,40 +103,50 @@ This is the Django template for the landing page.
             <form method="POST" action = "{{ start_backup_url }}" onsubmit="disableButton();" >
                 <table class="include-selection">
                     <tr>
+                        <th colspan="2" align="left">Advanced settings <span class="take-note-smaller">(Note 1)</span></th>
+                    </tr>
+                    <tr>
                         <td>
-                            <input type="checkbox" name="include_completed" value="True" checked="checked" >Include completed tasks?</input>
+                            <input type="checkbox" name="include_completed" value="True" checked="checked" >
+								&nbsp;Include completed tasks? <span class="take-note-smaller">(Note 2)</span>
+							</input>
                         </td>
                     </tr>
                     <tr>
                         <td>
-                            <input type="checkbox" name="include_deleted" value="True" >Include deleted tasks?</input>
+                            <input type="checkbox" name="include_deleted" value="True" >
+								&nbsp;Include deleted tasks?  <span class="take-note-smaller">(Note 3, 4, 6)</span>
+							</input>
                         </td>
                     </tr>
                     <tr>
                         <td>
-                            <input type="checkbox" name="include_hidden" value="True" >Include hidden tasks?</input>
-                        </td>
-                    </tr>
-                    <tr>
-                        <td>
+                            <input type="checkbox" name="include_hidden" value="True" >
+								&nbsp;Include hidden tasks? <span class="take-note-smaller"> (Note 5, 6)</span>
+							</input>
                         </td>
                     </tr>
                 </table>
-                 <!--<div class="small-break take-note-larger">
-                    Please only click once.
-                 </div>-->
+                <!--<div class="small-break take-note-larger">
+                   Please only click once.
+                </div>-->
                 <input type="submit" value="Start backup" id="start_backup" class="big-button" ></input> 
             </form>
         </div>
         <div class="break">
-            When you click the button to start the backup, a background process is started. You will then be redirected to a page which will update regularly to show progress of the backup. 
+            When you click the button to start the backup, a background process is started. 
+			You will then be redirected to a page which will update regularly to show progress of the backup. 
         </div>
         <div class="break">
-            The amount of time taken to generate the backup depends on various factors, including server load and the total number of tasks. At a rough estimate, the system processes 50-150 tasks per second. This means that a task list with 5,000 tasks could take almost 2 minutes.
+            The amount of time taken to generate the backup depends on various factors, 
+			including server load and the total number of tasks. 
+			At a rough estimate, the system processes 50-150 tasks per second. 
+			This means that a task list with 5,000 tasks could take almost 2 minutes.
         </div>
     {% else %}
         <div class="break">
-            In order to access your tasks, this application asks for permission to access your Google Tasks data. This application is only used for backing up your tasks; It will not modify any of your existing tasks.
+            In order to access your tasks, this application asks for permission to access your Google Tasks data. 
+			This application is only used for backing up your tasks; It will not modify any of your existing tasks.
         </div>
         <div class="break">
             The permission for this application will be displayed as "{{ product_name }} - Tasks" in your list of 
@@ -145,14 +156,89 @@ This is the Django template for the landing page.
     {% endif %}
  
     <div class="break">
-        This application is currently (25 Feb 2012) in beta. It is running from my own Google Apps account, and so has quota limitations. You are welcome to try it, but I cannot give any guarantee that data retrieved will be correct or in a usable format. 
+        This application is currently (25 Feb 2012) in beta. 
+		It is running from my own Google Apps account, and so has quota limitations. 
+		You are welcome to try it, but I cannot give any guarantee that data retrieved will be correct or in a usable format. 
     </div>
   
     <div class="break">
-        This application should be safe to try, as it only reads data; it does not write or modify any tasks in your Google account. It uses Google's own authorisation, so nobody else has access to your data. If you are not already logged in, you will need to authenticate yourself using normal Google authentication.
+        This application should be safe to try, as it only reads data; 
+		it does not write or modify any tasks in your Google account. 
+		It uses Google's own authorisation, so nobody else has access to your data. 
+		If you are not already logged in, you will need to authenticate yourself using normal Google authentication.
     </div>
   
  
+    {% if is_authorized %}
+        <div class="break">
+        </div>
+        
+        <div class="heading">
+            Notes
+        </div>
+        <table  class="format-selection">
+            <tr>
+                <td class="note-heading-smaller">
+                    Note 1 - 
+                </td>
+                <td>
+                    These settings may be used when the user wishes to customise the retrieved data. 
+					For most applications, exported data should not include deleted or hidden tasks, 
+					and may include completed tasks if the user wishes to retain a record of completed tasks.
+                </td>
+            </tr>
+            <tr>
+                <td class="note-heading-smaller">
+                    Note 2 - 
+                </td>
+                <td>
+                    When checked, the backup includes completed tasks. If unchecked, only incomplete (needsAction) tasks are exported.
+                </td>
+            </tr>
+            <tr>
+                <td class="note-heading-smaller">
+                    Note 3 - 
+                </td>
+                <td>
+                    When tasks are deleted, they are marked as Hidden and moved to the [Trash] view.
+                    <br />
+                    Outlook and iCal do not differentiate deleted tasks, so they will appear as normal tasks.
+                </td>
+            </tr>
+            <tr>
+                <td class="note-heading-smaller">
+                    Note 4 - 
+                </td>
+                <td>
+                    According to Google, deleted tasks stay in the Trash (deleted = True) for "some period of time" and are then auto deleted. 
+					I have noticed deleted task up to six months old. 
+					There does not appear to be any way to force a task to be actually deleted. 
+					That is, the Trash bin cannot be emptied by the user.
+                </td>
+            </tr>
+            <tr>
+                <td class="note-heading-smaller">
+                    Note 5 - 
+                </td>
+                <td>
+                    When tasks which have been marked complete, and then [Clear completed] is clicked, 
+					those tasks are marked as Completed AND Hidden. 
+                    <br />
+                    Outlook and iCal do not differentiate hidden tasks, so they will appear as normal tasks.
+                </td>
+            </tr>
+            <tr>
+                <td class="note-heading-smaller">
+                    Note 6 - 
+                </td>
+                <td>
+                    If checked, deleted and hidden tasks will be dimmed (grey text) in the HTML view, 
+					and will include a 'hidden' or 'deleted' label.
+                </td>
+            </tr>
+        </table>
+        See the <a href="info.html">information page</a> for more details.
+    {% endif %}
 
 
 	<div class="project-footer">

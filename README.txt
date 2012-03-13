@@ -1,3 +1,31 @@
+2012-03-14 06-13
+version = 'beta 0.5.049'
+Testing on js-tasks
+Only uses html1 template for "Julie.Smith.1999@gmail.com"
+Correctly indents tasks using the html1 template
+- Couldn't get Django recurse to work
+- Relies on each task's 'depth' property, which is calculated and 
+  added to each task dictionary object in ReturnResultsHandler.post()
+
+
+
+2012-03-08 10:08
+version = 'beta 0.5.025'
+Live on tasks-backup (version 5)
+Added enhancements as per issues #7 and #10
+Separated export from display
+Added user options for HTML tasks display formatting
+Improved layout of HTML tasks display
+
+
+2012-03-07 14:11
+Version beta 0.5.010
+Tested on 6.js-tasks
+Dims hidden and deleted tasks, and optionally dims completed tasks, in HTML view
+Escape title and notes in HTML view, so that text is not potentially interpretted as HTML.
+
+
+
 24 Feb 2012
 Version beta 0.4.034
 Worker queue successfully processed over 22,000 tasks for a single user, and frontend successfully returned results to user.

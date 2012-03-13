@@ -96,9 +96,6 @@ def _GetCredentials():
       credentials = None
 
   return user, credentials
-
-  
-  
   
   
 
@@ -110,11 +107,18 @@ class MainHandler(webapp.RequestHandler):
 
         fn_name = "MainHandler.get(): "
 
-        logging.debug(fn_name + "<Start>")
+        logging.info(fn_name + "<Start> (app version %s)" %appversion.version )
 
         client_id, client_secret, user_agent, app_title, product_name, host_msg = shared.GetSettings(self.request.host)
 
-          
+        try:
+            headers = self.request.headers
+            for k,v in headers.items():
+                logging.debug(fn_name + "browser header: " + str(k) + " = " + str(v))
+                
+        except Exception, e:
+            logging.exception(fn_name + "Exception retrieving request headers")
+            
         user, credentials = _GetCredentials()
         if user:
             user_email = user.email()
@@ -129,6 +133,7 @@ class MainHandler(webapp.RequestHandler):
           
         template_values = {'app_title' : app_title,
                            'host_msg' : host_msg,
+                           'home_page_url' : settings.HOME_PAGE_URL,
                            'product_name' : product_name,
                            'is_authorized': is_authorized,
                            'user_email' : user_email,
@@ -142,7 +147,7 @@ class MainHandler(webapp.RequestHandler):
                            'app_version' : appversion.version,
                            'upload_timestamp' : appversion.upload_timestamp}
         self.response.out.write(template.render(path, template_values))
-        logging.debug(fn_name + "<End> (app version %s)" %appversion.version )
+        logging.debug(fn_name + "<End>" )
     
 
 class AuthRedirectHandler(webapp.RequestHandler):
@@ -181,6 +186,7 @@ class CompletedHandler(webapp.RequestHandler):
             
         template_values = {'app_title' : app_title,
                              'host_msg' : host_msg,
+                             'home_page_url' : settings.HOME_PAGE_URL,
                              'product_name' : product_name,
                              'is_authorized': is_authorized,
                              'user_email' : user_email,
@@ -217,10 +223,10 @@ class StartBackupHandler(webapp.RequestHandler):
         user_email = user.email()
         is_test_user = shared.isTestUser(user_email)
         
-        if is_test_user:
-          logging.debug(fn_name + "POST args: include_hidden = " + str(self.request.get('include_hidden')) +
-                            ", include_completed = " + str(self.request.get('include_completed')) +
-                            ", include_deleted = " + str(self.request.get('include_deleted')))
+        # if is_test_user:
+          # logging.debug(fn_name + "POST args: include_hidden = " + str(self.request.get('include_hidden')) +
+                            # ", include_completed = " + str(self.request.get('include_completed')) +
+                            # ", include_deleted = " + str(self.request.get('include_deleted')))
                             
         logging.debug(fn_name + "Storing details for " + str(user_email))
         
@@ -322,17 +328,17 @@ class ShowProgressHandler(webapp.RequestHandler):
                 if time_since_last_update.seconds > settings.MAX_JOB_PROGRESS_INTERVAL:
                     logging.error(fn_name + "Last job progress update was " + str(time_since_last_update.seconds) +
                         " seconds ago. Job appears to have stalled. Job was started " + str(job_execution_time.seconds) + 
-                        " seconds ago at " + str(job_start_timestamp))
+                        " seconds ago at " + str(job_start_timestamp) + " UTC")
                     error_message = "Job appears to have stalled. Status was " + tasks_backup_job.status
                     if tasks_backup_job.error_message:
                         error_message = error_message + ", previous error was " + tasks_backup_job.error_message
                     status = 'job_stalled'
                     
         logging.debug(fn_name + "Status = " + str(status) + ", progress = " + str(progress) + 
-            " for " + str(user_email) + ", started at " + str(job_start_timestamp))
+            " for " + str(user_email) + ", started at " + str(job_start_timestamp) + " UTC")
         
         if error_message:
-            logging.warning(fn_name + "Error message: " + str(error_message))
+            logging.error(fn_name + "Error message: " + str(error_message))
             
         path = os.path.join(os.path.dirname(__file__), "progress.html")
         
@@ -340,6 +346,7 @@ class ShowProgressHandler(webapp.RequestHandler):
         
         template_values = {'app_title' : app_title,
                            'host_msg' : host_msg,
+                           'home_page_url' : settings.HOME_PAGE_URL,
                            'product_name' : product_name,
                            'status' : status,
                            'progress' : progress,
@@ -348,6 +355,7 @@ class ShowProgressHandler(webapp.RequestHandler):
                            'is_authorized': is_authorized,
                            'refresh_interval' : settings.PROGRESS_PAGE_REFRESH_INTERVAL,
                            'user_email' : user_email,
+                           'results_url' : settings.RESULTS_URL,
                            #'start_backup_url' : settings.START_BACKUP_URL,
                            #'refresh_url' : settings.PROGRESS_URL,
                            'msg': self.request.get('msg'),
@@ -366,17 +374,15 @@ class ReturnResultsHandler(webapp.RequestHandler):
     """Handler to return results to user in the requested format """
     
     def get(self):
-        # """ Display the page to allow user to choose format for results """
         fn_name = "ReturnResultsHandler.get(): "
-        logging.warning(fn_name + "Expected POST. Calling post handler")
-        self.post()
+        logging.warning(fn_name + "Expected POST for " + str(settings.RESULTS_URL) + 
+                        ", so redirecting to " + str(settings.PROGRESS_URL))
+        # Display the progress page to allow user to choose format for results
+        self.redirect(settings.PROGRESS_URL)
         
-        # # TODO: Redirect user to page to start a backup
-        # logging.warning(fn_name + "TODO - doing nothing")
-        # self.response.out.write("TODO - doing nothing")
         
     def post(self):
-        """ Return results to the user """
+        """ Return results to the user, in format chosen by user """
         fn_name = "ReturnResultsHandler.post(): "
         
         logging.debug(fn_name + "<Start>")
@@ -462,7 +468,20 @@ class ReturnResultsHandler(webapp.RequestHandler):
         # User chose which format to export as
         export_format = self.request.get("format")
         
+        # We pass the job_start_timestamp from the Progress page so that we can display it on the HTML page
+        job_start_timestamp = self.request.get('job_start_timestamp')
+        
+        # User selected HTML display options (used when format == html)
+        dim_completed_tasks = (self.request.get('dim_completed_tasks') == 'True')
+        display_completed_date_field = (self.request.get('display_completed_date_field') == 'True')
+        display_due_date_field = (self.request.get('display_due_date_field') == 'True')
+        display_updated_date_field = (self.request.get('display_updated_date_field') == 'True')
+        
         logging.info(fn_name + "Selected format = " + str(export_format))
+        # logging.debug(fn_name + "dim_completed_tasks = " + str(dim_completed_tasks))
+        # logging.debug(fn_name + "display_completed_date_field = " + str(display_completed_date_field))
+        # logging.debug(fn_name + "display_due_date_field = " + str(display_due_date_field))
+        # logging.debug(fn_name + "display_updated_date_field = " + str(display_updated_date_field))
         
 
         # Filename format is "tasks_FORMAT_EMAILADDR_YYYY-MM-DD.EXT"
@@ -471,10 +490,16 @@ class ReturnResultsHandler(webapp.RequestHandler):
         
         template_values = {'app_title' : app_title,
                            'host_msg' : host_msg,
+                           'home_page_url' : settings.HOME_PAGE_URL,
                            'product_name' : product_name,
                            'tasklists': tasklists,
+                           'dim_completed_tasks' : dim_completed_tasks,
+                           'display_completed_date_field' : display_completed_date_field,
+                           'display_due_date_field' : display_due_date_field,
+                           'display_updated_date_field' : display_updated_date_field,
                            'user_email' : user_email, 
                            'now' : datetime.datetime.now(),
+                           'job_start_timestamp' : job_start_timestamp,
                            'exportformat' : export_format,
                            'url_discussion_group' : settings.url_discussion_group,
                            'email_discussion_group' : settings.email_discussion_group,
@@ -483,22 +508,82 @@ class ReturnResultsHandler(webapp.RequestHandler):
                            'app_version' : appversion.version,
                            'upload_timestamp' : appversion.upload_timestamp}
         
-        
-          
+        if export_format == 'html1':
+            # Modify structure so that the html1 template can indent tasks
+            for tasklist in tasklists:
+                tasks = tasklist[u'tasks']
+                
+                if len(tasks) > 0: # Non-empty tasklist
+                    # Add default metadata to each task, which will be modified in the next round
+                    for task in tasks:
+                        task[u'children'] = []
+                        task[u'depth'] = 0
+
+                    # Find the sub task relationships
+                    for task in tasks:
+                        id = task['id']
+                        for stask in tasks:
+                            sid = stask['id']
+                            if stask.has_key(u'parent'):
+                                if stask[u'parent'] == id:
+                                    stask[u'depth'] = task[u'depth'] + 1
+                                    # stask is a child of this task
+                                    task[u'children'].append(stask)
+                                    
+                            
+                    # Set parent_ to None for root tasks; required by Django recurse tag
+                    for task in tasks:
+                        depth = task[u'depth']
+                        # If not using customdjango, use inline style attribute to indent by this much
+                        # e.g., style="padding-left:{{ task.indent }}px"
+                        task[u'indent'] = depth * settings.TASK_INDENT
+                        if depth == 0:
+                            task['parent_'] = None
+                        else:
+                            task['parent_'] = task['parent']
+
+                            
+            # TODO: Fix this, so that we can use the recurse tag in the hTodo template
+            # Currently throws AttributeError: 'dict' object has no attribute 'position'
+            if export_format == 'hTodo':
+                # Use the collection of Task object when using the hTodo Django template
+                # Create structure so that the Django template can recurse tasks
+                list_of_tasklists = []
+                for tasklist in tasks_data.tasklists:
+                    list_of_tasks = []
+                    tasks = tasklist[u'tasks']
+                    
+                    if len(tasks) > 0: # Non-empty tasklist
+                        # Find the sub task relationships
+                        for task in tasks:
+                            new_task = model.Task(task)
+                            list_of_tasks.append(new_task)
+                            
+                        for t in list_of_tasks:    
+                            id = t.id
+                            for st in list_of_tasks:
+                                sid = st.id
+                                if st.parent:
+                                    if st.parent == id:
+                                        t.children.append(st)
+
+                template_values['tasklists'] = list_of_tasklists
           
         # template file name format "tasks_template_FORMAT.EXT",
         #   where FORMAT = export_format (e.g., 'outlook')
         #     and EXT = the file type extension (e.g., 'csv')
         if export_format == 'ics':
             self.WriteIcsUsingTemplate(template_values, export_format, output_filename_base)
-        elif export_format == 'outlook' or export_format == 'raw':
+        elif export_format in ['outlook', 'raw', 'raw1']:
             self.WriteCsvUsingTemplate(template_values, export_format, output_filename_base)
-        elif export_format == 'html':
+        elif export_format in ['html', 'html1']:
             self.WriteHtmlTemplate(template_values, export_format)
         elif export_format == 'hTodo':
             self.WriteHtmlTemplate(template_values, export_format)
         elif export_format == 'RTM':
             self.SendEmailUsingTemplate(template_values, export_format, user_email, output_filename_base)
+        elif export_format == 'py':
+            self.WriteTextUsingTemplate(template_values, export_format, output_filename_base, 'py')
         else:
             logging.warning(fn_name + "Unsupported export format: %s" % export_format)
             # TODO: Handle invalid export_format nicely - display message to user & go back to main page
@@ -506,7 +591,6 @@ class ReturnResultsHandler(webapp.RequestHandler):
 
         logging.debug(fn_name + "<end>")
 
-  
   
 
     def DisplayErrorPage(self,
@@ -607,7 +691,7 @@ class ReturnResultsHandler(webapp.RequestHandler):
 
     def WriteCsvUsingTemplate(self, template_values, export_format, output_filename_base):
         """ Write a CSV file according to the specified .csv template file
-            Currently supports export_format = 'outlook' 
+            Currently supports export_format = 'outlook', 'raw' and 'raw1'
         """
         fn_name = "WriteCsvUsingTemplate(): "
 
@@ -625,12 +709,40 @@ class ReturnResultsHandler(webapp.RequestHandler):
         self.response.out.write(template.render(path, template_values))
 
 
+    def WriteTextUsingTemplate(self, template_values, export_format, output_filename_base, file_extension):
+        """ Write a TXT file according to the specified .txt template file
+            Currently supports export_format = 'py' 
+        """
+        fn_name = "WriteTextUsingTemplate(): "
+
+        template_filename = "tasks_template_%s.%s" % (export_format, file_extension)
+        output_filename = output_filename_base + "." + file_extension
+        self.response.headers["Content-Type"] = "text/plain"
+        self.response.headers.add_header(
+            "Content-Disposition", "attachment;filename=%s" % output_filename)
+
+        path = os.path.join(os.path.dirname(__file__), template_filename)
+        if shared.isTestUser(template_values['user_email']):
+          logging.debug(fn_name + "Writing %s format to %s" % (export_format, output_filename))
+        else:
+          logging.debug(fn_name + "Writing %s format" % export_format)
+        # TODO: Output in a manner suitable for downloading from an Android phone
+        #       Currently sends source of HTML page as output_filename
+        #       Perhaps try Content-Type = "application/octet-stream" ???
+        self.response.out.write(template.render(path, template_values))
+
+
     def WriteHtmlTemplate(self, template_values, export_format):
         """ Write an HTML page according to the specified .html template file
             Currently supports export_format = 'html' and 'hTodo'
         """
         fn_name = "WriteHtmlTemplate(): "
 
+        logging.debug(fn_name + "dim_completed_tasks = " + str(template_values['dim_completed_tasks']))
+        logging.debug(fn_name + "display_completed_date_field = " + str(template_values['display_completed_date_field']))
+        logging.debug(fn_name + "display_due_date_field = " + str(template_values['display_due_date_field']))
+        logging.debug(fn_name + "display_updated_date_field = " + str(template_values['display_updated_date_field']))
+        
         template_filename = "tasks_template_%s.html" % export_format
         path = os.path.join(os.path.dirname(__file__), template_filename)
         logging.debug(fn_name + "Writing %s format" % export_format)
@@ -697,7 +809,7 @@ def main():
 
     application = webapp.WSGIApplication(
         [
-            ("/",                         MainHandler),
+            (settings.HOME_PAGE_URL,      MainHandler),
             ("/completed",                CompletedHandler),
             ("/auth",                     AuthRedirectHandler),
             (settings.RESULTS_URL,        ReturnResultsHandler),

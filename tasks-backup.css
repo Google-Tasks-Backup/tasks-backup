@@ -13,6 +13,9 @@
  *
  * OrigAuthor: dwightguth@google.com (Dwight Guth)
  * Author: Julie.Smith.1999@gmail.com (Julie Smith)
+ *
+ * Form styling ideas from http://www.webcredible.co.uk/user-friendly-resources/css/css-forms.shtml
+ *
  */
 
 body {
@@ -24,6 +27,20 @@ body {
   padding-right: 15px;
 }
 
+fieldset
+{
+	border: 1px solid #781351;
+	padding-top: 10px;
+}
+
+legend
+{
+	color: #fff;
+	background: #ffa20c;
+	border: 1px solid #781351;
+	padding: 2px 6px
+}
+
 .take-note {
   font-weight: bold;
 }
@@ -33,21 +50,15 @@ body {
   font-size: larger;
 }
   
-.logo {
-  margin-top: 10px;
+.take-note-smaller {
+  font-weight: bold;
+  font-size: smaller;
 }
-
+  
 .heading {
   font-weight: bold;
   font-size: 12pt;
   margin: 6px;
-}
-
-.row1 {
-  background-color: #aeffdg;
-}
-
-.row2 {
 }
 
 .break {
@@ -58,26 +69,12 @@ body {
   margin-bottom: 6px !important;
 }
 
-.info {
-  padding: 1px 6px;
-}
-
-.alert {
-  color: #C00;
-}
-
 .disabled {
   color: grey;
 }
 
 .fieldname {
   font-weight: bold;
-}
-
-.caption {
-  font-weight: normal !important;
-  font-size: smaller !important;
-  font-style: italic !important;
 }
 
 .project-footer {
@@ -113,9 +110,20 @@ body {
 }
  
 .task-title  {
+    display: inline-block;
   font-weight: bold;
+  margin-bottom:5px;
 }
- 
+
+.task-details-html1 {
+  padding-left: 25px;
+  padding-bottom: 15px;
+}
+
+.task-attribute-hidden-or-deleted {
+  font-weight: bold;
+  font-style: italic;
+}
 
 form td:first-child {
   padding-right:20px;
@@ -134,10 +142,15 @@ td.action-button {
 }
 
 table.include-selection {
-	border-collapse:separate;
-	border-spacing:25px 6px; /* Horiz, vert */
+	/*border-collapse:separate;*/
+	/*border-spacing:25px 6px; /* Horiz, vert */
+    border-spacing:5px 5px;
+    border-style:solid;
+    margin-top:10px;
+    margin-left:45px;
+    margin-bottom:15px;
 }
-    
+
 table.format-selection {
 	border-collapse:separate;
 	border-spacing:5px 10px; /* Horiz, vert */
@@ -154,6 +167,19 @@ td.note-heading {
 	vertical-align: top;
 }
 	
+td.note-heading-smaller {
+	white-space: nowrap;
+	font-weight: bold;
+	vertical-align: top;
+  font-size: smaller;
+}
+
+td.not-valid {
+    background-color: #e00000;
+    text-align: center; 
+}
+    
+    
 .big-button {
     cursor: pointer;
     width: 100%;
@@ -170,6 +196,101 @@ span.tasklistheading {
   font-weight: bold;
 }
 
+div.tasklistheading {
+  font-size: larger;
+  font-weight: bold;
+  margin-bottom: 5px;
+}
+
+.task-html1 {
+  /*  padding-left is set by inline style attribute so that
+   *  Django can set indent according to subtask depth
+   */
+  list-style-type: none;
+  padding-bottom: 10px;
+}
+
+ul.task {
+  list-style-type: none;
+  padding-left: 1.8em;
+  padding-bottom: 20px;
+}
+
+.no-tasks {
+  padding-left: 1.8em; /* match normal tasks indent */
+  margin-bottom: 20px;
+  font-weight: bold;
+  font-style: italic;
+}
+
+.tasks {
+    margin-left:25px;
+}
+
+.status-cell {
+  font-weight: bold;
+  margin-bottom: 2px;
+  display: block; 
+  float: left; 
+  clear: left; 
+  width: 25px;
+}
+
+.task-title-html1 {
+  font-weight: bold;
+  margin-bottom: 2px;
+}
+
+
+.status-details {
+  text-indent: -25px;
+  padding-left: 25px;
+}
+
+.task-notes {
+    margin-top: 2px;
+    padding-left: 15px;
+    margin-bottom: 2px;
+}
+
+/*
+div.task-details-html1 div {
+    padding-bottom: 5px;
+}
+*/
+
+.dim {
+  color: Grey;
+}
+
+div.task-attribute {
+  margin-top: 2px;
+  margin-bottom: 2px;
+}
+
+div.task-attribute-hidden-or-deleted {
+  margin-top: 2px;
+  margin-bottom: 2px;
+  font-weight: bold;
+  font-style: italic;
+}
+
+
+/*
+ * *********************
+ *    Only for hTodo 
+ * *********************
+ */
+span.completed,
+span.categories,
+span.last-modified {
+  display: none;
+}
+
+div.description {
+  margin-left: 20px;
+}
+
 ul.fake {
   padding-left: 1.8em;
   padding-bottom: 20px;
@@ -179,10 +300,6 @@ ul.fake > li {
   padding-top: 10px;
   list-style-type: none;
   padding-bottom: 10px;
-}
-
-div.description {
-  margin-left: 20px;
 }
 
 ul.fake > li.status-completed {
@@ -199,31 +316,4 @@ ul.fake > li:before {
 
 ul.fake > li.status-completed:before {
   content: "\2713 \a0";
-}
-
-ul.task {
-  list-style-type: none;
-  padding-left: 1.8em;
-  padding-bottom: 20px;
-}
-
-li.task-status-completed:before {
-  list-style-type: none;
-  content: "\2713 \a0";
-}
-
-li.task-status-needsAction:before {
-  list-style-type: none;
-  content: "\2013 \a0 \a0";
-}
-
-div.task-attribute {
-  margin-top: 3px;
-  margin-bottom: 5px;
-}
-  
-span.completed,
-span.categories,
-span.last-modified {
-  display: none;
 }

@@ -1,42 +1,111 @@
 
 ======================= TODO ==============================
 
-- Change date format for "Raw" so that it can be interpretted by Outlook to allow sorting and filtering.
-
-- Consideration: If user selects Hidden and/or Deleted, ther is no way to indicate that in Outlook or iCal, so the user may see tasks that they don't expect to see (especially if they select Deleted and they have moved a task to another list, since the original task stays in the roiginal list, marked as deleted)
--- Need to include a page describing all the various permutations, as described to email to Bard on 25 and 26 Feb 2012.
-        To summarise, a task can be in any one of the following states;
-            ** needsAction (unchecked)
-            ---- Visible in main list
-
-            ** completed (checked) {before clicking [Clear completed]}
-            ---- Visible in main list 
-
-            ** completed (checked) {after clicking [Clear completed]}
-            ---- Visible only in [Completed tasks]
-
-            ** Deleted
-            ---- Visible only in [Trash]
-            
-        -> Marked complete, and then clicked Clear completed = completed, hidden
-        -> Marked complete and deleted (appears in [Trash]) = completed, deleted
+Catch over-quota exception; display (static) message to user
 
 
-- Investigate calling ReturnResultsHandler.post() from ReturnResultsHandler.get() 
--- Sometimes the get() handler is being called
-
-
-
-- Consider using 'fields' to reduce amount of data retrieved and stored.
-  Only retrieve fields that we actually use in GTB
-    fields ==> Selector specifying a subset of fields to include in the response.	
-    From http://code.google.com/apis/tasks/v1/using.html#query-params
+- BUG: Error downloading Outlook CSV on Android
+# From http://digiblog.de/2011/04/19/android-and-the-download-file-headers/
+    Can't return file from POST request on stock Android or Dolphin browsers
+-- Downloading Outlook CSV;
+--- Dolphin browser: downloads HTML code for /result as the correctly-named .csv file
+--- Android browser: downloads HTML code for /result as tasks_outlook_Julie.htm (or tasks_ics_Julie.htm for ICS download)
+# Tried (didn't work);
+    self.response.clear() before building headers
     
-- Give user option to include/exclude tasks by status from backup job (before starting backup);
-    showCompleted
-    showDeleted
-    showHidden
--- Also consider giving user option to include/exclude particular properties.
+# From http://stackoverflow.com/questions/4674737/avoiding-content-type-issues-when-downloading-a-file-via-browser-on-android
+    "inability of the stock browser and the Android download manager to correctly handle downloads initiated through POST requests."
+# See also http://code.google.com/p/android/issues/detail?id=1780
+===> Need to serve different page if client is a mobile browser;
+  - Use GET instead of POST for returning results
+  - Improve UX for smaller screen
+  
+# To recognise user agent;
+    Chrome, Windows 7:
+        User-Agent = Mozilla/5.0 (Windows NT 6.1) AppleWebKit/535.11 (KHTML, like Gecko) Chrome/17.0.963.78 Safari/535.11
+    Firefox, Android
+        User-Agent = Mozilla/5.0 (Android; Linux armv7l; rv:10.0.2) Gecko/20120215 Firefox/10.0.2 Fennec/10.0.2
+    Opera, Android
+        User-Agent = Opera/9.80 (Android; Opera Mini/6.5.27452/27.1324; U; en) Presto/2.8.119 Version/11.10
+    Dolphin HD, Android (NOTE: Same as stock browser - When using default settings)
+        User-Agent = Mozilla/5.0 (Linux; U; Android 2.3.3; en-au; GT-I9000 Build/GINGERBREAD) AppleWebKit/533.1 (KHTML, like Gecko) Version/4.0 Mobile Safari/533.1
+    Stock Android browser (NOTE: Same as Dolphin HD - When Dolphin uses default settings))
+        User-Agent = Mozilla/5.0 (Linux; U; Android 2.3.3; en-au; GT-I9000 Build/GINGERBREAD) AppleWebKit/533.1 (KHTML, like Gecko) Version/4.0 Mobile Safari/533.1
+    
+    
+- Improve UX on Android browser
+-- HTML display page looks good on Dolphin. 
+     Indenting works
+     Text wraps to screen width
+-- Other pages (index, progress, result) do not fit on Android screen
+--- Buttons and tables are too wide
+--- Too much text before options/actions are displayed
+- Test different resolutions using emulator
+
+
+
+- Investigate; user clicks [Back] from HTML view, URL is /progress 
+-- much more logical if it displays /results
+
+
+- Consider displaying <No Title> if title is empty (or all spaces)
+-- e.g. if len(trimspaces(title)) == 0
+-- Currently looks confusing to have [ ] with nothing else
+---(especially if task has no notes, and user selected no due/updated display)
+
+
+
+
+- Consider adding links to various formats
+-- Already included in Python data dump
+-- As part of a note for Outlook (User controlled option?)
+-- Check if supported by iCal, else in notes?
+-- Investigate options for hTodo and RTM
+-- As additional field(s) in raw dumps
+--- Need to consider how to handle multiple links for one task
+--- See https://developers.google.com/google-apps/tasks/v1/reference/tasks#resource
+
+
+
+
+- Consider using an Alert rather than new page to notify that email was sent
+-- All other actions stay on Reselts page. email requires user to use browser back button
+
+
+
+
+- Investigate duplicated tasks
+# It is almost certain that external task apps are involved, because I just found 56 tasks which were all updated within 7 seconds (starting at 22-08-2011  6:17:50 PM), and it is improbable to change that many tasks simultaneously any other way.
+-- This task was definitely entered using CalenGoo
+--- Note that updated is different for both
+    Default List	tasks#task	MDQ2MzI0NTgyNTU0Nzk2NDUyMTQ6MDoxNDAwMDg2NDM1	0uhCwbPSh3mnl5uXt3orJuKhwIo/MTQ5NjA0MjQwOA""	Blood test, morning, IMPORTANT 	2012-03-05 12:15	https://www.googleapis.com/tasks/v1/lists/MDQ2MzI0NTgyNTU0Nzk2NDUyMTQ6MDow/tasks/MDQ2MzI0NTgyNTU0Nzk2NDUyMTQ6MDoxNDAwMDg2NDM1		3753		needsAction	2012-03-30			
+    Default List	tasks#task	MDQ2MzI0NTgyNTU0Nzk2NDUyMTQ6MDoxNDYwOTUxODY	0uhCwbPSh3mnl5uXt3orJuKhwIo/NTU4OTM1MjQ5""	Blood test, morning, IMPORTANT 	2012-03-01 03:14	https://www.googleapis.com/tasks/v1/lists/MDQ2MzI0NTgyNTU0Nzk2NDUyMTQ6MDow/tasks/MDQ2MzI0NTgyNTU0Nzk2NDUyMTQ6MDoxNDYwOTUxODY		14349		needsAction	2012-03-30			
+
+-- Don't know if this was entered/edited via web and/or any other apps
+--- Note that all 3 have the same updated time, and the 1st and last have the same completed time. Position is significantly different between 1st and 3rd
+    ZZ Archive	tasks#task	MDQ2MzI0NTgyNTU0Nzk2NDUyMTQ6MzoyOQ	0uhCwbPSh3mnl5uXt3orJuKhwIo/LTM4NDU4MzgyNA""	Backup CalenGoo tasks	2011-08-22 18:17	https://www.googleapis.com/tasks/v1/lists/MDQ2MzI0NTgyNTU0Nzk2NDUyMTQ6Mzow/tasks/MDQ2MzI0NTgyNTU0Nzk2NDUyMTQ6MzoyOQ	MDQ2MzI0NTgyNTU0Nzk2NDUyMTQ6MzoyNg	536870911	"Backup and then clear from visible list
+
+    Options before clearing
+    . Export to file
+    .. From Android
+    .. From PC
+    . Rely on backup apps
+    . Move to another task list"	completed		2011-05-29 14:42		
+    ZZ Archive	tasks#task	MDQ2MzI0NTgyNTU0Nzk2NDUyMTQ6MzoyOA	0uhCwbPSh3mnl5uXt3orJuKhwIo/ODY5ODQwNjcy""	Backup CalenGoo tasks	2011-08-22 18:17	https://www.googleapis.com/tasks/v1/lists/MDQ2MzI0NTgyNTU0Nzk2NDUyMTQ6Mzow/tasks/MDQ2MzI0NTgyNTU0Nzk2NDUyMTQ6MzoyOA	MDQ2MzI0NTgyNTU0Nzk2NDUyMTQ6MzoyNg	1073741823		completed		2011-05-31 03:02		
+    ZZ Archive	tasks#task	MDQ2MzI0NTgyNTU0Nzk2NDUyMTQ6MzoyNw	0uhCwbPSh3mnl5uXt3orJuKhwIo/MTgyODM4MjA5MA""	Backup CalenGoo tasks	2011-08-22 18:17	https://www.googleapis.com/tasks/v1/lists/MDQ2MzI0NTgyNTU0Nzk2NDUyMTQ6Mzow/tasks/MDQ2MzI0NTgyNTU0Nzk2NDUyMTQ6MzoyNw	MDQ2MzI0NTgyNTU0Nzk2NDUyMTQ6MzoyNg	2147483647	"Backup and then clear from visible list
+
+    Options before clearing
+    . Export to file
+    .. From Android
+    .. From PC
+    . Rely on backup apps
+    . Move to another task list"	completed		2011-05-29 14:42		
+
+
+
+
+- Consider giving user option to include/exclude particular properties.
+--- Can only exclude properties which are not mandatory for export formats (e.g., can't exclude title, completed, etc.) 
     We can then use 'fields' selector to specify a subset of fields to include in the response to reduce amount of data retrieved and stored
         From http://code.google.com/apis/tasks/v1/using.html#query-params
          
@@ -58,25 +127,11 @@
         hidden	boolean	Flag indicating whether the task is hidden. This is the case if the task had been marked completed when the task list was last cleared. The default is False. This field is read-only.
       
       
-- Consider logging number of tasks in each tasklist (in worker.py)
+- Consider supporting apple-touch-icon.png
 
-    
-
-
-- Consider not logging user email address. Note that it is included in the logs anyway as the authenticated user in the header info.
 
 
       
-- Consider adding code to ShowProgressHandler() to recognise a "stalled" backup
--- Currently only gives up if job has exceeded nnn seconds (currently 650 = 10min, 50 sec) 
---- Could add an 'updated' field to the model.ShowProgressHandler() entity. 
----- Currently only updating 'progress' after processing each tasklist. This could result in long update gaps for tasklists with many tasks
-   Set 'updated' value every time through get tasks loop in worker.py
-   If 'updated' hasn't changed in 'n' seconds;
-   --- Change status to "stalled"
-   --- Display message to user
-   --- Stop updating progress page
-
 - Consider setting the initial refresh in progress.html to a small value, and then increasing.
 -- Also consider delaying displaying first progress page, in case the job has already finished (e.g. if number of tasks is small)
 
@@ -87,89 +142,9 @@
 # It seems that only 3 types of server error can be caught and redirected to a specified web page.
 
     
-========================= In progress ================================
     
-- Consider adding code to ShowProgressHandler() to recognise a "stalled" backup
--- Currently only gives up if job has exceeded nnn seconds (currently 650 = 10min, 50 sec) 
---- Could add an 'updated' field to the model.ShowProgressHandler() entity. 
----- Currently only updating 'progress' after processing each tasklist. This could result in long update gaps for tasklists with many tasks
-   Set 'updated' value every time through get tasks loop in worker.py
-   If 'updated' hasn't changed in 'n' seconds;
-   --- Change status to "stalled"
-   --- Display message to user
-   --- Stop updating progress page
-
-- Put margin/padding/border? around all web pages. Looks very bad when text is right up against windows edge on small screens
-
-
-- Consider exporting a csv 'dump' format, which includes every Google Tasks attribute.
-    From http://code.google.com/apis/tasks/v1/reference.html#resource_tasks
-        kind	string	Type of the resource. This is always tasks#task.	
-        id	string	Task identifier.	
-        etag	string	ETag of the resource.	
-        title	string	Title of the task.	 yes
-        updated	string	Last modification time of the task (as an RFC 3339 timestamp).	
-        selfLink	string	URL pointing to this task. Used to retrieve, update, or delete this task.	
-        parent	string	Parent task identifier. This field is omitted if it is a top-level task. This field is read-only. Use the move method to move the task under a different parent or to the top level.	
-        position	string	String indicating the position of the task among its sibling tasks under the same parent task or at the top level. If this string is greater than another task's corresponding position string according to lexicographical ordering, the task is positioned after the other task under the same parent task or at the top level. This field is read-only. Use the move method to move the task to another position.	
-        notes	string	Notes describing the task. Optional.	 yes
-        status	string	Status of the task. This is either needsAction or completed.	 yes
-        due	string	Due date of the task (as an RFC 3339 timestamp). Optional.	 yes
-        completed	string	Completion date of the task (as an RFC 3339 timestamp). This field is omitted if the task has not been completed.	 yes
-        deleted	boolean	Flag indicating whether the task has been deleted. The default is False.	
-        hidden	boolean	Flag indicating whether the task is hidden. This is the case if the task had been marked completed when the task list was last cleared. The default is False. This field is read-only.
-      
-      
-- Use a DB entity to control app behaviour. Can edit data in admin console to change app behaviour without needing to re-upload app.
--- Possible parameters;
-     List of 'test' users
-     Very detailed logging (True/False)
-     Dump data (True/False)
-     Refresh interval (for progress.html)
-     Max time to allow before giving up {to prevent indefinite page refresh}
-     
-     
-- Log progress result in ShowProgressHandler()
-
-
-
-***********************************************************
-
-- Change GET with params to POST, so that user cannot easily see the URL &/or refresh with existing URL args
-
-- Display progress; every 'n' seconds, refresh page showing "'nnn' tasks retrieved"
-# Done
-
-
-- Display custom error msg for server errors
-  for over_quota & timeout
-      http://code.google.com/appengine/docs/python/config/appconfig.html#Custom_Error_Responses
-
-- Disable buttons when user has selected a format, until the result has been returned to the user
-
-
-- Try memcache instead of DB to return progress to ProgressHandler, or possibly to pass data back to frontend
-  From file:///C:/Program%20Files/Google/google_appengine/google-appengine-docs-20111213/appengine/docs/python/memcache/overview.html
-    maximum size of a cached value	1 megabyte
-    A key can be any size. If the key is larger than 250 bytes, it is hashed to a 250-byte value before storing or retrieving.
-    The "multi" batch operations can have any number of elements. The total size of the call and the total size of the data fetched must not exceed 32 megabytes.
-
-  
-
-- According to http://stackoverflow.com/questions/6945595/how-to-explicitly-stop-a-google-app-engine-dynamic-backend-when-the-start-handle (and others), 
-    If you configure your backend as a Dynamic backend, then the backend will stop automatically 15 minutes after your "trigger" request is processed. If you don't send that "trigger-to-start" request again in the next 15 minutes, the backend will shutdown automatically. Unfortunately, you'll still have to pay for a minimum of 15 minutes of uptime, even though the backend is idle for those 15 minutes. I'm doing exactly what you're doing in my app - the backend starts, starts leasing tasks from a pull queue, and goes idle when the pull queue is empty. I do this once every hour, so I end up paying for 24/3 = 8 hours of backend uptime everyday. Since this is below the 9 hour quota, I'm happy (for now).
     
-According to http://stackoverflow.com/questions/3818854/can-we-combine-multiple-google-appengine-accounts-for-larger-free-quota
-    To answer your first question (and by consequence the others), from the terms of service this would not appear to be legal:
-
-    4.4. You may not develop multiple Applications to simulate or act as a single Application or otherwise access the Service in a manner intended to avoid incurring fees.
-
     
-Tidy up index.html, so buttons are higher up once user has authenticated (remove text about "what GTB can do")
-
-
-
-
 Post to http://code.google.com/p/google-tasks-porter/issues/detail?id=15 when I have made more progress
 - i.e., fixed Deadline error
 -- Perhaps also to other issues pages, e.g., 
@@ -177,17 +152,17 @@ Post to http://code.google.com/p/google-tasks-porter/issues/detail?id=15 when I 
     http://code.google.com/p/google-tasks-porter/issues/detail?id=11
 
 
+Import tasks
+- See 2 Mar 2012 email to Bard
 
-BUG: 'items' not found in tasks_data
-    2012-02-10 15:06:54.971
-    u'items'
-    Traceback (most recent call last):
-      File "/base/python_runtime/python_lib/versions/1/google/appengine/ext/webapp/_webapp25.py", line 701, in __call__
-        handler.get(*groups)
-      File "/base/data/home/apps/s~tasks-backup/1.356605196319700703/tasks-backup.py", line 322, in get
-        tasks = tasks_data[u'items'] # Store all the tasks (List of Dict)
-    KeyError: u'items'
-See \tmp\tasks-backup\live
+
+
+- Display custom error msg for server errors
+  for over_quota & timeout
+      http://code.google.com/appengine/docs/python/config/appconfig.html#Custom_Error_Responses
+
+    
+Tidy up index.html, so buttons are higher up once user has authenticated (remove text about "what GTB can do")
 
 
 
@@ -196,26 +171,12 @@ Investigate (from line 198 in worker.py)
 		  'urlfetch_timeout_hook', urlfetch_timeout_hook, 'urlfetch')
 	  
 
-Investigate using blobstore to transfer data from taskqueue back to user
-		"upload_url": blobstore.create_upload_url("/upload")
-		
-		
 Display more traceback detail
 - After exc_type, exc_value, exc_traceback = sys.exc_info(),
   dir(exc_traceback) gives ['tb_frame', 'tb_lasti', 'tb_lineno', 'tb_next']		
 -- Need to find way of displaying useful info from this for debugging (i.e., norml stacktrace)
 
 
-
-AppEngine can generate different types of DeadlineExceededError
-  urlfetch_errors.DeadlineExceededError
-  google.appengine.runtime.DeadlineExceededError
-      2012-02-15 07:33:50.473 CreateBackupHandler.get(): DeadlineExceededError: Traceback (most recent call last): File "/base/data/home/apps/s~js-tasks/3.356818223260997262/task
-      D 2012-02-15 07:33:50.600 DisplayErrorPage(): Writing error page
-      D 2012-02-15 07:33:50.600 {'url_source_code': 'code.google.com/p/tasks-backup/source/browse/', 'err_desc': 'Process took too long, and was terminated by App Engine', 'url_issue
-      E 2012-02-15 07:33:50.708 <class 'google.appengine.runtime.DeadlineExceededError'>: Traceback (most recent call last): File "/base/data/home/apps/s~js-tasks/3.35681822326099
-  It seems that the Google "Server Error" page is displayed (instead of the app's error page), if the app acnnot respond within Google's very short 2nd timeout window. This may be when the 2nd DeadlineExceededError happens
-*** Dwight was having this problem in Aug. See http://code.google.com/p/google-tasks-porter/issues/detail?id=5
 
 		
 Give user option to choose date format; US, Aus, Euro, other?
@@ -226,46 +187,12 @@ Give user option to choose date format; US, Aus, Euro, other?
 . Do not allow user to specify their own format, and do not pass in actual format as a GET or POST arg, to prevent user entering a malicious string
 
 
-Required actions:
-- Put in try-except and report full error message (including timestamp)
-- Find a way to run as a 'Backend', as suggested under "The Request Timer" on 
-  code.google.com/appengine/docs/python/runtime.html
--- Or at least use a taskqueue (10 min allowed vs 60 sec)  
-
-
-
-2012-02-02
-
-Display results of sending email
-- Stay on index.html so user can choose another output format if desired, OR
-- Display completed.html
--- If using completed.html,
---- display useremail
---- provide [Back] button to retunr to index.html
-
-
-
-Display of date/time values for due, completed and updated fields is not in local timezone.
-- Currently uses/shows UTC
-- Can't get user's tiemzone from their credentials or user object?
-
 
 
 Restore hTodo format
 - Requires proper handling of nested tasks (as per original DB model)
 
 
-
-Consider storing snapshots as single 'blobs' to reduce databse write quota being exceeded
-
-
-
-
-Consider supporting nextPageToke for task lists, in case a user has more than 100 task lists
--- Test by creating >100 tasklists
-
-
-Create an export that includes ALL fields
 - Fix html template so that the task bullet displays circle or tick
 - handle subtasks (multiple levels)
 
@@ -284,13 +211,11 @@ Handle nested tasks
 -- Required for hTodo
 -- Nice to have on HTML view
 
+
+
 Display summaries for task lists on .html page
 - Number of tasks, num completed (per list, and total)
 
-
-
-Keep index.html loaded after sending by email (i.e., same behaviour as after downloading files)
-- Alt: Reload index.html, add template arg & code to display popup on reload if email was sent
 
 
 Change index.html so that the page is cleared (or at least button is disabled), to prevent user clicking again whilst backup is being created and emailed.
@@ -338,20 +263,21 @@ From http://stackoverflow.com/questions/2540202/how-can-i-check-for-unused-impor
     If you use the eclipse IDE with pydev and mylyn, it provides automatic checking and highlighting for unused imports, among other things. It integrates with pylint as well.
 
 
-Change index.html so that the page is cleared (or at least button is disabled), to prevent user clicking again whilst backup is being created and emailed.
+
+- Consider creating a template to produce a text file
+-- Investigate if Django can use spaces to indent tasks
+-- Need to handle text wrap/overflow
 
 
-Include email address on index.html &/or completed.html so that user know where email was sent.
+
 
 Improve look of /completed page.
-
-Ensure that all pages have a logout link
 
 Tidy up completed.html
 
 
 Remove debug=True from application = webapp.WSGIApplication()
-- debug=true appears to cause exception message to be displayed in browser
+- debug=true causee exception message to be displayed in browser
 
 
 Can't use email when in production due to limit of 100 emails/day
@@ -362,98 +288,9 @@ Can't use email when in production due to limit of 100 emails/day
 Try catching exceptions and displaying more meaningful error messages on HTML page
 
 
-Change completed page to reflect type of export (not using email anymore due to quota limit of 9 emails!)
-
 
 Create a Google code and Google Groups account for js-tasks
 - Upload source code
 - Announce to GTP groups (see URLs in "GTP Alternative" folder on desktop
 
-
-
-
-================== Other options / future work ==========================
-OPTION (if taskqueue can't finish in time):
-- Use memcache to store;
-    raw tasklists data (would have up to 20 tasklists, + next_tasklists_page token if it exists)
-- At start of processing 100 tasks,
-  - Use memcache to store;
-    raw tasks data (would have up to 100 tasks, + next_tasks_page token if it exists)
-- After processing 100 tasks;
-  - Mark current tasks data completed in memcache (may still need to get another 100 tasks if token exists)
-  - Check elapsed time since "GET"
-      If > 20 seconds, write response page with updated count
-          Include unique ID (to enable next page request to extract data from memcache to continue processing)
-        Use OnLoad event to post (same as when user clicks [Outlook CSV]
-          Post unique ID (to enable next page request to extract data from memcache to continue processing) 
-
-
-
-
-================== Cancelled ===============
-Pre-fill datetime into email subject input field
-- Perhaps use Javascrip to fill in timestamp in Subject field, so that the time matches the user's time.
-
-TRIED:
-- Try emailing tasklists, since it is too big to store in the DB
-# Email limit is too small
-
-- Check if memcache can handle larger amount of data
-# No
-
-- Could update status page using JS to get results from a URL in a simple format, and then using DOM to set values of elements on page
-
-- Try Expando to add additional Blobs as needed
-# 2012-02-22; Expando appears to have total size limit ~1MB
-  -- Tested in "C:\Programming\GoogleAppEngine\helloworld\helloworld.py"
-  
-
-================== Fixed / Done ===================
-BUG; Generating multiple instances of every task; 1 for each tasklist (category)
-
-BUG; Export for user B includes tasks from user A
-- Need to create a per-user data store, and delete it once we've exported (or at least when user logs off)
--- It seems that only tasks where the tasklist name is the same for both users (e.g., "Default list")
-
-BUG: Server Error when request takes > 60 seconds (see issue #2)
-- Could perhaps parallelise, by creating one task-queue task per tasklist. Would only help if people have roughly similar numbers of tasks in all their task lists. Won't help if they only have one task list, or one task list is significantly bigger than all the others.
-
-Interpret "2012-01-29T13:58:16.000Z" date format returned by Google API, and
-write back into task fields (due, completed, updated) in format that Django can use. e.g., for task.due|date:"n/j/Y"
-
-Try downloading as CSV, ICS
-
-Change references to Django template files; I changed names to tasks_template[_XXXXX].EXT
-
-create a Python wrapper which writes date-time as a version string to a .py file which is then used to dispay version on inedx.html
-
-
-Investigate discrepancy between js-tasks outlook.csv export (373 tasks) and Calengoo (565 tasks)
-- outlook.csv seems to be the same as what's online
-
-- Consider exporting a csv 'dump' format, which includes every Google Tasks attribute.
-
-- Use multiple "child" DB entitities to pass back data 'sliced' 'pickled' data to front-end. ANCESTOR wouuld be email address,e.g.,
-    class TasklistsData(db.Model):
-        pickled_tasks_data = db.BlobProperty(indexed=False)
-        idx = db.IntegerProperty(default=0, indexed=True) # To reassemble in order
-    
-    tasklists_records = db.GqlQuery("SELECT * "
-                                "FROM TasklistsData "
-                                "WHERE ANCESTOR IS :1 "
-                                "ORDER BY idx ASC",
-                                db.Key.from_path(__DB_KEY_TASKS_DATA__, user_email))
-
-
-- Retry on failure by putting try-exception 'loop' around code which calls tasks_data = tasks_svc.list() in worker.py
-# 2012-02-21; Done and testing on tasks-backup
-
-- Display progress; every 'n' seconds, refresh page showing "'nnn' tasks retrieved"
-# Done
-
-
-- Display note on progress/results.html to indicate that results are as at {{ SnapshotTimestamp }}, that is, changes to tasks
-  lists since that time will not be included in the backup.
--- Add Backup Timestamp property to TasksBackupJob
-# DONE
 

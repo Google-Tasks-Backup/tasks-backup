@@ -11,6 +11,16 @@ This is the Django template used by test-taskqueue.py
     
     <title>{{ app_title }}</title>
     <link rel="stylesheet" type="text/css" href="tasks-backup.css"></link>
+    <script type="text/javascript">
+
+        function disableDisplayHtmlButton() {
+            document.getElementById("display-tasks-button").value = "Building display page ...";
+            document.getElementById("display-tasks-button").innerHTML = "Building display page ...";
+            document.getElementById("display-tasks-button").disabled = true;
+        }
+        
+	
+    </script>
 </head>
 
 <body>
@@ -49,7 +59,7 @@ This is the Django template used by test-taskqueue.py
     
     {% if status == "no-record" %}
         <div class="break">
-            No backup for current user. Please start a backup first.
+            No backup for current user. Please <a href="{{ home_page_url }}" >start a backup</a> first.
         </div>
         <form method="POST" action="/">
             <button type="submit">Start backup</button>
@@ -68,7 +78,7 @@ This is the Django template used by test-taskqueue.py
             Backup completed. Retrieved {{ progress }} tasks.
 		</div>
     {% else %}
-        <div class="break">
+    <div class="break">
             Status = {{ status }}
 		</div>
         <div class="break">
@@ -78,72 +88,138 @@ This is the Django template used by test-taskqueue.py
     
     {% if status == "completed" %}
         <div class="break">
-            Note that this backup is a snapshot of tasks at {{ job_start_timestamp }} UTC and will not reflect changes made after that time. Rerun {{ app_title }} to create a new backup.
+            Note that this backup is a snapshot of tasks as at {{ job_start_timestamp }} UTC 
+            and will not reflect changes made after that time. 
+            You will need to rerun <a href="{{ home_page_url }}" >{{ app_title }}</a>
+            to create a new backup.
         </div>
         <div class="break">
         </div>
         <!-- Choose format to return backup data -->
-        <form method="POST" action="/results">
-            <table class="format-selection">
-                <!--<col width="20%">
-                <col width="80%">-->
-                <tr>
-                    <td class="format-name">
-                        <input type="radio" name="format" value="outlook" checked="checked" /> Outlook CSV<br />
-                    </td>
-                    <td>
-                        Exports tasks to a CSV file suitable for importing into Outlook.
-                    </td>
-                </tr>
-                <tr>
-                    <td class="format-name">
-                        <input type="radio" name="format" value="ics" /> iCal ICS<br />
-                    </td>
-                    <td>
-                        Exports tasks to an ICS file suitable for importing into many calendar applications.
-                    </td>
-                </tr>
-                <tr>
-                    <td class="format-name">
-                        <input type="radio" name="format" value="raw" /> Raw CSV<br />
-                    </td>
-                    <td>
-                        Exports tasks to a CSV file containing all available properties for each task.
-                        <br />
-                        Google stores up to 15 properties for a task, but not all are used for every task.
-                    </td>
-                </tr>
-                <tr>
-                    <td class="format-name">
-                        <input type="radio" name="format" value="html" /> HTML<br />
-                    </td>
-                    <td>
-                        Displays all tasks as an HTML page.
-                    </td>
-                </tr>
-                <tr>
-                    <td class="format-name">
-                        <input type="radio" name="format" value="RTM" /> RTM email<br />
-                    </td>
-                    <td>
-                        Emails tasks in Remember The Milk format. (See notes below)
-                    </td>
-                </tr>
-                </table>
+        <form method="POST" action="{{ results_url }}" >
+			<fieldset>
+				<legend>Export all tasks</legend>
+				<table class="format-selection">
+					<!--<col width="20%">
+					<col width="80%">-->
+					<tr>
+						<td class="format-name">
+							<input type="radio" name="format" value="outlook" checked="checked" /> Outlook CSV<br />
+						</td>
+						<td>
+							CSV file suitable for importing into Outlook.
+						</td>
+					</tr>
+					<tr>
+						<td class="format-name">
+							<input type="radio" name="format" value="ics" /> iCal ICS<br />
+						</td>
+						<td>
+							iCal .ICS file suitable for importing into many calendar applications.
+						</td>
+					</tr>
+					<tr>
+						<td class="format-name">
+							<input type="radio" name="format" value="raw" /> Raw CSV<br />
+						</td>
+						<td>
+							CSV file containing all available properties for each task.
+							<br />
+							Google stores up to 15 properties for a task, but not all are used for every task.
+						</td>
+					</tr>
+					<tr>
+						<td class="format-name">
+							<input type="radio" name="format" value="raw1" /> Raw CSV, formatted dates<br />
+						</td>
+						<td>
+							Same as Raw CSV, but with date/timestamps formatted suitable for reading by Excel.
+						</td>
+					</tr>
+                    {% if user_email == "Julie.Smith.1999@gmail.com" %}
+                        <tr>
+                            <td class="format-name">
+                                <input type="radio" name="format" value="py" /> Python<br />
+                            </td>
+                            <td>
+                                Python data structure.
+                            </td>
+                        </tr>
+                        <tr>
+                            <td class="format-name">
+                                <input type="radio" name="format" value="hTodo" /> hTodo<br />
+                            </td>
+                            <td>
+                                hTodo (not currently working)
+                            </td>
+                        </tr>
+                    {% endif %}
+					<tr>
+						<td class="format-name">
+							<input type="radio" name="format" value="RTM" /> RTM email<br />
+						</td>
+						<td>
+							Emails tasks in Remember The Milk format. 
+                            <span class="take-note-smaller">(Notes 1, 2 &amp; 3)</span>
+						</td>
+					</tr>
+					</table>
+					<br />
 
-            <br />
-            <button type="submit" >Retrieve</button>
+				<button type="submit" id="retrieve-tasks-button" class="big-button" >Retrieve tasks data</button>
+			</fieldset>
         </form>
         
         <div class="break">
         </div>
+        <form method="POST" action="{{ results_url }}" onsubmit="disableDisplayHtmlButton();" >
+            <input type="hidden" name="format" value="html1" />
+            <input type="hidden" name="job_start_timestamp" value="{{ job_start_timestamp }}" />
+			<fieldset>
+				<legend>Display all tasks as a single web page, suitable for printing <span class="take-note-smaller"> (Note 4)</legend>
+				<table class="format-selection">
+					<tr>
+						<td>
+							<input type="checkbox" name="dim_completed_tasks" value="True" checked="checked" >
+								&nbsp;Dim completed tasks? <span class="take-note-smaller"> (Note 5)</span>
+							</input>
+						</td>
+					</tr>
+					<tr>
+						<td>
+							<input type="checkbox" name="display_completed_date_field" value="True" checked="checked" >
+								&nbsp;Display completed date field?
+							</input>
+						</td>
+					</tr>
+					<tr>
+						<td>
+							<input type="checkbox" name="display_due_date_field" value="True" checked="checked" >
+								&nbsp;Display due date field?
+							</input>
+						</td>
+					</tr>
+					<tr>
+						<td>
+							<input type="checkbox" name="display_updated_date_field" value="True" >
+								&nbsp;Display updated date field?
+							</input>
+						</td>
+					</tr>
+				</table>
+				<br />
+				<button id="display-tasks-button" type="submit" class="big-button" >Display tasks page</button>
+			</fieldset>
+        </form>
+        <div class="break">
+        </div>
         
         <div class="heading">
-            Remember The Milk notes;
+            Notes;
         </div>
         <table  class="format-selection">
             <tr>
-                <td class="note-heading">
+                <td class="note-heading-smaller">
                     Note 1 - 
                 </td>
                 <td>
@@ -151,7 +227,7 @@ This is the Django template used by test-taskqueue.py
                 </td>
             </tr>
             <tr>
-                <td class="note-heading">
+                <td class="note-heading-smaller">
                     Note 2 - 
                 </td>
                 <td>
@@ -159,11 +235,31 @@ This is the Django template used by test-taskqueue.py
                 </td>
             </tr>
             <tr>
-                <td class="note-heading">
+                <td class="note-heading-smaller">
                     Note 3 - 
                 </td>
                 <td>
                     Any header text must be removed before forwarding the received email to your RTM import email address. The first line in the email must be a task.
+                </td>
+            </tr>
+            <tr>
+                <td class="note-heading-smaller">
+                    Note 4 - 
+                </td>
+                <td>
+                    The resultant web page will contain all the tasks in all the task lists. 
+                    There is no pretty formatting, so a page break may occur in the middle of a task.
+                    <br/>
+                    Note that the resultant printout can be MANY pages (especially when tasks have notes). 
+                    973 tasks in 7 tasklists resulted in 141 pages.
+                </td>
+            </tr>
+            <tr>
+                <td class="note-heading-smaller">
+                    Note 5 - 
+                </td>
+                <td>
+                    If checked, the HTML page will display completed tasks using a grey font. Hidden and deleted tasks are always dim.
                 </td>
             </tr>
         </table>

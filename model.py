@@ -65,5 +65,92 @@ class TasklistsData(db.Model):
         idx = db.IntegerProperty(default=0, indexed=True) # To reassemble in order        
 
 
+class Task():
+    """ Representation of a task to be used by the recurse tag in customjango """
+    
+    # Property descriptions from 
+    # https://developers.google.com/google-apps/tasks/v1/reference/tasks#resource
 
+    # string	Task identifier.
+    id = None
+    
+    # string	Title of the task.
+    title = None
+    
+    # string	Status of the task. This is either "needsAction" or "completed".
+    status = None
+    
+    # OPTIONAL: datetime	Due date of the task (as a RFC 3339 timestamp).
+    due = None
+    
+    # datetime	Last modification time of the task (as a RFC 3339 timestamp).
+    updated = None 
+    
+    # string	String indicating the position of the task among its sibling tasks
+    # under the same parent task or at the top level. 
+    # If this string is greater than another task's corresponding position string 
+    # according to lexicographical ordering, the task is positioned after the other
+    # task under the same parent task (or at the top level). 
+    # This field is read-only. Use the "move" method to move the task to another position.
+    position = None
+    
+    # OPTIONAL: datetime	Completion date of the task (as a RFC 3339 timestamp). 
+    # This field is omitted if the task has not been completed.
+    completed = None
+    
+    # OPTIONAL:string	Notes describing the task. 
+    notes = None  
+    
+    # OPTIONAL: boolean	Flag indicating if task has been deleted. Default False.
+    deleted = None 
+    
+    # OPTIONAL: boolean	Flag indicating whether the task is hidden. 
+    # This is the case if the task had been marked completed when the task list was last cleared. 
+    # The default is False. This field is read-only.
+    hidden = False
+    
+    # OPTIONAL	string	Parent task identifier. (id of the parent of this task)
+    # This field is omitted if it is a top-level task. This field is read-only. 
+    # Use the "move" method to move the task under a different parent or to the top level.
+    parent = None 
+    
+    # OPTIONAL: list	Collection of links. This collection is read-only.	
+    #       links[].type	    string	Type of the link, e.g. "email".	
+    #       links[].description	string	The description. In HTML speak: Everything between <a> and </a>.	
+    #       links[].link	    string	The URL.
+    links = None
+	
+    # ============ Additional properties required by customjango.py recurse tag ===============
+    parent_ = None # returns None if the item is a root item
+    children = [] # List of children of this task
+    
+    
+    # ============= Other properties, not used by tasks-backup ==================
+    # kind	                string	Type of the resource. This is always "tasks#task".
+    # etag	                etag	ETag of the resource.
+    # selfLink	            string	URL pointing to this task. Used to retrieve, update, or delete this task.
+    # links[]	            list	Collection of links. This collection is read-only.	
+    # links[].type	        string	Type of the link, e.g. "email".	
+    # links[].description	string	The description. In HTML speak: Everything between <a> and </a>.	
+    # links[].link	        string	The URL.    
+    
+
+    def __init__(self, task):
+        """ Initialise Task from a task dictionary """
+        
+        self.id = task.get(u'id', None)
+        self.title = task.get(u'title', None)
+        self.notes = task.get(u'notes', None)
+        self.status = task.get(u'status', None)
+        self.due = task.get(u'due', None)
+        self.completed = task.get(u'completed', None)
+        self.updated = task.get(u'updated', None)
+        self.deleted = task.get(u'deleted', None)
+        self.hidden = task.get(u'hidden', None)
+        self.parent = task.get(u'parent', None)
+        self.position = task.get(u'position', None)
+#        self.parent = task.get(u'parent_', None)
+        self.children = task.get(u'children', [])
+        self.links = task.get(u'links', None)
+        self.parent_ = task.get(u'parent', None) # returns None if the item is a root item
 
