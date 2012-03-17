@@ -4,31 +4,47 @@ This is the Django template used by test-taskqueue.py
 {% endcomment %}
 <!doctype html>
 <html>
-<head>
-    {% if status == "starting" or status == "building" %}
-        <meta http-equiv="refresh" content="{{ refresh_interval }}">
-    {% endif %}
-    
-    <title>{{ app_title }}</title>
-    <link rel="stylesheet" type="text/css" href="tasks-backup.css"></link>
-    <script type="text/javascript">
-
-        function disableDisplayHtmlButton() {
-            document.getElementById("display-tasks-button").value = "Building display page ...";
-            document.getElementById("display-tasks-button").innerHTML = "Building display page ...";
-            document.getElementById("display-tasks-button").disabled = true;
-        }
+    <head>
+        {% if status == "starting" or status == "building" %}
+            <meta http-equiv="refresh" content="{{ refresh_interval }}">
+        {% endif %}
         
-	
-    </script>
-</head>
+        <title>{{ app_title }}</title>
+        <link rel="stylesheet" type="text/css" href="tasks-backup.css"></link>
+        <script type="text/javascript">
+
+            function disableDisplayHtmlButton() {
+                document.getElementById("display-tasks-button").value = "Building display page (this may take many minutes) ...";
+                document.getElementById("display-tasks-button").innerHTML = "Building display page (this may take many minutes) ...";
+                document.getElementById("display-tasks-button").disabled = true;
+                // Also disable retrieve button, since clicking it after display button 
+                // has been clicked, results in display process being interrupted. 
+                // Display button stays disabled, user get selected download file, 
+                // but user never sees the display page.
+                document.getElementById("retrieve-tasks-button").disabled = true;
+            }
+            
+        
+        </script>
+        <script type="text/javascript">
+
+          var _gaq = _gaq || [];
+          _gaq.push(['_setAccount', 'UA-30118203-1']);
+          _gaq.push(['_trackPageview']);
+
+          (function() {
+            var ga = document.createElement('script'); ga.type = 'text/javascript'; ga.async = true;
+            ga.src = ('https:' == document.location.protocol ? 'https://ssl' : 'http://www') + '.google-analytics.com/ga.js';
+            var s = document.getElementsByTagName('script')[0]; s.parentNode.insertBefore(ga, s);
+          })();
+
+        </script>
+    </head>
 
 <body>
-    {% if is_authorized %}
-        <div class="usertitle">
-            Authorised user: {{ user_email }} <span class="logout-link">[ <a href="{{ logout_url }}">Log out</a> ]</span>
-        </div>
-    {% endif %}
+    <div class="usertitle">
+        Authorised user: {{ user_email }} <span class="logout-link">[ <a href="{{ logout_url }}">Log out</a> ]</span>
+    </div>
 
     <h2>{{ app_title }}</h2>
 
@@ -136,13 +152,21 @@ This is the Django template used by test-taskqueue.py
 							Same as Raw CSV, but with date/timestamps formatted suitable for reading by Excel.
 						</td>
 					</tr>
-                    {% if user_email == "Julie.Smith.1999@gmail.com" %}
+                    {% if display_technical_options %}
                         <tr>
                             <td class="format-name">
                                 <input type="radio" name="format" value="py" /> Python<br />
                             </td>
                             <td>
                                 Python data structure.
+                            </td>
+                        </tr>
+                        <tr>
+                            <td class="format-name">
+                                <input type="radio" name="format" value="py1" /> Nested Python<br />
+                            </td>
+                            <td>
+                                Python data structure. Tasks have a 'children' element, which contains that task's sub-tasks (if they exist)
                             </td>
                         </tr>
                         <tr>
@@ -173,7 +197,7 @@ This is the Django template used by test-taskqueue.py
         <div class="break">
         </div>
         <form method="POST" action="{{ results_url }}" onsubmit="disableDisplayHtmlButton();" >
-            <input type="hidden" name="format" value="html1" />
+            <input type="hidden" name="format" value="html_raw" />
             <input type="hidden" name="job_start_timestamp" value="{{ job_start_timestamp }}" />
 			<fieldset>
 				<legend>Display all tasks as a single web page, suitable for printing <span class="take-note-smaller"> (Note 4)</legend>

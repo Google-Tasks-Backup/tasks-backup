@@ -162,7 +162,7 @@ class OAuth2Credentials(Credentials):
   def invalid(self):
     """True if the credentials are invalid, such as being revoked."""
     return getattr(self, '_invalid', False)
-
+    
   def set_store(self, store):
     """Set the storage for the credential.
 
@@ -279,7 +279,7 @@ class OAuth2Credentials(Credentials):
       resp, content = request_orig(uri, method, body, headers,
                                    redirections, connection_type)
       if resp.status == 401:
-        logging.info("Refreshing because we got a 401")
+        logging.info("OAuth2Credentials.new_request(): Refreshing because we got a 401")
         self._refresh(request_orig)
         headers['authorization'] = 'OAuth ' + self.access_token
         return request_orig(uri, method, body, headers,

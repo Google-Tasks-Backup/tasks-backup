@@ -25,7 +25,8 @@ import logging
 import os
 import pickle
 import sys
-#import urllib
+import gc
+import cgi
 
 from apiclient import discovery
 from apiclient.oauth2client import appengine
@@ -42,6 +43,12 @@ from google.appengine.ext.webapp import util
 from google.appengine.runtime import apiproxy_errors
 from google.appengine.runtime import DeadlineExceededError
 from google.appengine.api import urlfetch_errors
+from google.appengine.api import logservice # To flush logs
+
+logservice.AUTOFLUSH_EVERY_SECONDS = 5
+logservice.AUTOFLUSH_EVERY_BYTES = None
+logservice.AUTOFLUSH_EVERY_LINES = 5
+logservice.AUTOFLUSH_ENABLED = True
 
 import httplib2
 
@@ -98,7 +105,35 @@ def _GetCredentials():
   return user, credentials
   
   
+class InvalidCredentialsHandler(webapp.RequestHandler):
+    """Handler for /invalidcredentials"""
 
+    def get(self):
+        """Handles GET requests for /invalidcredentials"""
+
+        fn_name = "InvalidCredentialsHandler.get(): "
+
+        logging.debug(fn_name + "<Start>")
+        logservice.flush()
+        
+        client_id, client_secret, user_agent, app_title, product_name, host_msg = shared.GetSettings(self.request.host)
+        
+        path = os.path.join(os.path.dirname(__file__), "invalid_credentials.html")
+
+        template_values = {  'app_title' : app_title,
+                             'host_msg' : host_msg,
+                             'home_page_url' : settings.HOME_PAGE_URL,
+                             'product_name' : product_name,
+                             'url_discussion_group' : settings.url_discussion_group,
+                             'email_discussion_group' : settings.email_discussion_group,
+                             'url_issues_page' : settings.url_issues_page,
+                             'url_source_code' : settings.url_source_code,
+                             'logout_url': users.create_logout_url('/')}
+                     
+        self.response.out.write(template.render(path, template_values))
+        logging.debug(fn_name + "<End>")
+        
+        
 class MainHandler(webapp.RequestHandler):
     """Handler for /."""
 
@@ -108,7 +143,8 @@ class MainHandler(webapp.RequestHandler):
         fn_name = "MainHandler.get(): "
 
         logging.info(fn_name + "<Start> (app version %s)" %appversion.version )
-
+        logservice.flush()
+        
         client_id, client_secret, user_agent, app_title, product_name, host_msg = shared.GetSettings(self.request.host)
 
         try:
@@ -120,8 +156,14 @@ class MainHandler(webapp.RequestHandler):
             logging.exception(fn_name + "Exception retrieving request headers")
             
         user, credentials = _GetCredentials()
+            
         if user:
             user_email = user.email()
+        
+        # Log and flush before starting operation which may cause memory limit exceeded error
+        logging.debug(fn_name + "building template")
+        logservice.flush() 
+        
         path = os.path.join(os.path.dirname(__file__), "index.html")
         if not credentials or credentials.invalid:
             is_authorized = False
@@ -147,7 +189,10 @@ class MainHandler(webapp.RequestHandler):
                            'app_version' : appversion.version,
                            'upload_timestamp' : appversion.upload_timestamp}
         self.response.out.write(template.render(path, template_values))
+        # logging.debug(fn_name + "Calling garbage collection")
+        # gc.collect()
         logging.debug(fn_name + "<End>" )
+        logservice.flush()
     
 
 class AuthRedirectHandler(webapp.RequestHandler):
@@ -172,12 +217,29 @@ class CompletedHandler(webapp.RequestHandler):
         fn_name = "CompletedHandler.get(): "
 
         user, credentials = _GetCredentials()
+        # if user is None:
+            # logging.warning(fn_name + "user is None, redirecting to " +
+                # settings.INVALID_CREDENTIALS_URL)
+            # self.redirect(settings.INVALID_CREDENTIALS_URL)
+            # return
+            
+        # if credentials is None or credentials.invalid:
+            # logging.warning(fn_name + "credentials is None or invalid, redirecting to " + 
+                # settings.INVALID_CREDENTIALS_URL)
+            # self.redirect(settings.INVALID_CREDENTIALS_URL)
+            # return
+            
         user_email = user.email()
         if isUserEmail(user_email):
             logging.debug(fn_name + "user_email = [%s]" % user_email)
 
         client_id, client_secret, user_agent, app_title, product_name, host_msg = shared.GetSettings(self.request.host)
 
+        
+        # Log and flush before starting operation which may cause memory limit exceeded error
+        logging.debug(fn_name + "building template")
+        logservice.flush() 
+        
         path = os.path.join(os.path.dirname(__file__), "completed.html")
         if not credentials or credentials.invalid:
             is_authorized = False
@@ -209,16 +271,23 @@ class StartBackupHandler(webapp.RequestHandler):
         
         fn_name = "StartBackupHandler.post(): "
        
-        logging.debug(fn_name + "<start>")
+        logging.debug(fn_name + "<Start>")
+        logservice.flush()
 
         # client_id, client_secret, user_agent, app_title, product_name, host_msg = shared.GetSettings(self.request.host)
         
         user, credentials = _GetCredentials()
-        
-        # TODO: Handle unauthenticated user
         if user is None:
-            logging.info(fn_name + "user is None, redirecting to /")
-            self.redirect('/')
+            logging.warning(fn_name + "user is None, redirecting to " +
+                settings.INVALID_CREDENTIALS_URL)
+            self.redirect(settings.INVALID_CREDENTIALS_URL)
+            return
+            
+        if credentials is None or credentials.invalid:
+            logging.warning(fn_name + "credentials is None or invalid, redirecting to " + 
+                settings.INVALID_CREDENTIALS_URL)
+            self.redirect(settings.INVALID_CREDENTIALS_URL)
+            return
             
         user_email = user.email()
         is_test_user = shared.isTestUser(user_email)
@@ -260,8 +329,11 @@ class StartBackupHandler(webapp.RequestHandler):
             return
 
         logging.debug(fn_name + "Redirect to " + settings.PROGRESS_URL + " for " + str(user_email))
-        logging.debug(fn_name + "<End> for " + str(user_email))
         self.redirect(settings.PROGRESS_URL)
+        # logging.debug(fn_name + "Calling garbage collection")
+        # gc.collect()
+        logging.debug(fn_name + "<End> for " + str(user_email))
+        logservice.flush()
 
         
 class ShowProgressHandler(webapp.RequestHandler):
@@ -272,24 +344,24 @@ class ShowProgressHandler(webapp.RequestHandler):
         fn_name = "ShowProgressHandler.get(): "
     
         logging.debug(fn_name + "<Start>")
+        logservice.flush()
         
         client_id, client_secret, user_agent, app_title, product_name, host_msg = shared.GetSettings(self.request.host)
       
           
         user, credentials = _GetCredentials()
-        if not credentials or credentials.invalid:
-            # TODO: Handle unauthenticated user
-            is_authorized = False
-            # logging.debug(fn_name + "is_authorized = False")
-        else:
-            is_authorized = True
-        
-        
-        # TODO: Handle unauthenticated user
         if user is None:
-            logging.error(fn_name + "user is None, redirecting to /")
-            self.redirect('/')
+            logging.warning(fn_name + "user is None, redirecting to " +
+                settings.INVALID_CREDENTIALS_URL)
+            self.redirect(settings.INVALID_CREDENTIALS_URL)
             return
+            
+        if credentials is None or credentials.invalid:
+            logging.warning(fn_name + "credentials is None or invalid, redirecting to " + 
+                settings.INVALID_CREDENTIALS_URL)
+            self.redirect(settings.INVALID_CREDENTIALS_URL)
+            return
+            
             
         user_email = user.email()
         
@@ -339,7 +411,11 @@ class ShowProgressHandler(webapp.RequestHandler):
         
         if error_message:
             logging.error(fn_name + "Error message: " + str(error_message))
-            
+        
+        # Log and flush before starting operation which may cause memory limit exceeded error
+        # logging.debug(fn_name + "building template")
+        # logservice.flush() 
+        
         path = os.path.join(os.path.dirname(__file__), "progress.html")
         
         #refresh_url = self.request.host + '/' + settings.PROGRESS_URL
@@ -352,9 +428,9 @@ class ShowProgressHandler(webapp.RequestHandler):
                            'progress' : progress,
                            'error_message' : error_message,
                            'job_start_timestamp' : job_start_timestamp,
-                           'is_authorized': is_authorized,
                            'refresh_interval' : settings.PROGRESS_PAGE_REFRESH_INTERVAL,
                            'user_email' : user_email,
+                           'display_technical_options' : shared.isTestUser(user_email),
                            'results_url' : settings.RESULTS_URL,
                            #'start_backup_url' : settings.START_BACKUP_URL,
                            #'refresh_url' : settings.PROGRESS_URL,
@@ -367,7 +443,10 @@ class ShowProgressHandler(webapp.RequestHandler):
                            'app_version' : appversion.version,
                            'upload_timestamp' : appversion.upload_timestamp}
         self.response.out.write(template.render(path, template_values))
+        # logging.debug(fn_name + "Calling garbage collection")
+        # gc.collect()
         logging.debug(fn_name + "<End>")
+        logservice.flush()
         
           
 class ReturnResultsHandler(webapp.RequestHandler):
@@ -375,21 +454,40 @@ class ReturnResultsHandler(webapp.RequestHandler):
     
     def get(self):
         fn_name = "ReturnResultsHandler.get(): "
+        logging.debug(fn_name + "<Start>")
+        logservice.flush()
+        
         logging.warning(fn_name + "Expected POST for " + str(settings.RESULTS_URL) + 
                         ", so redirecting to " + str(settings.PROGRESS_URL))
         # Display the progress page to allow user to choose format for results
         self.redirect(settings.PROGRESS_URL)
-        
+        # logging.debug(fn_name + "Calling garbage collection")
+        # gc.collect()
+        logging.debug(fn_name + "<End>")
+        logservice.flush()
         
     def post(self):
         """ Return results to the user, in format chosen by user """
         fn_name = "ReturnResultsHandler.post(): "
         
         logging.debug(fn_name + "<Start>")
+        logservice.flush()
         
         client_id, client_secret, user_agent, app_title, product_name, host_msg = shared.GetSettings(self.request.host)
         
         user, credentials = _GetCredentials()
+        if user is None:
+            logging.warning(fn_name + "user is None, redirecting to " +
+                settings.INVALID_CREDENTIALS_URL)
+            self.redirect(settings.INVALID_CREDENTIALS_URL)
+            return
+            
+        if credentials is None or credentials.invalid:
+            logging.warning(fn_name + "credentials is None or invalid, redirecting to " + 
+                settings.INVALID_CREDENTIALS_URL)
+            self.redirect(settings.INVALID_CREDENTIALS_URL)
+            return
+            
         user_email = user.email()
         is_test_user = shared.isTestUser(user_email)
         
@@ -488,28 +586,10 @@ class ReturnResultsHandler(webapp.RequestHandler):
         # CAUTION: Do not include characters that may not be valid on some filesystems (e.g., colon is not valid on Windows)
         output_filename_base = "tasks_%s_%s_%s" % (export_format, user_email, datetime.datetime.now().strftime("%Y-%m-%d"))
         
-        template_values = {'app_title' : app_title,
-                           'host_msg' : host_msg,
-                           'home_page_url' : settings.HOME_PAGE_URL,
-                           'product_name' : product_name,
-                           'tasklists': tasklists,
-                           'dim_completed_tasks' : dim_completed_tasks,
-                           'display_completed_date_field' : display_completed_date_field,
-                           'display_due_date_field' : display_due_date_field,
-                           'display_updated_date_field' : display_updated_date_field,
-                           'user_email' : user_email, 
-                           'now' : datetime.datetime.now(),
-                           'job_start_timestamp' : job_start_timestamp,
-                           'exportformat' : export_format,
-                           'url_discussion_group' : settings.url_discussion_group,
-                           'email_discussion_group' : settings.email_discussion_group,
-                           'url_issues_page' : settings.url_issues_page,
-                           'url_source_code' : settings.url_source_code,
-                           'app_version' : appversion.version,
-                           'upload_timestamp' : appversion.upload_timestamp}
-        
-        if export_format == 'html1':
+        if export_format in ['html1', 'py1']:
+            logging.debug(fn_name + "Modifying data for " + export_format + " format")
             # Modify structure so that the html1 template can indent tasks
+            logging.debug(fn_name + "Building new collection of nested tasks to support indenting")
             for tasklist in tasklists:
                 tasks = tasklist[u'tasks']
                 
@@ -536,39 +616,86 @@ class ReturnResultsHandler(webapp.RequestHandler):
                         depth = task[u'depth']
                         # If not using customdjango, use inline style attribute to indent by this much
                         # e.g., style="padding-left:{{ task.indent }}px"
-                        task[u'indent'] = depth * settings.TASK_INDENT
+                        task[u'indent'] = str(depth * settings.TASK_INDENT)
                         if depth == 0:
                             task['parent_'] = None
                         else:
                             task['parent_'] = task['parent']
-
                             
-            # TODO: Fix this, so that we can use the recurse tag in the hTodo template
-            # Currently throws AttributeError: 'dict' object has no attribute 'position'
-            if export_format == 'hTodo':
-                # Use the collection of Task object when using the hTodo Django template
-                # Create structure so that the Django template can recurse tasks
-                list_of_tasklists = []
-                for tasklist in tasks_data.tasklists:
-                    list_of_tasks = []
-                    tasks = tasklist[u'tasks']
-                    
-                    if len(tasks) > 0: # Non-empty tasklist
-                        # Find the sub task relationships
-                        for task in tasks:
-                            new_task = model.Task(task)
-                            list_of_tasks.append(new_task)
-                            
-                        for t in list_of_tasks:    
-                            id = t.id
-                            for st in list_of_tasks:
-                                sid = st.id
-                                if st.parent:
-                                    if st.parent == id:
-                                        t.children.append(st)
+        if export_format in ['html_raw', 'py']:
+            logging.debug(fn_name + "Modifying data for " + export_format + " format")
+            # Calculate 'depth' and add 'indent' property so that WriteHtmlRaw() can indent tasks
+            for tasklist in tasklists:
+                tasks = tasklist[u'tasks']
+                
+                if len(tasks) > 0: # Non-empty tasklist
+                    # Add default metadata to each task, which will be modified in the next round
+                    for task in tasks:
+                        task[u'depth'] = 0
 
-                template_values['tasklists'] = list_of_tasklists
+                    # Find the sub task relationships
+                    for task in tasks:
+                        id = task['id']
+                        for stask in tasks:
+                            sid = stask['id']
+                            if stask.has_key(u'parent'):
+                                if stask[u'parent'] == id:
+                                    stask[u'depth'] = task[u'depth'] + 1
+                                    
+                            
+                    for task in tasks:
+                        depth = task[u'depth']
+                        task[u'indent'] = str(depth * settings.TASK_INDENT).strip()
+                            
+        # TODO: Fix this, so that we can use the recurse tag in the hTodo template
+        # Currently throws AttributeError: 'dict' object has no attribute 'position'
+        if export_format == 'hTodo':
+            logging.debug(fn_name + "Modifying data for " + export_format + " format")
+            # Use the collection of Task object when using the hTodo Django template
+            # Create structure so that the Django template can recurse tasks
+            logging.debug(fn_name + "Building collection of Task objects for hTodo")
+            list_of_tasklists = []
+            for tasklist in tasks_data.tasklists:
+                list_of_tasks = []
+                tasks = tasklist[u'tasks']
+                
+                if len(tasks) > 0: # Non-empty tasklist
+                    # Find the sub task relationships
+                    for task in tasks:
+                        new_task = model.Task(task)
+                        list_of_tasks.append(new_task)
+                        
+                    for t in list_of_tasks:    
+                        id = t.id
+                        for st in list_of_tasks:
+                            sid = st.id
+                            if st.parent:
+                                if st.parent == id:
+                                    t.children.append(st)
+
+            #template_values['tasklists'] = list_of_tasklists
+            tasklists = list_of_tasklists
           
+        template_values = {'app_title' : app_title,
+                           'host_msg' : host_msg,
+                           'home_page_url' : settings.HOME_PAGE_URL,
+                           'product_name' : product_name,
+                           'tasklists': tasklists,
+                           'dim_completed_tasks' : dim_completed_tasks,
+                           'display_completed_date_field' : display_completed_date_field,
+                           'display_due_date_field' : display_due_date_field,
+                           'display_updated_date_field' : display_updated_date_field,
+                           'user_email' : user_email, 
+                           'now' : datetime.datetime.now(),
+                           'job_start_timestamp' : job_start_timestamp,
+                           'exportformat' : export_format,
+                           'url_discussion_group' : settings.url_discussion_group,
+                           'email_discussion_group' : settings.email_discussion_group,
+                           'url_issues_page' : settings.url_issues_page,
+                           'url_source_code' : settings.url_source_code,
+                           'app_version' : appversion.version,
+                           'upload_timestamp' : appversion.upload_timestamp}
+        
         # template file name format "tasks_template_FORMAT.EXT",
         #   where FORMAT = export_format (e.g., 'outlook')
         #     and EXT = the file type extension (e.g., 'csv')
@@ -582,14 +709,19 @@ class ReturnResultsHandler(webapp.RequestHandler):
             self.WriteHtmlTemplate(template_values, export_format)
         elif export_format == 'RTM':
             self.SendEmailUsingTemplate(template_values, export_format, user_email, output_filename_base)
-        elif export_format == 'py':
+        elif export_format in ['py', 'py1']:
             self.WriteTextUsingTemplate(template_values, export_format, output_filename_base, 'py')
+        elif export_format == 'html_raw':
+            self.WriteHtmlRaw(template_values)
         else:
             logging.warning(fn_name + "Unsupported export format: %s" % export_format)
             # TODO: Handle invalid export_format nicely - display message to user & go back to main page
             self.response.out.write("<br /><h2>Unsupported export format: %s</h2>" % export_format)
 
-        logging.debug(fn_name + "<end>")
+        # # logging.debug(fn_name + "Calling garbage collection")
+        # gc.collect()
+        logging.debug(fn_name + "<End>")
+        logservice.flush()
 
   
 
@@ -603,6 +735,9 @@ class ReturnResultsHandler(webapp.RequestHandler):
         """ Display an error page to the user """
         fn_name = "DisplayErrorPage(): "
 
+        logging.debug(fn_name + "<Start>")
+        logservice.flush()
+        
         app_version = None
         app_upload_timestamp = None
            
@@ -626,12 +761,277 @@ class ReturnResultsHandler(webapp.RequestHandler):
                                'url_issues_page' : settings.url_issues_page,
                                'url_source_code' : settings.url_source_code}
                                  
+        
+        # Log and flush before starting operation which may cause memory limit exceeded error
+        logging.debug(fn_name + "building template")
+        logservice.flush() 
+        
         path = os.path.join(os.path.dirname(__file__), "error_message.html")
         logging.debug(fn_name + "Writing error page")
         logging.debug(err_template_values)
         self.response.out.write(template.render(path, err_template_values))
+        # logging.debug(fn_name + "Calling garbage collection")
+        # gc.collect()
+        logging.debug(fn_name + "<End>")
+        logservice.flush()
 
+        
+    
+    def EscapeHtml(self, text):
+        """Produce entities within text."""
+        if text is None:
+            return None
+        return cgi.escape(text).encode('ascii', 'xmlcharrefreplace')
+        #return "".join(html_escape_table.get(c,c) for c in text)
 
+        
+        
+    def WriteHtmlRaw(self, template_values):
+        """ Manually build an HTML representation of the user's tasks.
+        
+            This method creates the page manually, in an attempt to reduce the
+            amount of memory used when using Django templates to build HTML pages
+        """
+        
+        fn_name = "WriteHtmlRaw() "
+        
+        user_email = template_values.get('user_email')
+        logout_url = template_values.get('logout_url')
+        tasklists = template_values.get('tasklists')
+        job_start_timestamp = template_values.get('job_start_timestamp')
+        dim_completed_tasks = template_values.get('dim_completed_tasks')
+        display_completed_date_field = template_values.get('display_completed_date_field')
+        display_updated_date_field = template_values.get('display_updated_date_field')
+        display_due_date_field = template_values.get('display_due_date_field')
+        url_discussion_group = template_values.get('url_discussion_group')
+        email_discussion_group = template_values.get('email_discussion_group')
+        url_issues_page = template_values.get('url_issues_page')
+        url_source_code = template_values.get('url_source_code')
+        app_title = template_values.get('app_title')
+        app_version = template_values.get('app_version')
+        
+        self.response.out.write("""<html>
+            <head>
+                <title>""")
+        self.response.out.write(app_title)
+        self.response.out.write("""- List of tasks</title>
+                <link rel="stylesheet" type="text/css" href="tasks-backup.css"></link>
+                <script type="text/javascript">
+
+                  var _gaq = _gaq || [];
+                  _gaq.push(['_setAccount', 'UA-30118203-1']);
+                  _gaq.push(['_trackPageview']);
+
+                  (function() {
+                    var ga = document.createElement('script'); ga.type = 'text/javascript'; ga.async = true;
+                    ga.src = ('https:' == document.location.protocol ? 'https://ssl' : 'http://www') + '.google-analytics.com/ga.js';
+                    var s = document.getElementsByTagName('script')[0]; s.parentNode.insertBefore(ga, s);
+                  })();
+
+                </script>
+            </head>
+            <body>
+            <div class="usertitle">
+                Authorised user: """)
+        self.response.out.write(user_email)
+        self.response.out.write(' <span class="logout-link">[ <a href="')
+        self.response.out.write(logout_url)
+        self.response.out.write('">Log out</a> ]</span></div>')
+            
+        num_tasklists = len(tasklists)
+        if num_tasklists > 0:
+            # Display the job timestamp, so that it is clear when the snapshot was taken
+            self.response.out.write("""
+                    <div class="break">
+                        <h3>Tasks for """)
+            self.response.out.write(user_email)
+            self.response.out.write(""" as at """)
+            self.response.out.write(job_start_timestamp)
+            self.response.out.write(""" UTC</h3>
+                        <p>""")
+            self.response.out.write(num_tasklists)
+            self.response.out.write(""" task lists.</p>
+                    </div>""")
+                    
+            for tasklist in tasklists:
+                num_tasks = len(tasklist)
+                if num_tasks > 0:
+                
+                    tasklist_title = tasklist.get(u'title')
+                    if len(tasklist_title.strip()) == 0:
+                        tasklist_title = "<Unnamed Tasklist>"
+                    tasklist_title = self.EscapeHtml(tasklist_title)
+
+                    tasks = tasklist.get(u'tasks')
+                    num_tasks = len(tasks)
+                    self.response.out.write("""
+                        <div class="tasklist">
+                            <div class="tasklistheading">
+                                Task List: """)
+                    self.response.out.write(tasklist_title)
+                    self.response.out.write(""" - """)
+                    self.response.out.write(num_tasks)
+                    self.response.out.write(""" tasks.
+                            </div>""")
+                                        
+                    self.response.out.write("""
+                        <div class="tasks">""")
+                        
+                    for task in tasks:
+                        task_title = task.get(u'title', "<No Task Title>")
+                        if len(task_title.strip()) == 0:
+                            task_title = "<Unnamed Task>"
+                        task_title = self.EscapeHtml(task_title)
+                        
+                        task_notes = self.EscapeHtml(task.get(u'notes', None))
+                        task_deleted = task.get(u'deleted', None)
+                        task_hidden = task.get(u'hidden', None)
+                        task_indent = str(task.get('indent', 0))
+                        
+                        
+                        if u'due' in task:
+                            task_due = task[u'due'].strftime('%a, %d %b %Y') + " UTC"
+                        else:
+                            task_due = None
+                            
+                        if u'updated' in task:
+                            task_updated = task[u'updated'].strftime('%H:%M:%S %a, %d %b %Y') + " UTC"
+                        else:
+                            task_updated = None
+                            
+                        if u'completed' in task:
+                            task_completed = True
+                            task_completed_date = task[u'completed'].strftime('%H:%M %a, %d %b %Y') + " UTC"
+                            task_status_str = "&#x2713;"
+                        else:
+                            task_completed = False
+                            task_status_str = "[ &nbsp;]"
+                        
+                        dim_class = ""
+                        if task_completed and dim_completed_tasks:
+                            dim_class = "dim"
+                        if task_deleted or task_hidden:
+                            dim_class = "dim"
+                        
+                        self.response.out.write("""
+                            <!-- Task will be dim if; 
+                                  task is deleted OR 
+                                  task is hidden OR 
+                                  task is completed AND user checked dim_completed_tasks
+                            -->
+                            <div 
+                                style="padding-left:""")
+                        self.response.out.write(task_indent)
+                        self.response.out.write("""px" 
+                                class="task-html1 """)
+                        self.response.out.write(dim_class)
+                        # Note, additional double-quote (4 total), as the class= attribute is 
+                        # terminated with a double-quote after the class name
+                        self.response.out.write("""" 
+                            >
+                                <div >
+                                    <span class="status-cell">""")
+                        self.response.out.write(task_status_str)
+                        self.response.out.write("""</span>
+                                    <span class="task-title-html1">""")
+                        self.response.out.write(task_title)
+                        self.response.out.write("""</span>
+                                </div>
+                                <div class="task-details-html1">""")
+                        
+                        if task_completed and display_completed_date_field:
+                            self.response.out.write("""<div class="task-attribute">
+                                    <span class="fieldlabel">COMPLETED:</span> """)
+                            self.response.out.write(task_completed_date)
+                            self.response.out.write("""</div>""")
+                                    
+                        if task_notes:
+                            self.response.out.write("""<div class="task-notes">""")
+                            self.response.out.write(task_notes)
+                            self.response.out.write("""</div>""")
+                                    
+                        if task_due and display_due_date_field:
+                            self.response.out.write("""<div class="task-attribute">
+                                    <span class="fieldlabel">Due: </span>""")
+                            self.response.out.write(task_due)        
+                            self.response.out.write("""</div>""")
+                                    
+                        if task_updated and display_updated_date_field:
+                            self.response.out.write("""<div class="task-attribute">
+                                    <span class="fieldlabel">Updated:</span> """)
+                            self.response.out.write(task_updated)
+                            self.response.out.write("""</div>""")
+                            
+                        if task_deleted:
+                            self.response.out.write("""
+                                <div class="task-attribute-hidden-or-deleted">- Deleted -</div>
+                                """)
+                                
+                        if task_hidden:
+                            self.response.out.write("""
+                                <div class="task-attribute-hidden-or-deleted">- Hidden -</div>
+                                """)
+                                
+                        self.response.out.write("""
+                                </div>  <!-- End of task details div -->
+                            </div> <!-- End of task div -->
+                            """)
+                            
+                    self.response.out.write("""
+                            </div> <!-- End of tasks div -->
+                        """)
+                                           
+                else:
+                    self.response.out.write("""
+                            <div class="tasklistheading">Task List: %s</div>
+                                <div class="no-tasks">
+                                     No tasks
+                            </div>""" % tasklist_title)
+                    
+            self.response.out.write("""
+                    <div class="break">
+                        NOTE: Due, Updated and Completed dates and times are UTC, because that is how Google stores them.
+                    </div>""")
+                    
+        else:
+            self.response.out.write("""
+                <div class="break">
+                        <h3>No tasklists found for %s</h3>
+                    </div>""" % user_email)
+
+        self.response.out.write("""
+                <div class="break footer">
+                    Produced by %(app_title)s, version %(app_version)s
+                </div>
+                <div class="project-footer">
+                    <div class="break">
+                        Questions or comments? Go to <a href="http://%(url_discussion_group)s">%(url_discussion_group)s</a>
+                        or email <a href="mailto:%(email_discussion_group)s">%(email_discussion_group)s</a>
+                    </div>
+                    <div class="break">
+                        Please report bugs or suggest improvements at <a href="http:/%(url_issues_page)s">%(url_issues_page)s</a>
+                    </div>
+                    <div class="break">
+                        Source code for this project is at <a href="http://%(url_source_code)s">%(url_source_code)s</a>
+                    </div>
+                </div>""" %
+                { 'url_discussion_group' : url_discussion_group,
+                  'email_discussion_group' : email_discussion_group,
+                  'url_issues_page' : url_issues_page,
+                  'url_source_code' : url_source_code,
+                  'app_title' : app_title,
+                  'app_version' : app_version }
+            )
+
+        self.response.out.write("""</body></html>""")
+        logging.debug(fn_name + "Calling garbage collection")
+        gc.collect()
+        logging.debug(fn_name + "<End>")
+        logservice.flush()
+               
+        
+        
+        
 
     # Potential TODO items (if email quota is sufficient)
     #   TODO: Allow other formats
@@ -643,10 +1043,18 @@ class ReturnResultsHandler(webapp.RequestHandler):
         """
         fn_name = "SendEmailUsingTemplate(): "
 
+        logging.debug(fn_name + "<Start>")
+        logservice.flush()
+        
         # if shared.isTestUser(user_email):
           # logging.debug(fn_name + "Creating email body using template")
         # Use a template to convert all the tasks to the desired format 
         template_filename = "tasks_template_%s.txt" % export_format
+        
+        # Log and flush before starting operation which may cause memory limit exceeded error
+        logging.debug(fn_name + "building template")
+        logservice.flush() 
+        
         path = os.path.join(os.path.dirname(__file__), template_filename)
         email_body = template.render(path, template_values)
 
@@ -667,6 +1075,10 @@ class ReturnResultsHandler(webapp.RequestHandler):
           
         self.response.out.write("Email sent to %s </br>Use your browser back button to return to the previous page" % user_email)
         #self.redirect("/completed")
+        # logging.debug(fn_name + "Calling garbage collection")
+        # gc.collect()
+        logging.debug(fn_name + "<End>")
+        logservice.flush()
 
 
     def WriteIcsUsingTemplate(self, template_values, export_format, output_filename_base):
@@ -675,19 +1087,31 @@ class ReturnResultsHandler(webapp.RequestHandler):
         """
         fn_name = "WriteIcsUsingTemplate(): "
 
+        logging.debug(fn_name + "<Start>")
+        logservice.flush()
+        
         template_filename = "tasks_template_%s.ics" % export_format
         output_filename = output_filename_base + ".ics"
         self.response.headers["Content-Type"] = "text/calendar"
         self.response.headers.add_header(
             "Content-Disposition", "attachment; filename=%s" % output_filename)
 
+        
+        # Log and flush before starting operation which may cause memory limit exceeded error
+        logging.debug(fn_name + "building template")
+        logservice.flush() 
+        
         path = os.path.join(os.path.dirname(__file__), template_filename)
         if shared.isTestUser(template_values['user_email']):
           logging.debug(fn_name + "Writing %s format to %s" % (export_format, output_filename))
         else:
           logging.debug(fn_name + "Writing %s format" % export_format)
         self.response.out.write(template.render(path, template_values))
-
+        # logging.debug(fn_name + "Calling garbage collection")
+        # gc.collect()
+        logging.debug(fn_name + "<End>")
+        logservice.flush()
+        
 
     def WriteCsvUsingTemplate(self, template_values, export_format, output_filename_base):
         """ Write a CSV file according to the specified .csv template file
@@ -695,18 +1119,30 @@ class ReturnResultsHandler(webapp.RequestHandler):
         """
         fn_name = "WriteCsvUsingTemplate(): "
 
+        logging.debug(fn_name + "<Start>")
+        logservice.flush()
+        
         template_filename = "tasks_template_%s.csv" % export_format
         output_filename = output_filename_base + ".csv"
         self.response.headers["Content-Type"] = "text/csv"
         self.response.headers.add_header(
             "Content-Disposition", "attachment; filename=%s" % output_filename)
 
+        
+        # Log and flush before starting operation which may cause memory limit exceeded error
+        logging.debug(fn_name + "building template")
+        logservice.flush() 
+        
         path = os.path.join(os.path.dirname(__file__), template_filename)
         if shared.isTestUser(template_values['user_email']):
           logging.debug(fn_name + "Writing %s format to %s" % (export_format, output_filename))
         else:
           logging.debug(fn_name + "Writing %s format" % export_format)
         self.response.out.write(template.render(path, template_values))
+        # logging.debug(fn_name + "Calling garbage collection")
+        # gc.collect()
+        logging.debug(fn_name + "<End>")
+        logservice.flush()
 
 
     def WriteTextUsingTemplate(self, template_values, export_format, output_filename_base, file_extension):
@@ -715,12 +1151,20 @@ class ReturnResultsHandler(webapp.RequestHandler):
         """
         fn_name = "WriteTextUsingTemplate(): "
 
+        logging.debug(fn_name + "<Start>")
+        logservice.flush()
+        
         template_filename = "tasks_template_%s.%s" % (export_format, file_extension)
         output_filename = output_filename_base + "." + file_extension
         self.response.headers["Content-Type"] = "text/plain"
         self.response.headers.add_header(
             "Content-Disposition", "attachment;filename=%s" % output_filename)
 
+        
+        # Log and flush before starting operation which may cause memory limit exceeded error
+        logging.debug(fn_name + "building template")
+        logservice.flush() 
+        
         path = os.path.join(os.path.dirname(__file__), template_filename)
         if shared.isTestUser(template_values['user_email']):
           logging.debug(fn_name + "Writing %s format to %s" % (export_format, output_filename))
@@ -730,6 +1174,10 @@ class ReturnResultsHandler(webapp.RequestHandler):
         #       Currently sends source of HTML page as output_filename
         #       Perhaps try Content-Type = "application/octet-stream" ???
         self.response.out.write(template.render(path, template_values))
+        # logging.debug(fn_name + "Calling garbage collection")
+        # gc.collect()
+        logging.debug(fn_name + "<End>")
+        logservice.flush()
 
 
     def WriteHtmlTemplate(self, template_values, export_format):
@@ -738,15 +1186,42 @@ class ReturnResultsHandler(webapp.RequestHandler):
         """
         fn_name = "WriteHtmlTemplate(): "
 
+        logging.debug(fn_name + "<Start>")
+        logservice.flush()
+        
         logging.debug(fn_name + "dim_completed_tasks = " + str(template_values['dim_completed_tasks']))
         logging.debug(fn_name + "display_completed_date_field = " + str(template_values['display_completed_date_field']))
         logging.debug(fn_name + "display_due_date_field = " + str(template_values['display_due_date_field']))
         logging.debug(fn_name + "display_updated_date_field = " + str(template_values['display_updated_date_field']))
         
         template_filename = "tasks_template_%s.html" % export_format
+        
+        # Log and flush before starting operation which may cause memory limit exceeded error
+        logging.debug(fn_name + "building template")
+        logservice.flush() 
+        
         path = os.path.join(os.path.dirname(__file__), template_filename)
         logging.debug(fn_name + "Writing %s format" % export_format)
-        self.response.out.write(template.render(path, template_values))
+        
+        # logging.debug(fn_name + "len of template_values = " + str(len(str(template_values))))
+        # logservice.flush()
+        
+        logging.debug(fn_name + "rendering template")
+        logservice.flush() 
+        
+        rendered_page = template.render(path, template_values)
+        # logging.debug(fn_name + "len of rendered_page = " + str(len(str(rendered_page))))
+        # logservice.flush()
+        
+        logging.debug(fn_name + "writing response")
+        logservice.flush() 
+        self.response.out.write(rendered_page)
+        #self.response.out.write(str(template_values))
+        
+        # logging.debug(fn_name + "Calling garbage collection")
+        # gc.collect()
+        logging.debug(fn_name + "<End>")
+        logservice.flush()
 
 
     def WriteDebugHtmlTemplate(self, 
@@ -758,6 +1233,13 @@ class ReturnResultsHandler(webapp.RequestHandler):
                              app_title = settings.DEFAULT_APP_TITLE, 
                              host_msg = None):
         fn_name = "WriteDebugHtmlTemplate(): "                       
+        logging.debug(fn_name + "<Start>")
+        logservice.flush()
+        
+        # Log and flush before starting operation which may cause memory limit exceeded error
+        logging.debug(fn_name + "building template")
+        logservice.flush() 
+        
         debug_template_values = {'debug_version' : datetime.datetime.now().strftime("%Y-%m-%d %H:%M"),
                                  'debugmessages': debugmessages,
                                  'datadump1': datadump1,
@@ -773,6 +1255,10 @@ class ReturnResultsHandler(webapp.RequestHandler):
         path = os.path.join(os.path.dirname(__file__), 'debug_template.html')
         logging.debug(fn_name + "Writing debug HTML")
         self.response.out.write(template.render(path, debug_template_values))
+        # logging.debug(fn_name + "Calling garbage collection")
+        # gc.collect()
+        logging.debug(fn_name + "<End>")
+        logservice.flush()
 
  
                                  
@@ -782,6 +1268,8 @@ class OAuthHandler(webapp.RequestHandler):
 
     def get(self):
         """Handles GET requests for /oauth2callback."""
+        fn_name = "OAuthHandler.get() "
+        
         if not self.request.get("code"):
             self.redirect("/")
             return
@@ -794,6 +1282,10 @@ class OAuthHandler(webapp.RequestHandler):
             except client.FlowExchangeError, e:
                 credentials = None
                 error = True
+            except Exception, e:
+                logging.exception(fn_name + "Redirecting to " + settings.INVALID_CREDENTIALS_URL)
+                self.redirect(settings.INVALID_CREDENTIALS_URL)
+                return
             appengine.StorageByKeyName(
                 model.Credentials, user.user_id(), "credentials").put(credentials)
             if error:
@@ -804,18 +1296,19 @@ class OAuthHandler(webapp.RequestHandler):
         
 
 def main():
-    logging.info("Starting tasks-backup")
+    logging.info("main(): Starting tasks-backup (app version %s)" %appversion.version)
     template.register_template_library("common.customdjango")
 
     application = webapp.WSGIApplication(
         [
-            (settings.HOME_PAGE_URL,      MainHandler),
-            ("/completed",                CompletedHandler),
-            ("/auth",                     AuthRedirectHandler),
-            (settings.RESULTS_URL,        ReturnResultsHandler),
-            (settings.START_BACKUP_URL,   StartBackupHandler),
-            (settings.PROGRESS_URL,       ShowProgressHandler),
-            ("/oauth2callback",           OAuthHandler),
+            (settings.HOME_PAGE_URL,            MainHandler),
+            ("/completed",                      CompletedHandler),
+            ("/auth",                           AuthRedirectHandler),
+            (settings.RESULTS_URL,              ReturnResultsHandler),
+            (settings.START_BACKUP_URL,         StartBackupHandler),
+            (settings.PROGRESS_URL,             ShowProgressHandler),
+            (settings.INVALID_CREDENTIALS_URL,  InvalidCredentialsHandler),
+            ("/oauth2callback",                 OAuthHandler),
         ], debug=True)
     util.run_wsgi_app(application)
 

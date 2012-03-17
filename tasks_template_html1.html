@@ -21,6 +21,19 @@ This is the Django template file for HTML tasks.
     <head>
         <title>{{ app_title }} - List of tasks</title>
         <link rel="stylesheet" type="text/css" href="tasks-backup.css"></link>
+        <script type="text/javascript">
+
+          var _gaq = _gaq || [];
+          _gaq.push(['_setAccount', 'UA-30118203-1']);
+          _gaq.push(['_trackPageview']);
+
+          (function() {
+            var ga = document.createElement('script'); ga.type = 'text/javascript'; ga.async = true;
+            ga.src = ('https:' == document.location.protocol ? 'https://ssl' : 'http://www') + '.google-analytics.com/ga.js';
+            var s = document.getElementsByTagName('script')[0]; s.parentNode.insertBefore(ga, s);
+          })();
+
+        </script>
     </head>
   
     <body>
@@ -30,104 +43,90 @@ This is the Django template file for HTML tasks.
             </div>
         {% endif %}
 
-        {% if tasklists %}
-            <div class="break">
-                <!-- Display the job timestamp, so that it is clear when the snapshot was taken -->
-                <h3>Tasks for {{ user_email }} as at {{ job_start_timestamp }} UTC</h3>
-            </div>
-            <p>{{ tasklists|length }} task lists.</p>
-            
-                {% for tasklist in tasklists %}
-                    <div class="tasklist">
-                        {% if tasklist.tasks %}
-                            <div class="tasklistheading">
-                                Task List: {{ tasklist.title }} - {{ tasklist.tasks|length }} tasks.
-                            </div>
-                            
-                            <div class="tasks">
+        <div class="break">
+            <!-- Display the job timestamp, so that it is clear when the snapshot was taken -->
+            <h3>Tasks for {{ user_email }} as at {{ job_start_timestamp }} UTC</h3>
+        </div>
+        
+            {% for tasklist in tasklists %}
+                <div class="tasklist">
+                    <div class="tasklistheading">
+                        Task List: {{ tasklist.title }}
+                    </div>
                     
-                            {% for task in tasklist.tasks %}
-                                <!-- Task will be dim if; 
-                                      task is deleted OR 
-                                      task is hidden OR 
-                                      task is completed AND user checked dim_completed_tasks
-                                -->
-                                <div 
-                                    style="padding-left:{{ task.indent }}px" 
-                                    class="task-html1 {% if task.completed and dim_completed_tasks %} dim{% endif %}{% if task.deleted or task.hidden %} dim{% endif %}" 
-                                >
-                                    <div >
-                                        <span class="status-cell">
-                                            {% if task.completed %}
-                                                &#x2713;
-                                            {% else %}
-                                                [ &nbsp;]
-                                            {% endif %}
-                                        </span>
-                                        <span class="task-title-html1">
-                                            {% autoescape on %}
-                                                {{ task.title }}
-                                            {% endautoescape %}
-                                        </span>
+                    <div class="tasks">
+            
+                    {% for task in tasklist.tasks %}
+                        <!-- Task will be dim if; 
+                              task is deleted OR 
+                              task is hidden OR 
+                              task is completed AND user checked dim_completed_tasks
+                        -->
+                        <div 
+                            style="padding-left:{{ task.indent }}px" 
+                            class="task-html1 {% if task.completed and dim_completed_tasks %} dim{% endif %}{% if task.deleted or task.hidden %} dim{% endif %}" 
+                        >
+                            <div >
+                                <span class="status-cell">
+                                    {% if task.completed %}
+                                        &#x2713;
+                                    {% else %}
+                                        [ &nbsp;]
+                                    {% endif %}
+                                </span>
+                                <span class="task-title-html1">
+                                    {% autoescape on %}
+                                        {{ task.title }}
+                                    {% endautoescape %}
+                                </span>
+                            </div>
+                            <div class="task-details-html1">
+                                {% if task.completed and display_completed_date_field %}
+                                    <div class="task-attribute">
+                                        <span class="fieldlabel">COMPLETED:</span>
+                                        {{ task.completed }} UTC
                                     </div>
-                                    <div class="task-details-html1">
-                                        {% if task.completed and display_completed_date_field %}
-                                            <div class="task-attribute">
-                                                <span class="fieldlabel">COMPLETED:</span>
-                                                {{ task.completed|date:"H:i D, j M Y" }} UTC
-                                            </div>
-                                        {% endif %}
-                                        
-                                        {% if task.notes %}
-                                            {% autoescape on %}
-                                                <div class="task-notes">{{ task.notes|replacenewlinebr }}</div>
-                                            {% endautoescape %}
-                                        {% endif %}
-                                        
-                                        {% if task.due and display_due_date_field %}
-                                            <div class="task-attribute">
-                                                <span class="fieldlabel">Due:</span>
-                                                {{ task.due|date:"D, j M Y" }}
-                                            </div>
-                                        {% endif %}
-                                        
-                                        {% if task.updated and display_updated_date_field %}
-                                            <div class="task-attribute">
-                                                <span class="fieldlabel">Updated:</span>
-                                                {{ task.updated|date:"H:i D, j M Y" }} UTC
-                                            </div>
-                                        {% endif %}
-                                        
-                                        {% if task.deleted %}
-                                            <div class="task-attribute-hidden-or-deleted">- Deleted -</div>
-                                        {% endif %}
-                                        
-                                        {% if task.hidden %}
-                                            <div class="task-attribute-hidden-or-deleted">- Hidden -</div>
-                                        {% endif %}
-                                    </div>  <!-- End of task details div -->
-                                </div> <!-- End of task div -->
+                                {% endif %}
                                 
-                               
-                            {% endfor %}
-                            </div>
-                        {% else %}
-                            <div class="tasklistheading">Task List: {{ tasklist.title }}</div>
-                            <div class="no-tasks">
-                                No tasks
-                            </div>
-                        {% endif %}
-                    </li>
-                {% endfor %}
-            </ul>
-            <div class="break">
-                NOTE: Due, Updated and Completed dates and times are UTC, because that is how Google stores them.
-            </div>
-        {% else %}
-            <div class="break">
-                <h3>No tasklists found for {{ user_email }}</h3>
-            </div>
-        {% endif %}
+                                {% if task.notes %}
+                                    {% autoescape on %}
+                                        <div class="task-notes">{{ task.notes|linebreaksbr }}</div>
+                                    {% endautoescape %}
+                                {% endif %}
+                                
+                                {% if task.due and display_due_date_field %}
+                                    <div class="task-attribute">
+                                        <span class="fieldlabel">Due:</span>
+                                        {{ task.due|date:"D, j M Y" }}
+                                    </div>
+                                {% endif %}
+                                
+                                {% if task.updated and display_updated_date_field %}
+                                    <div class="task-attribute">
+                                        <span class="fieldlabel">Updated:</span>
+                                        {{ task.updated|date:"H:i D, j M Y" }} UTC
+                                    </div>
+                                {% endif %}
+                                
+                                {% if task.deleted %}
+                                    <div class="task-attribute-hidden-or-deleted">- Deleted -</div>
+                                {% endif %}
+                                
+                                {% if task.hidden %}
+                                    <div class="task-attribute-hidden-or-deleted">- Hidden -</div>
+                                {% endif %}
+                            </div>  <!-- End of task details div -->
+                        </div> <!-- End of task div -->
+                        
+                       
+                    {% endfor %}
+                    </div>
+                </li>
+            {% endfor %}
+        </ul>
+        <div class="break">
+            NOTE: Due, Updated and Completed dates and times are UTC, because that is how Google stores them.
+        </div>
         <div class="break footer">
             Produced by {{ app_title }}, version {{ app_version }}
         </div>

@@ -21,37 +21,50 @@ This is the Django template for the landing page.
 {% endcomment %}
 <!doctype html>
 <html>
-<head>
-    <title>{{ app_title }}</title>
-    <link rel="stylesheet" type="text/css" href="tasks-backup.css"></link>
-    <script type="text/javascript">
+    <head>
+        <title>{{ app_title }}</title>
+        <link rel="stylesheet" type="text/css" href="tasks-backup.css"></link>
+        <script type="text/javascript">
 
-        function authorise() {
-            document.getElementById("authorise_button").value = "Authorising, please wait ...";
-            document.getElementById("authorise_button").innerHTML = "Authorising, please wait ...";
-            document.getElementById("authorise_button").disabled = true;
-            window.location.href = "/auth";
-        }
+            function authorise() {
+                document.getElementById("authorise_button").value = "Authorising, please wait (this may take up to half a minute) ...";
+                document.getElementById("authorise_button").innerHTML = "Authorising, please wait (this may take up to half a minute) ...";
+                document.getElementById("authorise_button").disabled = true;
+                window.location.href = "/auth";
+            }
 
-        function disableButton() {
-            document.getElementById("start_backup").value = "Starting backup ...";
-            document.getElementById("start_backup").innerHTML = "Starting backup ...";
-            document.getElementById("start_backup").disabled = true;
+            function disableButton() {
+                document.getElementById("start_backup").value = "Starting backup (this may take many minutes) ...";
+                document.getElementById("start_backup").innerHTML = "Starting backup (this may take many minutes) ...";
+                document.getElementById("start_backup").disabled = true;
+            }
+            
+            /* From http://www.developerfusion.com/code/5200/how-to-disable-all-elements-on-a-form/ */
+            function disableForm(theform) {
+            if (document.all || document.getElementById) {
+                for (i = 0; i < theform.length; i++) {
+                var formElement = theform.elements[i];
+                    if (true) {
+                        formElement.disabled = true;
+                    }
+                }
+            }
         }
-        
-		/* From http://www.developerfusion.com/code/5200/how-to-disable-all-elements-on-a-form/ */
-		function disableForm(theform) {
-		if (document.all || document.getElementById) {
-			for (i = 0; i < theform.length; i++) {
-			var formElement = theform.elements[i];
-				if (true) {
-					formElement.disabled = true;
-				}
-			}
-		}
-	}
-    </script>
-</head>
+        </script>
+        <script type="text/javascript">
+
+          var _gaq = _gaq || [];
+          _gaq.push(['_setAccount', 'UA-30118203-1']);
+          _gaq.push(['_trackPageview']);
+
+          (function() {
+            var ga = document.createElement('script'); ga.type = 'text/javascript'; ga.async = true;
+            ga.src = ('https:' == document.location.protocol ? 'https://ssl' : 'http://www') + '.google-analytics.com/ga.js';
+            var s = document.getElementsByTagName('script')[0]; s.parentNode.insertBefore(ga, s);
+          })();
+
+        </script>
+    </head>
 
 <body>
 

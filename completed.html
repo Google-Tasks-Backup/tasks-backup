@@ -1,52 +1,65 @@
 <!doctype html>
 <html>
-  <head>
-    <title>{{ app_title }}</title>
-  <link rel="stylesheet" type="text/css" href="tasks-backup.css"></link>
-  </head>
-  <body>
-    {% if is_authorized %}
-        <div class="usertitle">
-            Authorised user: {{ user_email }} <span class="logout-link">[ <a href="{{ logout_url }}">Log out</a> ]</span>
+    <head>
+        <title>{{ app_title }}</title>
+        <link rel="stylesheet" type="text/css" href="tasks-backup.css"></link>
+        <script type="text/javascript">
+
+          var _gaq = _gaq || [];
+          _gaq.push(['_setAccount', 'UA-30118203-1']);
+          _gaq.push(['_trackPageview']);
+
+          (function() {
+            var ga = document.createElement('script'); ga.type = 'text/javascript'; ga.async = true;
+            ga.src = ('https:' == document.location.protocol ? 'https://ssl' : 'http://www') + '.google-analytics.com/ga.js';
+            var s = document.getElementsByTagName('script')[0]; s.parentNode.insertBefore(ga, s);
+          })();
+
+        </script>
+    </head>
+    <body>
+        {% if is_authorized %}
+            <div class="usertitle">
+                Authorised user: {{ user_email }} <span class="logout-link">[ <a href="{{ logout_url }}">Log out</a> ]</span>
+            </div>
+        {% endif %}
+
+        {% if is_authorized %}
+          <div class="break">
+            An email has been sent to {{ user_email }} (the account that you used when you authorised). Note that it can take some time (several minutes) for the email to arrive.
+          </div>
+          
+        {% endif %}
+        
+          <div class="break">
+            Authorisation failed after the backup request was received. The email may not have been sent. 
+            <br/>
+          </div>
+          
+        {% endif %}
+
+        <div class="break">
+          Note that it can take some time (several minutes) for the email to arrive.
         </div>
-    {% endif %}
-
-    {% if is_authorized %}
-      <div class="break">
-        An email has been sent to {{ user_email }} (the account that you used when you authorised). Note that it can take some time (several minutes) for the email to arrive.
-      </div>
-      
-    {% endif %}
-    
-      <div class="break">
-        Authorisation failed after the backup request was received. The email may not have been sent. 
-        <br/>
-      </div>
-      
-    {% endif %}
-
-    <div class="break">
-      Note that it can take some time (several minutes) for the email to arrive.
-    </div>
-    
-    <div class="break">
-      If the email hasn't arrived after 1 hour, it may be worth checking your junk folder, or else try
-      running the export again.
-    </div>
-    
-	<div class="project-footer">
-		<div class="break">
-			Questions or comments? Go to <a href="http://{{ url_discussion_group }}">{{ url_discussion_group }}</a>
-			or email <a href="mailto:{{ email_discussion_group }}">{{ email_discussion_group }}</a>
-		</div>
-		<div class="break">
-			Please report bugs or suggest improvements at <a href="http:/{{ url_issues_page }}">{{ url_issues_page }}</a>
-		</div>
-		<div class="break">
-			Source code for this project is at <a href="http://{{ url_source_code }}">{{ url_source_code }}</a>
-		</div>
-	</div>
+        
+        <div class="break">
+          If the email hasn't arrived after 1 hour, it may be worth checking your junk folder, or else try
+          running the export again.
+        </div>
+        
+        <div class="project-footer">
+            <div class="break">
+                Questions or comments? Go to <a href="http://{{ url_discussion_group }}">{{ url_discussion_group }}</a>
+                or email <a href="mailto:{{ email_discussion_group }}">{{ email_discussion_group }}</a>
+            </div>
+            <div class="break">
+                Please report bugs or suggest improvements at <a href="http:/{{ url_issues_page }}">{{ url_issues_page }}</a>
+            </div>
+            <div class="break">
+                Source code for this project is at <a href="http://{{ url_source_code }}">{{ url_source_code }}</a>
+            </div>
+        </div>
 
 
-  </body>
+    </body>
 </html>

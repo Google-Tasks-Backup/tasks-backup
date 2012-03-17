@@ -5,72 +5,85 @@ This is the Django template file for displaying debug messages
 {% endcomment %}
 <!doctype html>
 <html>
-  <head>
-    <title>{{ app_title }} - Debug Messages</title>
-    <link rel="stylesheet" type="text/css" href="/tasks-backup.css"></link>
-  </head>
-  <body>
-    <p>{{ debug_version }}</p>
-    <br/>
-    <div class="break">
-      <h3>Start of debug messages</h3>
-    </div>
-    <hr>
-      <pre>{{ debugmessages }}</pre>
-    <hr>
-    <div class="break">
-      <h3>End of debug messages</h3>
-    </div>
-    <br/>
-    
-    
-    <div class="break">
-      <h3>Start of data dump 1</h3>
-    </div>
-    <hr>
-      <pre>dd1 = {{ datadump1 }}</pre>
-    <hr>
-    <div class="break">
-      <h3>End of data dump 1</h3>
-    </div>
-    <br/>
-    
-    
-    <div class="break">
-      <h3>Start of data dump 2</h3>
-    </div>
-    <hr>
-      <pre>dd2 = {{ datadump2 }}</pre>
-    <hr>
-    <div class="break">
-      <h3>End of data dump 2</h3>
-    </div>
-     <br/>
-   
-    
-    <div class="break">
-      <h3>Start of data dump 3</h3>
-    </div>
-    <hr>
-      <pre>dd3 = {{ datadump3 }}</pre>
-    <hr>
-    <div class="break">
-      <h3>End of data dump 3</h3>
-    </div>
-    <br/>
-    
-    
-    <div class="break">
-      <h3>Start of data dump 4</h3>
-    </div>
-    <hr>
-      <pre>dd4 = {{ datadump4 }}</pre>
-    <hr>
-    <div class="break">
-      <h3>End of data dump 4</h3>
-    </div>
-    <br/>
-    <hr>
-    <br/>
-  </body>
+    <head>
+        <title>{{ app_title }} - Debug Messages</title>
+        <link rel="stylesheet" type="text/css" href="/tasks-backup.css"></link>
+        <script type="text/javascript">
+
+          var _gaq = _gaq || [];
+          _gaq.push(['_setAccount', 'UA-30118203-1']);
+          _gaq.push(['_trackPageview']);
+
+          (function() {
+            var ga = document.createElement('script'); ga.type = 'text/javascript'; ga.async = true;
+            ga.src = ('https:' == document.location.protocol ? 'https://ssl' : 'http://www') + '.google-analytics.com/ga.js';
+            var s = document.getElementsByTagName('script')[0]; s.parentNode.insertBefore(ga, s);
+          })();
+
+        </script>
+    </head>
+      <body>
+        <p>{{ debug_version }}</p>
+        <br/>
+        <div class="break">
+          <h3>Start of debug messages</h3>
+        </div>
+        <hr>
+          <pre>{{ debugmessages }}</pre>
+        <hr>
+        <div class="break">
+          <h3>End of debug messages</h3>
+        </div>
+        <br/>
+        
+        
+        <div class="break">
+          <h3>Start of data dump 1</h3>
+        </div>
+        <hr>
+          <pre>dd1 = {{ datadump1 }}</pre>
+        <hr>
+        <div class="break">
+          <h3>End of data dump 1</h3>
+        </div>
+        <br/>
+        
+        
+        <div class="break">
+          <h3>Start of data dump 2</h3>
+        </div>
+        <hr>
+          <pre>dd2 = {{ datadump2 }}</pre>
+        <hr>
+        <div class="break">
+          <h3>End of data dump 2</h3>
+        </div>
+         <br/>
+       
+        
+        <div class="break">
+          <h3>Start of data dump 3</h3>
+        </div>
+        <hr>
+          <pre>dd3 = {{ datadump3 }}</pre>
+        <hr>
+        <div class="break">
+          <h3>End of data dump 3</h3>
+        </div>
+        <br/>
+        
+        
+        <div class="break">
+          <h3>Start of data dump 4</h3>
+        </div>
+        <hr>
+          <pre>dd4 = {{ datadump4 }}</pre>
+        <hr>
+        <div class="break">
+          <h3>End of data dump 4</h3>
+        </div>
+        <br/>
+        <hr>
+        <br/>
+      </body>
 </html>

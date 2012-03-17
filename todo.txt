@@ -1,9 +1,183 @@
 
 ======================= TODO ==============================
 
+
+- If still getting memory exceeeded error, try replacing dictionary references with direct string substitutions
+-- If still getting error, try Method 4 (see below)
+
+
+
+
+
 Catch over-quota exception; display (static) message to user
+# 17 Mar 2012, in progress
 
 
+
+
+
+- Consider handling specific over-quota conditions
+    e.g., handling SendMail OverQuotaError
+          http://code.google.com/appengine/docs/quotas.html#When_a_Resource_is_Depleted
+
+          
+          
+
+Investigate adding Google Analytics (or similar) to track usage of tasks-backup)
+    As at 17 Mar, it seems that 69 other people have used tasks-backup (72 - my 3 accounts)
+    
+
+    Consider donations to pay for extra CPU
+    Ast at 17 Mar, about halfway through day, 7.82 of 28.00 Instance Hours
+    
+
+    
+    
+- Consider handling DeadlineExceededError in /oauth2callback
+    See "C:\Tmp\logs\tasks-backup_2012-03-17_14-11_all.log"
+    Happened twice
+    Caused error 500, in 
+        flow.step2_exchange(self.request.params)
+    
+    
+    
+    
+    
+
+Track memory usage;
+    pympler
+        http://code.google.com/p/pympler/
+===>        " ... whenever his script iterates over the input set, a new dict object is created ... "
+  
+ 
+  
+
+- BUG: "Exceeded soft private memory limit"
+==> Add     import gc
+            gc.collect()
+
+    From http://stackoverflow.com/questions/9210731/what-is-the-proper-way-to-write-to-the-google-app-engine-blobstore-as-a-file-in 
+        Unfortunately python's garbage collector is not perfect. Every write you do creates lots of small objects (via protocol buffer creation) that is not collected by python on the fly for some reason. I found that in mapreduce library I have to do
+            import gc
+            gc.collect()
+        ---------
+        Since it is Python 2.5, xrange should be better than range, isn't it
+    
+    Try apptrace
+        http://pypi.python.org/pypi/apptrace
+            May need to run on Linux ????
+        http://code.google.com/p/apptrace/wiki/UsingApptrace
+        From http://code.google.com/p/apptrace/
+            Since apptrace is meant for development and debugging purposes only, it works with the development appserver of the Google App Engine Python SDK and TyphoonAE. It will definitely not work on the GAE production environment.
+    
+    From http://stackoverflow.com/questions/9124398/in-google-app-engine-how-to-i-reduce-memory-consumption-as-i-write-a-file-out-t
+        You'd be better off not doing the batching yourself, but just iterating over the query. The iterator will pick a batch size (probably 20) that should be adequate:
+
+        q = model.all()
+        for entity in q:
+            row = get_dict_for_entity(entity)
+            writer.writerow(row)
+        This avoids re-running the query with ever-increasing offset, which is slow and causes quadratic behavior in the datastore.
+
+        An oft-overlooked fact about memory usage is that the in-memory representation of an entity can use 30-50 times the RAM compared to the serialized form of the entity; e.g. an entity that is 3KB on disk might use 100KB in RAM. (The exact blow-up factor depends on many factors; it's worse if you have lots of properties with long names and small values, even worse for repeated properties with long names.)
+        ------------------------
+        It appears to have something to do with using the "with" statement and files in python 2.5. If I simply try to write out a 4000 line text file from a StringIO object to a blobstore file, I can reproduce the same soft memory error
+
+    From http://stackoverflow.com/questions/9210731/what-is-the-proper-way-to-write-to-the-google-app-engine-blobstore-as-a-file-in
+        Fix also finalize bugs - not finalize invalid file or return result if exception!
+            "findstr /s /n /c:".open" *.py" shows 3 .open() in dateutil\zoneinfo\__init__.py
+                Investigate if .finalise() is required before .close()
+                There are some cases where file might not be closed on exception
+        
+    From http://stackoverflow.com/questions/9251040/memory-limit-hit-with-appengine-mapreduce
+        Also consider calling gc.collect() at regular points during your code. I've seen several SO questions about exceeding soft memory limits that were alleviated by calling gc.collect(), most having to do with blobstore.
+        ------
+            Also: Investigate worker.py:572:    apiproxy_stub_map.apiproxy.GetPreCallHooks().Append(
+    
+    From https://groups.google.com/forum/?fromgroups#!topic/google-appengine/Sm1U3OjbDCI 
+        cache datastore info (so.. the code checks its local cache.. then memcache and then datastore).. but I've been stuck sort of monitoring my tasks (I run looping tasks that access the same data) to see if I can tell when they hit the memory limit and do a cold start.. and then reduce the size of the in memory cache dict.
+            tasks-backup.py:35:from google.appengine.api import memcache
+            tasks-backup.py:72:  memcache.set(user.user_id(), pickle.dumps(flow))
+            tasks-backup.py:789:        flow = pickle.loads(memcache.get(user.user_id()))
+
+    From http://stackoverflow.com/questions/9124398/in-google-app-engine-how-to-i-reduce-memory-consumption-as-i-write-a-file-out-t
+        an entity can use 30-50 times the RAM compared to the serialized form of the entity; e.g. an entity that is 3KB on disk might use 100KB in RAM. 
+        (The exact blow-up factor depends on many factors; 
+            it's worse if you have 
+===>            lots of properties with long names and small values, 
+===>            even worse for repeated properties with long names.
+        )
+    
+        --------
+        It appears to have something to do with using the "with" statement and files in python 2.5
+===>        Check if Django or "google.appengine.ext.webapp import template" uses with
+        
+        
+***>    Test template without dates (either don't choose dates, or comment out dates
+
+
+    Check if dateutil\zoneinfo\__init__.py is possibly throwing error between lines 69-75 or 82-84
+        date is potentially used several times for each task
+        (Could be not closing)
+
+        
+        
+
+- BUG: The last tasklist is displayed twice in html_raw. The second instance displays "No tasks"
+    e.g., for JS1999.Outlook
+        The last tasklist is "TL17", although there are only two tasklists by that name
+       The 3rd instance is displayed as the last tasklist, and displays "No tasks"
+# Started, 17 Mar 2012
+       
+       
+       
+       
+- Consider disabling [Retrieve tasks data] when user clicks [Display tasks page], because it can take a 
+  long time to build the HTML page, and I'm not sure what would happen if another request was triggered ...
+       
+       
+       
+       
+- Investigate most efficient way to build strings, etc.
+    From http://www.skymind.com/~ocrow/python_string/
+        Using backticks (``) around num on the fourth line converts the integer value to a string. You can accomplish the same thing with the str() function, but that ended up being somewhat slower, so I stuck with the backticks for all my methods.     
+       
+        At the end of the computation for Method 6 the interpreter is using 22,844kB of memory, eight times the size of the string it is computing, whereas Methods 3 and 5 uses less than half that much.
+        
+    From http://code.google.com/appengine/docs/python/tools/webapp/requesthandlers.html
+        The method processes the request and prepares a response, then returns. 
+===>    Finally, the application sends the response to the client.
+      This means that it could be concatenation strings evert time that I call .write()
+      May therefore be more efficient to use method 4 (above)
+      
+    From http://code.google.com/appengine/docs/python/tools/webapp/responseclass.html#Response_wsgi_write
+        webapp sends the response when the handler method returns. The content of the response is the final state of the Response object when the method returns.
+        Note: Manipulating the object in the handler method does not communicate any data to the user. In particular, this means that webapp cannot send data to the browser then perform additional logic, as in a streaming application. 
+===>    (App Engine applications cannot stream data to the browser, with or without webapp.)
+
+        out
+            An instance of the StringIO class that contains the body text of the response. The contents of this object are sent as the body of the response when the request handler method returns
+      
+- Investigate using client-side JavaScript to retrieve data and build the web page
+- Investigate other Web 2.0 technologies (e.g., JSON, Ruby, XMPP, etc) for client side processing
+-- Advantages;
+    - Can start to return data to user sooner
+    - Hopefully uses less server-side memory
+    
+    
+    
+ 
+- Consider adding code to prevent worker being run more than once for a given user
+  According to http://code.google.com/appengine/docs/python/taskqueue/overview-push.html
+    App Engine's Task Queue API is designed to only invoke a given task once; however, it is possible in exceptional circumstances that a task may execute multiple times
+
+>>> You can examine and manipulate tasks from the developer console at:
+    http://localhost:8080/_ah/admin/taskqueue
+
+ 
+ 
+ 
+        
 - BUG: Error downloading Outlook CSV on Android
 # From http://digiblog.de/2011/04/19/android-and-the-download-file-headers/
     Can't return file from POST request on stock Android or Dolphin browsers
@@ -44,19 +218,31 @@ Catch over-quota exception; display (static) message to user
 
 
 
+
+
+- Consider checking if user has data from a previous job, and displaying option to return values 
+  from previous backup instead of retrieving fresh data (to save time, and also to provide user 
+  with a measure of history)
+  
+  
+
+
 - Investigate; user clicks [Back] from HTML view, URL is /progress 
 -- much more logical if it displays /results
+
 
 
 - Consider displaying <No Title> if title is empty (or all spaces)
 -- e.g. if len(trimspaces(title)) == 0
 -- Currently looks confusing to have [ ] with nothing else
 ---(especially if task has no notes, and user selected no due/updated display)
+* Could leave it as it is, since that is how it would look on the Google Tasks website
+    . GTB defaults to "<No Task Title>" if there is no 'title' element in the task dictionary
 
 
 
-
-- Consider adding links to various formats
+- Consider adding 'links' to various formats
+-- Add to html_raw
 -- Already included in Python data dump
 -- As part of a note for Outlook (User controlled option?)
 -- Check if supported by iCal, else in notes?
@@ -103,7 +289,22 @@ Catch over-quota exception; display (static) message to user
 
 
 
+- Consider using cookies to remember user's task selection settings
+-- What to include (from index.html)
+-- What to display (from progress.html)
 
+
+
+
+
+- Consider using Channel API to return progress to user
+    From http://code.google.com/appengine/docs/python/channel/
+    The Channel API (Python)
+    The Channel API creates a persistent connection between your application and Google servers, allowing your application to send messages to JavaScript clients in real time without the use of polling. This is useful for applications that are designed to update the user about new information immediately or where user input is immediately broadcast to other users. Some examples include collaborative applications, multi-player games, and chat rooms. In general, using Channel API is a better choice than polling in situations where updates can't be predicted or scripted, such as when relaying information between human users or from events not generated systematically.
+
+
+    
+    
 - Consider giving user option to include/exclude particular properties.
 --- Can only exclude properties which are not mandatory for export formats (e.g., can't exclude title, completed, etc.) 
     We can then use 'fields' selector to specify a subset of fields to include in the response to reduce amount of data retrieved and stored
@@ -127,6 +328,9 @@ Catch over-quota exception; display (static) message to user
         hidden	boolean	Flag indicating whether the task is hidden. This is the case if the task had been marked completed when the task list was last cleared. The default is False. This field is read-only.
       
       
+      
+      
+      
 - Consider supporting apple-touch-icon.png
 
 
@@ -137,9 +341,32 @@ Catch over-quota exception; display (static) message to user
 
 
 
+
+
+- Display custom error msg for server errors
+  for over_quota & timeout
+      http://code.google.com/appengine/docs/python/config/appconfig.html#Custom_Error_Responses
+
 - Catch exception returning results to user and display error page
 -- e.g., malformed Django template was causing error
 # It seems that only 3 types of server error can be caught and redirected to a specified web page.
+
+Catch over quota;
+# From http://code.google.com/appengine/docs/quotas.html#When_a_Resource_is_Depleted
+-  In the Python API, this exception is apiproxy_errors.OverQuotaError
+    try:
+      mail.SendMessage(to='test@example.com',
+                       from='admin@example.com',
+                       subject='Test Email',
+                       body='Testing')
+    except apiproxy_errors.OverQuotaError, message:
+      # Log the error.
+      logging.error(message)
+      # Display an informative message to the user.
+      self.response.out.write('The email could not be sent. '
+                              'Please try again later.')
+
+
 
     
     
@@ -152,17 +379,19 @@ Post to http://code.google.com/p/google-tasks-porter/issues/detail?id=15 when I 
     http://code.google.com/p/google-tasks-porter/issues/detail?id=11
 
 
+    
+    
+    
 Import tasks
 - See 2 Mar 2012 email to Bard
 
 
 
-- Display custom error msg for server errors
-  for over_quota & timeout
-      http://code.google.com/appengine/docs/python/config/appconfig.html#Custom_Error_Responses
 
     
 Tidy up index.html, so buttons are higher up once user has authenticated (remove text about "what GTB can do")
+
+
 
 
 
@@ -171,6 +400,8 @@ Investigate (from line 198 in worker.py)
 		  'urlfetch_timeout_hook', urlfetch_timeout_hook, 'urlfetch')
 	  
 
+      
+      
 Display more traceback detail
 - After exc_type, exc_value, exc_traceback = sys.exc_info(),
   dir(exc_traceback) gives ['tb_frame', 'tb_lasti', 'tb_lineno', 'tb_next']		
@@ -188,40 +419,24 @@ Give user option to choose date format; US, Aus, Euro, other?
 
 
 
+- Check screen print of HTML page with indenting (when using html_raw)
+
+
 
 Restore hTodo format
 - Requires proper handling of nested tasks (as per original DB model)
+    hTodo uses
+      recurse task root:tasklist.tasks parent:"parent_" children:"children" sort:"position"
+    so presumably requires additional attributes
+    * ?? Store the ID of child tasks in a List as a 'children' attribute for task
 
 
-- Fix html template so that the task bullet displays circle or tick
-- handle subtasks (multiple levels)
-
-
-Handle sub-tasks
-- Check how the original Google code did it
--- How is it handled in Outlook CSV (since Outlook doesn't support sub-tasks)?
--- What other formats supports sub-tasks? HTML, ICS, RTM (if so, how?)
-hTodo uses
-  recurse task root:tasklist.tasks parent:"parent_" children:"children" sort:"position"
-so presumably requires additional attributes
-* ?? Store the ID of child tasks in a List as a 'children' attribute for task
-
-Handle nested tasks
-- Use the parent property to find the parent task ID
--- Required for hTodo
--- Nice to have on HTML view
 
 
 
 Display summaries for task lists on .html page
 - Number of tasks, num completed (per list, and total)
 
-
-
-Change index.html so that the page is cleared (or at least button is disabled), to prevent user clicking again whilst backup is being created and emailed.
-- use JavaScript to disable the button after the first click
--- Change button text to "processing ..." ?
-Alt; Consider using taskqueue to display a "processing ..." page BEFORE starting the actual work.
 
 
 
@@ -233,22 +448,6 @@ Include more info in logging (e.g., line  number, so I don't need to include met
 From C:\Program Files\Google\google_appengine\google\appengine\tools\appcfg.py
       .basicConfig(format=('%(asctime)s %(levelname)s %(filename)s:'
                                     '%(lineno)s %(message)s '))
-
-
-Catch over quota;
-# From http://code.google.com/appengine/docs/quotas.html#When_a_Resource_is_Depleted
--  In the Python API, this exception is apiproxy_errors.OverQuotaError
-    try:
-      mail.SendMessage(to='test@example.com',
-                       from='admin@example.com',
-                       subject='Test Email',
-                       body='Testing')
-    except apiproxy_errors.OverQuotaError, message:
-      # Log the error.
-      logging.error(message)
-      # Display an informative message to the user.
-      self.response.out.write('The email could not be sent. '
-                              'Please try again later.')
 
 
                               

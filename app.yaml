@@ -18,18 +18,37 @@
 #application: tasks-backup
 #version: 5
 
-# ===== Test host and version ======
+# ===== Limited Public Test host and version ======
 application: js-tasks
 version: 4
 
+# ===== Private Alpha Test host and version ======
+#application: js-tasks-test
+#version: 1
+
+
 
 # ===== Local host ==========
-#application: tasks-backup-q
+#application: tasks-backup-q1
 #version: 1
 
 runtime: python
 api_version: 1
 
+error_handlers:
+  - file: error_default.html
+
+  - error_code: over_quota
+    file: error_over_quota.html
+    
+  - error_code: dos_api_denial
+    file: error_dos.html
+  
+  - error_code: timeout
+    file: error_timeout.html
+  
+  
+  
 handlers:
 - url: /tasks-backup.css
   static_files: tasks-backup.css
