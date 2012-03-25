@@ -566,15 +566,32 @@ def urlfetch_timeout_hook(service, call, request, response):
 
 
 
-def main():
-    logging.debug("Starting worker")
+def real_main():
+    logging.debug("main(): Starting worker")
     
     apiproxy_stub_map.apiproxy.GetPreCallHooks().Append(
         'urlfetch_timeout_hook', urlfetch_timeout_hook, 'urlfetch')
     run_wsgi_app(webapp.WSGIApplication([
         ('/worker', CreateBackupWorker),
     ], debug=True))
+    logging.debug("main(): <End>")
+
+def profile_main():
+    # This is the main function for profiling
+    # We've renamed our original main() above to real_main()
+    import cProfile, pstats, StringIO
+    prof = cProfile.Profile()
+    prof = prof.runctx("real_main()", globals(), locals())
+    stream = StringIO.StringIO()
+    stats = pstats.Stats(prof, stream=stream)
+    stats.sort_stats("time")  # Or cumulative
+    stats.print_stats(80)  # 80 = how many to print
+    # The rest is optional.
+    stats.print_callees()
+    stats.print_callers()
+    logging.info("Profile data:\n%s", stream.getvalue())
     
+main = profile_main
 
 if __name__ == '__main__':
     main()

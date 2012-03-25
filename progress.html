@@ -54,10 +54,6 @@ This is the Django template used by test-taskqueue.py
         </div>
     {% endif %}
 
-    <div class="break">
-        Version {{ app_version }} ({{ upload_timestamp }})
-    </div>
-    
     {% if msg %}
         <div class="break">
             <p>Msg = {{ msg }}</p>
@@ -92,6 +88,21 @@ This is the Django template used by test-taskqueue.py
     {% if status == "completed" %}
         <div class="break">
             Backup completed. Retrieved {{ progress }} tasks.
+            {% if include_completed %}
+                <br/>
+                <span class="comment">Includes completed tasks</span>
+            {% else %}
+                <br/>
+                <span class="comment">Excludes completed tasks</span>
+            {% endif %}
+            {% if include_hidden %}
+                <br/>
+                <span class="comment">Includes hidden tasks</span>
+            {% endif %}
+            {% if include_deleted %}
+                <br/>
+                <span class="comment">Includes deleted tasks</span>
+            {% endif %}
 		</div>
     {% else %}
     <div class="break">
@@ -291,6 +302,10 @@ This is the Django template used by test-taskqueue.py
 
 
 	<div class="project-footer">
+        <div class="break">
+            Version {{ app_version }} ({{ upload_timestamp }})
+        </div>
+        
 		<div class="break">
 			Questions or comments? Go to <a href="http://{{ url_discussion_group }}">{{ url_discussion_group }}</a>
 			or email <a href="mailto:{{ email_discussion_group }}">{{ email_discussion_group }}</a>

@@ -19,12 +19,12 @@
 #version: 5
 
 # ===== Limited Public Test host and version ======
-application: js-tasks
-version: 4
+#application: js-tasks
+#version: 4
 
 # ===== Private Alpha Test host and version ======
-#application: js-tasks-test
-#version: 1
+application: js-tasks-test
+version: 1
 
 
 

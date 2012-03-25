@@ -121,6 +121,8 @@ class InvalidCredentialsHandler(webapp.RequestHandler):
         path = os.path.join(os.path.dirname(__file__), "invalid_credentials.html")
 
         template_values = {  'app_title' : app_title,
+                             'app_version' : appversion.version,
+                             'upload_timestamp' : appversion.upload_timestamp,
                              'host_msg' : host_msg,
                              'home_page_url' : settings.HOME_PAGE_URL,
                              'product_name' : product_name,
@@ -385,6 +387,9 @@ class ShowProgressHandler(webapp.RequestHandler):
             progress = tasks_backup_job.total_progress + tasks_backup_job.tasklist_progress
             job_start_timestamp = tasks_backup_job.job_start_timestamp
             job_execution_time = datetime.datetime.now() - job_start_timestamp
+            include_completed = tasks_backup_job.include_completed
+            include_deleted = tasks_backup_job.include_deleted
+            include_hidden = tasks_backup_job.include_hidden
             
             if status != 'completed' and status != 'error':
                 # Check if the job has exceeded either progress or total times
@@ -426,6 +431,9 @@ class ShowProgressHandler(webapp.RequestHandler):
                            'product_name' : product_name,
                            'status' : status,
                            'progress' : progress,
+                           'include_completed' : include_completed,
+                           'include_deleted' : include_deleted,
+                           'include_hidden' : include_hidden,
                            'error_message' : error_message,
                            'job_start_timestamp' : job_start_timestamp,
                            'refresh_interval' : settings.PROGRESS_PAGE_REFRESH_INTERVAL,
@@ -717,9 +725,9 @@ class ReturnResultsHandler(webapp.RequestHandler):
             logging.warning(fn_name + "Unsupported export format: %s" % export_format)
             # TODO: Handle invalid export_format nicely - display message to user & go back to main page
             self.response.out.write("<br /><h2>Unsupported export format: %s</h2>" % export_format)
-
-        # # logging.debug(fn_name + "Calling garbage collection")
-        # gc.collect()
+        tasklists = None
+        logging.debug(fn_name + "Calling garbage collection")
+        gc.collect()
         logging.debug(fn_name + "<End>")
         logservice.flush()
 
@@ -1024,6 +1032,7 @@ class ReturnResultsHandler(webapp.RequestHandler):
             )
 
         self.response.out.write("""</body></html>""")
+        tasklists = None
         logging.debug(fn_name + "Calling garbage collection")
         gc.collect()
         logging.debug(fn_name + "<End>")
@@ -1063,11 +1072,22 @@ class ReturnResultsHandler(webapp.RequestHandler):
         # TODO: Catch exception sending & display to user ??
         # According to "C:\Program Files\Google\google_appengine\google\appengine\api\mail.py", 
         #   end_mail() doesn't return any value, but can throw InvalidEmailError when invalid email address provided
-        mail.send_mail(sender=user_email,
-                       to=user_email,
-                       subject=output_filename_base,
-                       body=email_body)
-
+        try:
+            mail.send_mail(sender=user_email,
+                           to=user_email,
+                           subject=output_filename_base,
+                           body=email_body)
+        except Exception, e:
+            logging.exception(fn_name + "Unable to send email")
+            self.response.out.write("""Unable to send email. 
+                Please report the following error to <a href="http://%s">%s</a>
+                <br />
+                %s
+                """ % (settings.url_issues_page, settings.url_issues_page, str(e)))
+            logging.debug(fn_name + "<End> (due to exception)")
+            return
+            
+            
         if shared.isTestUser(user_email):
           logging.debug(fn_name + "Email sent to %s" % user_email)
         else:
@@ -1294,8 +1314,7 @@ class OAuthHandler(webapp.RequestHandler):
                 self.redirect(self.request.get("state"))
 
         
-
-def main():
+def real_main():
     logging.info("main(): Starting tasks-backup (app version %s)" %appversion.version)
     template.register_template_library("common.customdjango")
 
@@ -1311,6 +1330,24 @@ def main():
             ("/oauth2callback",                 OAuthHandler),
         ], debug=True)
     util.run_wsgi_app(application)
+    logging.info("main(): <End>")
+
+def profile_main():
+    # This is the main function for profiling
+    # We've renamed our original main() above to real_main()
+    import cProfile, pstats, StringIO
+    prof = cProfile.Profile()
+    prof = prof.runctx("real_main()", globals(), locals())
+    stream = StringIO.StringIO()
+    stats = pstats.Stats(prof, stream=stream)
+    stats.sort_stats("time")  # Or cumulative
+    stats.print_stats(80)  # 80 = how many to print
+    # The rest is optional.
+    stats.print_callees()
+    stats.print_callers()
+    logging.info("Profile data:\n%s", stream.getvalue())
+    
+main = profile_main
 
 if __name__ == "__main__":
     main()

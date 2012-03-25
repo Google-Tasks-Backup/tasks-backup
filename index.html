@@ -83,9 +83,6 @@ This is the Django template for the landing page.
     {% endif %}
 
     <div class="break">
-        Version {{ app_version }} ({{ upload_timestamp }})
-    </div>
-    <div class="break">
         {{ app_title }} can be used to back up Google Tasks in any of these formats;
 
         <ul>
@@ -255,6 +252,9 @@ This is the Django template for the landing page.
 
 
 	<div class="project-footer">
+        <div class="break">
+            Version {{ app_version }} ({{ upload_timestamp }})
+        </div>
 		<div class="break">
 			Questions or comments? Go to <a href="http://{{ url_discussion_group }}">{{ url_discussion_group }}</a>
 			or email <a href="mailto:{{ email_discussion_group }}">{{ email_discussion_group }}</a>
@@ -265,6 +265,13 @@ This is the Django template for the landing page.
 		<div class="break">
 			Source code for this project is at <a href="http://{{ url_source_code }}">{{ url_source_code }}</a>
 		</div>
+        <div class="break">
+            {{ app_title }} uses cookies for two purposes;
+            <ul>
+                <li>To track your authorisation credentials between pages. This ensure that you (and only you) can get the results of your backup request.</li>
+                <li><a href="http://www.google.com/analytics/">Google Analytics</a> is used to track usage such as; number of unique visitors, location, browser type, operating system. </li>
+            </ul>
+        </div>
 	</div>
 
 </body>
