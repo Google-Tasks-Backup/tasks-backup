@@ -77,6 +77,7 @@ def _RedirectForOAuth(self, user):
   callback = self.request.relative_url("/oauth2callback")
   authorize_url = flow.step1_get_authorize_url(callback)
   memcache.set(user.user_id(), pickle.dumps(flow))
+  logging.debug("_RedirectForOAuth(): Redirecting to " + str(authorize_url))
   self.redirect(authorize_url)
 
 
@@ -149,31 +150,41 @@ class MainHandler(webapp.RequestHandler):
         
         client_id, client_secret, user_agent, app_title, product_name, host_msg = shared.GetSettings(self.request.host)
 
-        try:
-            headers = self.request.headers
-            for k,v in headers.items():
-                logging.debug(fn_name + "browser header: " + str(k) + " = " + str(v))
-                
-        except Exception, e:
-            logging.exception(fn_name + "Exception retrieving request headers")
-            
+        logging.debug(fn_name + "Calling _GetCredentials()")
         user, credentials = _GetCredentials()
             
         if user:
             user_email = user.email()
         
-        # Log and flush before starting operation which may cause memory limit exceeded error
-        logging.debug(fn_name + "building template")
-        logservice.flush() 
+        if shared.isTestUser(user_email):
+            logging.debug(fn_name + "Started by test user %s" % user_email)
+            
+            try:
+                headers = self.request.headers
+                for k,v in headers.items():
+                    logging.debug(fn_name + "browser header: " + str(k) + " = " + str(v))
+                    
+            except Exception, e:
+                logging.exception(fn_name + "Exception retrieving request headers")
+                
+        # # Log and flush before starting operation which may cause memory limit exceeded error
+        # logging.debug(fn_name + "building template")
+        # logservice.flush() 
         
         path = os.path.join(os.path.dirname(__file__), "index.html")
         if not credentials or credentials.invalid:
             is_authorized = False
         else:
             is_authorized = True
+            if self.request.host in settings.LIMITED_ACCESS_SERVERS:
+                logging.info(fn_name + "Running on limited-access server")
+                if not shared.isTestUser(user_email):
+                    logging.info(fn_name + "Rejecting non-test user on limited access server")
+                    self.response.out.write("<h2>This is a test server. Access is limited to test users.</h2>")
+                    logging.debug(fn_name + "<End> (restricted access)" )
+                    logservice.flush()
+                    return
 
-        if shared.isTestUser(user_email):
-            logging.debug(fn_name + "Started by test user %s" % user_email)
           
         template_values = {'app_title' : app_title,
                            'host_msg' : host_msg,
@@ -208,6 +219,37 @@ class AuthRedirectHandler(webapp.RequestHandler):
       _RedirectForOAuth(self, user)
     else:
       self.redirect("/")
+
+
+# class AuthRedirectHandler(webapp.RequestHandler):
+  # """Handler for /auth."""
+
+  # def get(self):
+    # """Handles GET requests for /auth."""
+    # fn_name = "AuthRedirectHandler.get() "
+    
+    # user, credentials = _GetCredentials()
+
+    # if not credentials:
+        # logging.debug(fn_name + "No credentials. Calling _RedirectForOAuth()")
+        # logging.debug(fn_name + "user ==>")
+        # shared.DumpObj(user)
+        # logging.debug(fn_name + "credentials ==>")
+        # shared.DumpObj(credentials)
+        # logservice.flush()
+        # _RedirectForOAuth(self, user)
+    # elif credentials.invalid:
+        # logging.warning(fn_name + "Invalid credentials. Redirecting to " + settings.INVALID_CREDENTIALS_URL)
+        # logging.debug(fn_name + "user ==>")
+        # shared.DumpObj(user)
+        # logging.debug(fn_name + "credentials ==>")
+        # shared.DumpObj(credentials)
+        # logservice.flush()
+        # self.redirect(settings.INVALID_CREDENTIALS_URL)
+    # else:
+        # logging.debug(fn_name + "Credentials valid. Redirecting to /")
+        # logservice.flush()
+        # self.redirect("/")
 
       
     
@@ -263,7 +305,6 @@ class CompletedHandler(webapp.RequestHandler):
         self.response.out.write(template.render(path, template_values))
 
       
-
 class StartBackupHandler(webapp.RequestHandler):
     """ Handler to start the backup process. """
     
@@ -282,17 +323,28 @@ class StartBackupHandler(webapp.RequestHandler):
         if user is None:
             logging.warning(fn_name + "user is None, redirecting to " +
                 settings.INVALID_CREDENTIALS_URL)
+            logservice.flush()
             self.redirect(settings.INVALID_CREDENTIALS_URL)
             return
             
         if credentials is None or credentials.invalid:
             logging.warning(fn_name + "credentials is None or invalid, redirecting to " + 
                 settings.INVALID_CREDENTIALS_URL)
+            logservice.flush()
             self.redirect(settings.INVALID_CREDENTIALS_URL)
             return
             
         user_email = user.email()
         is_test_user = shared.isTestUser(user_email)
+        if self.request.host in settings.LIMITED_ACCESS_SERVERS:
+            logging.info(fn_name + "Running on limited-access server")
+            if not is_test_user:
+                logging.info(fn_name + "Rejecting non-test user on limited access server")
+                self.response.out.write("<h2>This is a test server. Access is limited to test users.</h2>")
+                logging.debug(fn_name + "<End> (restricted access)" )
+                logservice.flush()
+                return
+        
         
         # if is_test_user:
           # logging.debug(fn_name + "POST args: include_hidden = " + str(self.request.get('include_hidden')) +
@@ -311,11 +363,11 @@ class StartBackupHandler(webapp.RequestHandler):
         tasks_backup_job.credentials = credentials
         tasks_backup_job.put()
 
-        if is_test_user:
-            logging.debug(fn_name + "tasks_backup_job.include_hidden = " + str(tasks_backup_job.include_hidden) +
-                                    ", tasks_backup_job.include_completed = " + str(tasks_backup_job.include_completed) +
-                                    ", tasks_backup_job.include_deleted = " + str(tasks_backup_job.include_deleted))
-
+        logging.debug(fn_name + "include_hidden = " + str(tasks_backup_job.include_hidden) +
+                                ", include_completed = " + str(tasks_backup_job.include_completed) +
+                                ", include_deleted = " + str(tasks_backup_job.include_deleted))
+        logservice.flush()
+        
         # Add the task to the taskqueue
         # Add the request to the tasks queue, passing in the user's email so that the task can access the
         # databse record
@@ -323,14 +375,18 @@ class StartBackupHandler(webapp.RequestHandler):
         t = taskqueue.Task(url='/worker', params={settings.TASKS_QUEUE_KEY_NAME : user_email}, method='POST')
         logging.info(fn_name + "Adding task to " + str(settings.BACKUP_REQUEST_QUEUE_NAME) + 
             " queue, for " + str(user_email))
+        logservice.flush()
+        
         try:
             q.add(t)
         except exception, e:
             logging.exception(fn_name + "Exception adding task to taskqueue. Redirecting to " + str(settings.PROGRESS_URL))
+            logservice.flush()
             self.redirect(settings.PROGRESS_URL + "?msg=Exception%20adding%20task%20to%20taskqueue")
             return
 
         logging.debug(fn_name + "Redirect to " + settings.PROGRESS_URL + " for " + str(user_email))
+        logservice.flush()
         self.redirect(settings.PROGRESS_URL)
         # logging.debug(fn_name + "Calling garbage collection")
         # gc.collect()
@@ -355,17 +411,28 @@ class ShowProgressHandler(webapp.RequestHandler):
         if user is None:
             logging.warning(fn_name + "user is None, redirecting to " +
                 settings.INVALID_CREDENTIALS_URL)
+            logservice.flush()
             self.redirect(settings.INVALID_CREDENTIALS_URL)
             return
             
         if credentials is None or credentials.invalid:
             logging.warning(fn_name + "credentials is None or invalid, redirecting to " + 
                 settings.INVALID_CREDENTIALS_URL)
+            logservice.flush()
             self.redirect(settings.INVALID_CREDENTIALS_URL)
             return
             
             
         user_email = user.email()
+        if self.request.host in settings.LIMITED_ACCESS_SERVERS:
+            logging.info(fn_name + "Running on limited-access server")
+            if not shared.isTestUser(user_email):
+                logging.info(fn_name + "Rejecting non-test user on limited access server")
+                self.response.out.write("<h2>This is a test server. Access is limited to test users.</h2>")
+                logging.debug(fn_name + "<End> (restricted access)" )
+                logservice.flush()
+                return
+        
         
         # Retrieve the DB record for this user
         tasks_backup_job = model.TasksBackupJob.get_by_key_name(user_email)
@@ -437,6 +504,7 @@ class ShowProgressHandler(webapp.RequestHandler):
                            'error_message' : error_message,
                            'job_start_timestamp' : job_start_timestamp,
                            'refresh_interval' : settings.PROGRESS_PAGE_REFRESH_INTERVAL,
+                           'large_list_html_warning_limit' : settings.LARGE_LIST_HTML_WARNING_LIMIT,
                            'user_email' : user_email,
                            'display_technical_options' : shared.isTestUser(user_email),
                            'results_url' : settings.RESULTS_URL,
@@ -467,6 +535,7 @@ class ReturnResultsHandler(webapp.RequestHandler):
         
         logging.warning(fn_name + "Expected POST for " + str(settings.RESULTS_URL) + 
                         ", so redirecting to " + str(settings.PROGRESS_URL))
+        logservice.flush()
         # Display the progress page to allow user to choose format for results
         self.redirect(settings.PROGRESS_URL)
         # logging.debug(fn_name + "Calling garbage collection")
@@ -487,17 +556,27 @@ class ReturnResultsHandler(webapp.RequestHandler):
         if user is None:
             logging.warning(fn_name + "user is None, redirecting to " +
                 settings.INVALID_CREDENTIALS_URL)
+            logservice.flush()
             self.redirect(settings.INVALID_CREDENTIALS_URL)
             return
             
         if credentials is None or credentials.invalid:
             logging.warning(fn_name + "credentials is None or invalid, redirecting to " + 
                 settings.INVALID_CREDENTIALS_URL)
+            logservice.flush()
             self.redirect(settings.INVALID_CREDENTIALS_URL)
             return
             
         user_email = user.email()
         is_test_user = shared.isTestUser(user_email)
+        if self.request.host in settings.LIMITED_ACCESS_SERVERS:
+            logging.info(fn_name + "Running on limited-access server")
+            if not is_test_user:
+                logging.info(fn_name + "Rejecting non-test user on limited access server")
+                self.response.out.write("<h2>This is a test server. Access is limited to test users.</h2>")
+                logging.debug(fn_name + "<End> (restricted access)" )
+                logservice.flush()
+                return
         
         # Retrieve the DB record for this user
         logging.debug(fn_name + "Retrieving details for " + str(user_email))
@@ -594,7 +673,7 @@ class ReturnResultsHandler(webapp.RequestHandler):
         # CAUTION: Do not include characters that may not be valid on some filesystems (e.g., colon is not valid on Windows)
         output_filename_base = "tasks_%s_%s_%s" % (export_format, user_email, datetime.datetime.now().strftime("%Y-%m-%d"))
         
-        if export_format in ['html1', 'py1']:
+        if export_format in ['html1', 'py_nested']:
             logging.debug(fn_name + "Modifying data for " + export_format + " format")
             # Modify structure so that the html1 template can indent tasks
             logging.debug(fn_name + "Building new collection of nested tasks to support indenting")
@@ -630,7 +709,7 @@ class ReturnResultsHandler(webapp.RequestHandler):
                         else:
                             task['parent_'] = task['parent']
                             
-        if export_format in ['html_raw', 'py']:
+        if export_format in ['html_raw']:
             logging.debug(fn_name + "Modifying data for " + export_format + " format")
             # Calculate 'depth' and add 'indent' property so that WriteHtmlRaw() can indent tasks
             for tasklist in tasklists:
@@ -655,34 +734,34 @@ class ReturnResultsHandler(webapp.RequestHandler):
                         depth = task[u'depth']
                         task[u'indent'] = str(depth * settings.TASK_INDENT).strip()
                             
-        # TODO: Fix this, so that we can use the recurse tag in the hTodo template
-        # Currently throws AttributeError: 'dict' object has no attribute 'position'
-        if export_format == 'hTodo':
-            logging.debug(fn_name + "Modifying data for " + export_format + " format")
-            # Use the collection of Task object when using the hTodo Django template
-            # Create structure so that the Django template can recurse tasks
-            logging.debug(fn_name + "Building collection of Task objects for hTodo")
-            list_of_tasklists = []
-            for tasklist in tasks_data.tasklists:
-                list_of_tasks = []
-                tasks = tasklist[u'tasks']
+        # # TODO: Fix this, so that we can use the recurse tag in the hTodo template
+        # # Currently throws AttributeError: 'dict' object has no attribute 'position'
+        # if export_format == 'hTodo':
+            # logging.debug(fn_name + "Modifying data for " + export_format + " format")
+            # # Use the collection of Task object when using the hTodo Django template
+            # # Create structure so that the Django template can recurse tasks
+            # logging.debug(fn_name + "Building collection of Task objects for hTodo")
+            # list_of_tasklists = []
+            # for tasklist in tasks_data.tasklists:
+                # list_of_tasks = []
+                # tasks = tasklist[u'tasks']
                 
-                if len(tasks) > 0: # Non-empty tasklist
-                    # Find the sub task relationships
-                    for task in tasks:
-                        new_task = model.Task(task)
-                        list_of_tasks.append(new_task)
+                # if len(tasks) > 0: # Non-empty tasklist
+                    # # Find the sub task relationships
+                    # for task in tasks:
+                        # new_task = model.Task(task)
+                        # list_of_tasks.append(new_task)
                         
-                    for t in list_of_tasks:    
-                        id = t.id
-                        for st in list_of_tasks:
-                            sid = st.id
-                            if st.parent:
-                                if st.parent == id:
-                                    t.children.append(st)
+                    # for t in list_of_tasks:    
+                        # id = t.id
+                        # for st in list_of_tasks:
+                            # sid = st.id
+                            # if st.parent:
+                                # if st.parent == id:
+                                    # t.children.append(st)
 
-            #template_values['tasklists'] = list_of_tasklists
-            tasklists = list_of_tasklists
+            # #template_values['tasklists'] = list_of_tasklists
+            # tasklists = list_of_tasklists
           
         template_values = {'app_title' : app_title,
                            'host_msg' : host_msg,
@@ -713,11 +792,11 @@ class ReturnResultsHandler(webapp.RequestHandler):
             self.WriteCsvUsingTemplate(template_values, export_format, output_filename_base)
         elif export_format in ['html', 'html1']:
             self.WriteHtmlTemplate(template_values, export_format)
-        elif export_format == 'hTodo':
-            self.WriteHtmlTemplate(template_values, export_format)
+        # elif export_format == 'hTodo':
+            # self.WriteHtmlTemplate(template_values, export_format)
         elif export_format == 'RTM':
             self.SendEmailUsingTemplate(template_values, export_format, user_email, output_filename_base)
-        elif export_format in ['py', 'py1']:
+        elif export_format in ['py', 'py_nested']:
             self.WriteTextUsingTemplate(template_values, export_format, output_filename_base, 'py')
         elif export_format == 'html_raw':
             self.WriteHtmlRaw(template_values)
@@ -823,7 +902,7 @@ class ReturnResultsHandler(webapp.RequestHandler):
                 <title>""")
         self.response.out.write(app_title)
         self.response.out.write("""- List of tasks</title>
-                <link rel="stylesheet" type="text/css" href="tasks-backup.css"></link>
+                <link rel="stylesheet" type="text/css" href="tasks_backup.css"></link>
                 <script type="text/javascript">
 
                   var _gaq = _gaq || [];
@@ -1167,7 +1246,7 @@ class ReturnResultsHandler(webapp.RequestHandler):
 
     def WriteTextUsingTemplate(self, template_values, export_format, output_filename_base, file_extension):
         """ Write a TXT file according to the specified .txt template file
-            Currently supports export_format = 'py' 
+            Currently supports export_format = 'py' and 'py_nested' 
         """
         fn_name = "WriteTextUsingTemplate(): "
 
@@ -1202,7 +1281,7 @@ class ReturnResultsHandler(webapp.RequestHandler):
 
     def WriteHtmlTemplate(self, template_values, export_format):
         """ Write an HTML page according to the specified .html template file
-            Currently supports export_format = 'html' and 'hTodo'
+            Currently supports export_format = 'html'
         """
         fn_name = "WriteHtmlTemplate(): "
 
@@ -1280,8 +1359,6 @@ class ReturnResultsHandler(webapp.RequestHandler):
         logging.debug(fn_name + "<End>")
         logservice.flush()
 
- 
-                                 
 
 class OAuthHandler(webapp.RequestHandler):
     """Handler for /oauth2callback."""
@@ -1291,27 +1368,56 @@ class OAuthHandler(webapp.RequestHandler):
         fn_name = "OAuthHandler.get() "
         
         if not self.request.get("code"):
+            logging.info(fn_name + "No 'code', so redirecting to /")
+            logservice.flush()
             self.redirect("/")
             return
         user = users.get_current_user()
+        logging.debug(fn_name + "Retrieving flow for " + str(user.user_id()))
         flow = pickle.loads(memcache.get(user.user_id()))
         if flow:
+            logging.debug(fn_name + "Got flow. Retrieving credentials for " + str(self.request.params))
             error = False
             try:
                 credentials = flow.step2_exchange(self.request.params)
             except client.FlowExchangeError, e:
+                logging.exception(fn_name + "FlowExchangeError")
                 credentials = None
                 error = True
             except Exception, e:
                 logging.exception(fn_name + "Redirecting to " + settings.INVALID_CREDENTIALS_URL)
+                logservice.flush()
                 self.redirect(settings.INVALID_CREDENTIALS_URL)
                 return
             appengine.StorageByKeyName(
                 model.Credentials, user.user_id(), "credentials").put(credentials)
             if error:
+                logging.warning(fn_name + "FlowExchangeError, redirecting to '/?msg=ACCOUNT_ERROR'")
+                logservice.flush()
                 self.redirect("/?msg=ACCOUNT_ERROR")
             else:
-                self.redirect(self.request.get("state"))
+                logging.debug(fn_name + "Retrieved credentials ==>")
+                shared.DumpObj(credentials)
+                logservice.flush()
+                
+                if not credentials:
+                    logging.debug(fn_name + "No credentials. Redirecting to " + settings.INVALID_CREDENTIALS_URL)
+                    logging.debug(fn_name + "user ==>")
+                    shared.DumpObj(user)
+                    logservice.flush()
+                    self.redirect(settings.INVALID_CREDENTIALS_URL)
+                elif credentials.invalid:
+                    logging.warning(fn_name + "Invalid credentials. Redirecting to " + settings.INVALID_CREDENTIALS_URL)
+                    logging.debug(fn_name + "user ==>")
+                    shared.DumpObj(user)
+                    logging.debug(fn_name + "credentials ==>")
+                    shared.DumpObj(credentials)
+                    logservice.flush()
+                    self.redirect(settings.INVALID_CREDENTIALS_URL)
+                else:
+                    logging.debug(fn_name + "Credentials valid. Redirecting to " + str(self.request.get("state")))
+                    logservice.flush()
+                    self.redirect(self.request.get("state"))
 
         
 def real_main():
@@ -1328,7 +1434,7 @@ def real_main():
             (settings.PROGRESS_URL,             ShowProgressHandler),
             (settings.INVALID_CREDENTIALS_URL,  InvalidCredentialsHandler),
             ("/oauth2callback",                 OAuthHandler),
-        ], debug=True)
+        ], debug=False)
     util.run_wsgi_app(application)
     logging.info("main(): <End>")
 
@@ -1347,7 +1453,7 @@ def profile_main():
     stats.print_callers()
     logging.info("Profile data:\n%s", stream.getvalue())
     
-main = profile_main
+main = real_main
 
 if __name__ == "__main__":
     main()

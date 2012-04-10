@@ -20,7 +20,7 @@
 
 # ===== Limited Public Test host and version ======
 #application: js-tasks
-#version: 4
+#version: 1
 
 # ===== Private Alpha Test host and version ======
 application: js-tasks-test
@@ -50,9 +50,9 @@ error_handlers:
   
   
 handlers:
-- url: /tasks-backup.css
-  static_files: tasks-backup.css
-  upload: tasks-backup.css
+- url: /tasks_backup.css
+  static_files: tasks_backup.css
+  upload: tasks_backup.css
   mime_type: text/css
   secure: always
 
@@ -61,13 +61,23 @@ handlers:
   upload: favicon.ico
   secure: always
   
+- url: /info.html
+  static_files: info.html
+  upload: info.html
+  secure: always
+  
+- url: /info
+  static_files: info.html
+  upload: info.html
+  secure: always
+  
 - url: /worker
   script: worker.py
   login: admin
   secure: always
 
 - url: /.*
-  script: tasks-backup.py
+  script: tasks_backup.py
   login: required
   secure: always
 

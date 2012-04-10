@@ -56,7 +56,7 @@ This is the Django template file for HTML tasks with "hTodo" microformatting.
             <li class="vtodo status-{{ task.status }}">
               <span class="summary">{{ task.title }}</span><br/>
               {% if task.notes %}
-                <div class="description">{{ task.notes|linebreaksbr }}</div>
+                <div class="description">{{ task.notes|replacenewlinebr }}</div>
               {% endif %}
               {% if task.due %}
                 <span class="fieldname">Due: </span> 

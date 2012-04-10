@@ -10,7 +10,7 @@ This is the Django template used by test-taskqueue.py
         {% endif %}
         
         <title>{{ app_title }}</title>
-        <link rel="stylesheet" type="text/css" href="tasks-backup.css"></link>
+        <link rel="stylesheet" type="text/css" href="tasks_backup.css"></link>
         <script type="text/javascript">
 
             function disableDisplayHtmlButton() {
@@ -48,6 +48,12 @@ This is the Django template used by test-taskqueue.py
 
     <h2>{{ app_title }}</h2>
 
+    <noscript>
+        <br />
+        <h3>Javascript should be enabled for maximum application functionality</h3>
+        <br />
+    </noscript>
+    
     {% if host_msg %}
         <div class="break">
             <h3>{{ host_msg }}</h3>
@@ -105,7 +111,7 @@ This is the Django template used by test-taskqueue.py
             {% endif %}
 		</div>
     {% else %}
-    <div class="break">
+        <div class="break">
             Status = {{ status }}
 		</div>
         <div class="break">
@@ -120,8 +126,10 @@ This is the Django template used by test-taskqueue.py
             You will need to rerun <a href="{{ home_page_url }}" >{{ app_title }}</a>
             to create a new backup.
         </div>
+        
         <div class="break">
         </div>
+        
         <!-- Choose format to return backup data -->
         <form method="POST" action="{{ results_url }}" >
 			<fieldset>
@@ -150,9 +158,7 @@ This is the Django template used by test-taskqueue.py
 							<input type="radio" name="format" value="raw" /> Raw CSV<br />
 						</td>
 						<td>
-							CSV file containing all available properties for each task.
-							<br />
-							Google stores up to 15 properties for a task, but not all are used for every task.
+							CSV file containing almost all available properties for each task. See the <a href="info.html">information page</a> for details.
 						</td>
 					</tr>
 					<tr>
@@ -163,23 +169,24 @@ This is the Django template used by test-taskqueue.py
 							Same as Raw CSV, but with date/timestamps formatted suitable for reading by Excel.
 						</td>
 					</tr>
+                    <tr>
+                        <td class="format-name">
+                            <input type="radio" name="format" value="py" /> Python<br />
+                        </td>
+                        <td>
+                            Python data structure. Contains all the properties stored by Google for each task. See the <a href="info.html">information page</a> for details.
+                        </td>
+                    </tr>
+                    <tr>
+                        <td class="format-name">
+                            <input type="radio" name="format" value="py_nested" /> Nested Python<br />
+                        </td>
+                        <td>
+                            Python data structure. Tasks have a 'children' element, which contains that task's sub-tasks (if they exist).
+                        </td>
+                    </tr>
                     {% if display_technical_options %}
-                        <tr>
-                            <td class="format-name">
-                                <input type="radio" name="format" value="py" /> Python<br />
-                            </td>
-                            <td>
-                                Python data structure.
-                            </td>
-                        </tr>
-                        <tr>
-                            <td class="format-name">
-                                <input type="radio" name="format" value="py1" /> Nested Python<br />
-                            </td>
-                            <td>
-                                Python data structure. Tasks have a 'children' element, which contains that task's sub-tasks (if they exist)
-                            </td>
-                        </tr>
+                        <!--
                         <tr>
                             <td class="format-name">
                                 <input type="radio" name="format" value="hTodo" /> hTodo<br />
@@ -188,6 +195,7 @@ This is the Django template used by test-taskqueue.py
                                 hTodo (not currently working)
                             </td>
                         </tr>
+                        -->
                     {% endif %}
 					<tr>
 						<td class="format-name">
@@ -195,7 +203,7 @@ This is the Django template used by test-taskqueue.py
 						</td>
 						<td>
 							Emails tasks in Remember The Milk format. 
-                            <span class="take-note-smaller">(Notes 1, 2 &amp; 3)</span>
+                            <span class="take-note-smaller">(<a href="#notes">Notes</a> 1, 2 &amp; 3)</span>
 						</td>
 					</tr>
 					</table>
@@ -207,16 +215,18 @@ This is the Django template used by test-taskqueue.py
         
         <div class="break">
         </div>
+        
+
         <form method="POST" action="{{ results_url }}" onsubmit="disableDisplayHtmlButton();" >
             <input type="hidden" name="format" value="html_raw" />
             <input type="hidden" name="job_start_timestamp" value="{{ job_start_timestamp }}" />
 			<fieldset>
-				<legend>Display all tasks as a single web page, suitable for printing <span class="take-note-smaller"> (Note 4)</legend>
+				<legend>Display all tasks as a single web page, suitable for printing <span class="take-note-smaller"> (<a href="#notes">Note</a> 4)</legend>
 				<table class="format-selection">
 					<tr>
 						<td>
 							<input type="checkbox" name="dim_completed_tasks" value="True" checked="checked" >
-								&nbsp;Dim completed tasks? <span class="take-note-smaller"> (Note 5)</span>
+								&nbsp;Dim completed tasks? <span class="take-note-smaller"> (<a href="#notes">Note</a> 5)</span>
 							</input>
 						</td>
 					</tr>
@@ -243,6 +253,14 @@ This is the Django template used by test-taskqueue.py
 					</tr>
 				</table>
 				<br />
+                {% if progress > large_list_html_warning_limit %}
+                    <div class="take-note-para">
+                    <span class="take-note">CAUTION: You have a very large number of tasks. Attempting to display the tasks page may result in the system running out of memory and/or your browser timing out.
+                    </span>
+                    <br />
+                    You may wish to export your tasks first, before attempting to display the tasks page.
+                    </div>
+                {% endif %}
 				<button id="display-tasks-button" type="submit" class="big-button" >Display tasks page</button>
 			</fieldset>
         </form>
@@ -250,7 +268,7 @@ This is the Django template used by test-taskqueue.py
         </div>
         
         <div class="heading">
-            Notes;
+            <a name="notes">Notes</a>
         </div>
         <table  class="format-selection">
             <tr>
@@ -295,6 +313,11 @@ This is the Django template used by test-taskqueue.py
                 </td>
                 <td>
                     If checked, the HTML page will display completed tasks using a grey font. Hidden and deleted tasks are always dim.
+                </td>
+            </tr>
+            <tr>
+                <td colspan="2">
+                    Refer to the <a href="info.html">information page</a> for more information on the exported properties.
                 </td>
             </tr>
         </table>

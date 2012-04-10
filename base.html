@@ -19,7 +19,7 @@ This is the Django master template for snapshots.html and import.html.
 <html>
     <head>
         <title>{{ app_title }} - {% block title %}{% endblock %}</title>
-        <link rel="stylesheet" type="text/css" href="tasks-backup.css"></link>
+        <link rel="stylesheet" type="text/css" href="tasks_backup.css"></link>
         {% block head %}
         {% endblock %}
         <script type="text/javascript">
@@ -42,6 +42,12 @@ This is the Django master template for snapshots.html and import.html.
             Authorised user: {{ user_email }} <span class="logout-link">[ <a href="{{ logout_url }}">Log out</a> ]</span>
         </div>
     {% endif %}
+    <noscript>
+        <br />
+        <h3>Javascript should be enabled for maximum application functionality</h3>
+        <br />
+    </noscript>
+    
 
 
 <div class="logo break">

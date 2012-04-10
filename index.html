@@ -13,9 +13,6 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 
-The 2nd digit of the version number (line 66 below) should match the version number in app.yaml
-This version number should only increment when making major changes, such as going from alpha to beta,
-or beta to production.
 
 This is the Django template for the landing page.
 {% endcomment %}
@@ -23,7 +20,7 @@ This is the Django template for the landing page.
 <html>
     <head>
         <title>{{ app_title }}</title>
-        <link rel="stylesheet" type="text/css" href="tasks-backup.css"></link>
+        <link rel="stylesheet" type="text/css" href="tasks_backup.css"></link>
         <script type="text/javascript">
 
             function authorise() {
@@ -76,6 +73,12 @@ This is the Django template for the landing page.
 
     <h2>{{ app_title }}</h2>
   
+    <noscript>
+        <br />
+        <h3>Javascript should be enabled for maximum application functionality</h3>
+        <br />
+    </noscript>
+    
     {% if host_msg %}
         <div class="break">
         <h3>{{ host_msg }}</h3>
@@ -88,22 +91,22 @@ This is the Django template for the landing page.
         <ul>
             <li>Microsoft Outlook (.csv file)</li>
             <li>iCalendar (.ics file)</li>
-            <li>"Dump" (.csv file containing all 15 Google Tasks attributes)</li>
+            <li>Raw (.csv file containing all 15 Google Tasks attributes)</li>
+            <li>Python data structure</li>
             <li>Remember The Milk (email)   <span class="comment"> { untested, as I don't have RTM }</span></li>
         </ul>
         {{ app_title }} can also display tasks as a single web page (e.g., suitable for printing)
     </div>
   
-    <div class="break comment">
-        I'll also consider adding hTodo (HTML page) if sufficient people show interest by requesting it on the 
-		<a href="http://code.google.com/p/tasks-backup/issues/list">issues page</a>
-    </div>
-  
     {% if msg == "ACCOUNT_ERROR" %}
         <div class="break">
-            An error occurred authorizing your account.  This could be because
+            <span class="take-note-larger">
+                An error occurred authorizing your account.  
+            </span>
+            <br />
+            This could be because your Google Apps account is not authorised to access this application, or
             your account is not currently in good standing with Google.  If this
-            is not the case, please contact us (see below) so we can investigate this issue.
+            happens again, please <a href="http:/{{ url_issues_page }}">report the issue</a> so that we can try to fix it.
         </div>
     {% endif %}
     
@@ -113,26 +116,26 @@ This is the Django template for the landing page.
             <form method="POST" action = "{{ start_backup_url }}" onsubmit="disableButton();" >
                 <table class="include-selection">
                     <tr>
-                        <th colspan="2" align="left">Advanced settings <span class="take-note-smaller">(Note 1)</span></th>
+                        <th colspan="2" align="left">Advanced settings <span class="take-note-smaller">(<a href="#notes">Note</a> 1)</span></th>
                     </tr>
                     <tr>
                         <td>
                             <input type="checkbox" name="include_completed" value="True" checked="checked" >
-								&nbsp;Include completed tasks? <span class="take-note-smaller">(Note 2)</span>
+								&nbsp;Include completed tasks? <span class="take-note-smaller">(<a href="#notes">Note</a> 2)</span>
 							</input>
                         </td>
                     </tr>
                     <tr>
                         <td>
                             <input type="checkbox" name="include_deleted" value="True" >
-								&nbsp;Include deleted tasks?  <span class="take-note-smaller">(Note 3, 4, 6)</span>
+								&nbsp;Include deleted tasks?  <span class="take-note-smaller">(<a href="#notes">Note</a> 3, 4, 6)</span>
 							</input>
                         </td>
                     </tr>
                     <tr>
                         <td>
                             <input type="checkbox" name="include_hidden" value="True" >
-								&nbsp;Include hidden tasks? <span class="take-note-smaller"> (Note 5, 6)</span>
+								&nbsp;Include hidden tasks? <span class="take-note-smaller"> (<a href="#notes">Note</a> 5, 6)</span>
 							</input>
                         </td>
                     </tr>
@@ -151,40 +154,28 @@ This is the Django template for the landing page.
             The amount of time taken to generate the backup depends on various factors, 
 			including server load and the total number of tasks. 
 			At a rough estimate, the system processes 50-150 tasks per second. 
-			This means that a task list with 5,000 tasks could take almost 2 minutes.
+			This means that a task list with 5,000 tasks could take around 2 minutes.
         </div>
     {% else %}
         <div class="break">
-            In order to access your tasks, this application asks for permission to access your Google Tasks data. 
-			This application is only used for backing up your tasks; It will not modify any of your existing tasks.
-        </div>
-        <div class="break">
-            The permission for this application will be displayed as "{{ product_name }} - Tasks" in your list of 
-            <a href="https://www.google.com/accounts/IssuedAuthSubTokens">Authorised Sites, Apps, and Services</a>
+            This application uses Google authentication to access your Tasks data. The permission for this application will be displayed as "{{ product_name }} - Tasks" in your list of 
+            <a href="https://www.google.com/accounts/IssuedAuthSubTokens">Authorised Sites, Apps, and Services</a>, and can be revoked there at any time.
         </div>
         <button id="authorise_button" class="big-button" type="button" onclick="authorise();">Authorise</button>
     {% endif %}
  
     <div class="break">
-        This application is currently (25 Feb 2012) in beta. 
-		It is running from my own Google Apps account, and so has quota limitations. 
+        This application is currently (8 Apr 2012) in beta. 
 		You are welcome to try it, but I cannot give any guarantee that data retrieved will be correct or in a usable format. 
+        It is running from my personal Google Apps account, and so has quota limitations. 
     </div>
-  
-    <div class="break">
-        This application should be safe to try, as it only reads data; 
-		it does not write or modify any tasks in your Google account. 
-		It uses Google's own authorisation, so nobody else has access to your data. 
-		If you are not already logged in, you will need to authenticate yourself using normal Google authentication.
-    </div>
-  
- 
+   
     {% if is_authorized %}
         <div class="break">
         </div>
         
         <div class="heading">
-            Notes
+            <a name="notes">Notes</a>
         </div>
         <table  class="format-selection">
             <tr>
@@ -192,9 +183,11 @@ This is the Django template for the landing page.
                     Note 1 - 
                 </td>
                 <td>
-                    These settings may be used when the user wishes to customise the retrieved data. 
-					For most applications, exported data should not include deleted or hidden tasks, 
-					and may include completed tasks if the user wishes to retain a record of completed tasks.
+                    These settings may be used when the user wishes to customise the retrieved data.
+                    <br />
+                    For most applications, exported data should not include deleted or hidden tasks.
+                    <br />
+                <span class="take-note">CAUTION:</span> The Outlook, iCalendar and RTM file formats do not support <span class="take-note">deleted</span> or <span class="take-note">hidden</span> tasks, so those programs will display deleted and/or hidden tasks as normal tasks.
                 </td>
             </tr>
             <tr>
@@ -203,6 +196,8 @@ This is the Django template for the landing page.
                 </td>
                 <td>
                     When checked, the backup includes completed tasks. If unchecked, only incomplete (needsAction) tasks are exported.
+                    <br />
+                    Selecting "Include completed tasks?" is useful if you wish to retain a backup of tasks that have been completed.
                 </td>
             </tr>
             <tr>
@@ -212,7 +207,7 @@ This is the Django template for the landing page.
                 <td>
                     When tasks are deleted, they are marked as Hidden and moved to the [Trash] view.
                     <br />
-                    Outlook and iCal do not differentiate deleted tasks, so they will appear as normal tasks.
+                    Outlook, RTM and iCal do not differentiate deleted tasks, so they will appear as normal tasks.
                 </td>
             </tr>
             <tr>
@@ -234,7 +229,7 @@ This is the Django template for the landing page.
                     When tasks which have been marked complete, and then [Clear completed] is clicked, 
 					those tasks are marked as Completed AND Hidden. 
                     <br />
-                    Outlook and iCal do not differentiate hidden tasks, so they will appear as normal tasks.
+                    Outlook, RTM and iCal do not differentiate hidden tasks, so they will appear as normal tasks.
                 </td>
             </tr>
             <tr>
@@ -246,8 +241,13 @@ This is the Django template for the landing page.
 					and will include a 'hidden' or 'deleted' label.
                 </td>
             </tr>
+            <tr>
+                <td colspan="2">
+                    Refer to the <a href="info.html">information page</a> for more details on the completed, hidden and deleted properties.
+                </td>
+            </tr>
         </table>
-        See the <a href="info.html">information page</a> for more details.
+        
     {% endif %}
 
 

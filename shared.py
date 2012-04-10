@@ -1,4 +1,11 @@
 import settings
+import logging
+from google.appengine.api import logservice # To flush logs
+
+logservice.AUTOFLUSH_EVERY_SECONDS = 5
+logservice.AUTOFLUSH_EVERY_BYTES = None
+logservice.AUTOFLUSH_EVERY_LINES = 5
+logservice.AUTOFLUSH_ENABLED = True
 
 # Shared functions
 # Can't use the name common, because there is already a module named common
@@ -62,6 +69,11 @@ def isTestUser(user_email):
     return (user_email.lower() in (email.lower() for email in settings.TEST_ACCOUNTS))
   
 
+def DumpObj(obj):
+    for attr in dir(obj):
+        logging.debug("    obj.%s = %s" % (attr, getattr(obj, attr)))
+    logservice.flush()
+    
 # TODO: Untested
 # def runningOnDev():
     # """ Returns true when running on local dev server. """
