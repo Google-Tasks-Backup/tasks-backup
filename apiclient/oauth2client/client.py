@@ -204,7 +204,8 @@ class OAuth2Credentials(Credentials):
         'user-agent': self.user_agent,
         'content-type': 'application/x-www-form-urlencoded'
     }
-    logging.info("OAuth2Credentials._refresh: Refresing access_token")
+    # Julie Smith, 14 Apr 2012: This seems to happen every time, so downgrading log level
+    logging.debug("OAuth2Credentials._refresh: Refresing access_token")
     resp, content = http_request(
         self.token_uri, method='POST', body=body, headers=headers)
     if resp.status == 200:
@@ -223,7 +224,7 @@ class OAuth2Credentials(Credentials):
       # An {'error':...} response body means the token is expired or revoked, so
       # we flag the credentials as such.
       # Julie Smith, 11 Mar 2012: This seems to happen every time, so downgrading from Warning to Info
-      logging.info('client._refresh: Failed to retrieve access token: %s' % content)
+      logging.debug('client._refresh: Failed to retrieve access token: %s' % content)
       error_msg = 'Invalid response %s.' % resp['status']
       try:
         d = simplejson.loads(content)
@@ -279,7 +280,8 @@ class OAuth2Credentials(Credentials):
       resp, content = request_orig(uri, method, body, headers,
                                    redirections, connection_type)
       if resp.status == 401:
-        logging.info("OAuth2Credentials.new_request(): Refreshing because we got a 401")
+        # Julie Smith, 14 Apr 2012: This seems to happen every time, so downgrading log level
+        logging.debug("OAuth2Credentials.new_request(): Refreshing because we got a 401")
         self._refresh(request_orig)
         headers['authorization'] = 'OAuth ' + self.access_token
         return request_orig(uri, method, body, headers,
@@ -439,12 +441,14 @@ class OAuth2WebServerFlow(Flow):
       if 'expires_in' in d:
         token_expiry = datetime.datetime.now() + datetime.timedelta(seconds = int(d['expires_in']))
 
+      # Julie Smith, 14 Apr 2012: This seems to happen every time, so downgrading log level
       logging.debug('client.step2_exchange: Successfully retrieved access token: %s' % content)
       return OAuth2Credentials(access_token, self.client_id, self.client_secret,
                                refresh_token, token_expiry, self.token_uri,
                                self.user_agent)
     else:
-      logging.error('client.step2_exchange: Failed to retrieve access token: %s' % content)
+      # Julie Smith, 14 Apr 2012: This seems to happen every time, so downgrading log level
+      logging.debug('client.step2_exchange: Failed to retrieve access token: %s' % content)
       error_msg = 'Invalid response %s.' % resp['status']
       try:
         d = simplejson.loads(content)

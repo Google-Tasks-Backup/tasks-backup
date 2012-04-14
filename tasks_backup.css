@@ -33,6 +33,24 @@ fieldset
 	padding-top: 10px;
 }
 
+
+fieldset fields { 
+  clear: both;
+} 
+
+input.choose_display_format { 
+  float: left;
+  display: block;
+} 
+
+label.choose_display_format { 
+  position: relative;
+  margin-left: 30px;
+  display: block;
+} 
+
+
+
 legend
 {
 	color: #fff;

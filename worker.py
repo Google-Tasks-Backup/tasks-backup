@@ -570,11 +570,21 @@ class CreateBackupWorker(webapp.RequestHandler):
               datetime_updated = t.get(u'updated')
               if datetime_updated:
                 t[u'updated'] = datetime.datetime.strptime(datetime_updated, "%Y-%m-%dT%H:%M:%S.000Z")
+              
+              # There have been occassional format errors in the 'completed' property, 
+              # due to 'completed' value such as "-1701567-04-26T07:12:55.000Z"
+              # so if the format change fails, set 'completed' to None
+              try:
+                datetime_completed = t.get(u'completed')
+                if datetime_completed:
+                  new_datetime_completed = datetime.datetime.strptime(datetime_completed, "%Y-%m-%dT%H:%M:%S.000Z")
+                  t[u'completed'] = new_datetime_completed
+              except ValueError, e:
+                  t[u'completed'] = datetime.datetime(datetime.MINYEAR, 1, 1, 0, 0, 0)
+                  logging.exception(fn_name + "Invalid 'completed' timestamp format, so setting to 0001-01-01 00:00:00")
+                  logging.debug(fn_name + "Invalid value was " + str(datetime_completed))
+                  logservice.flush()
                 
-              datetime_completed = t.get(u'completed')
-              if datetime_completed:
-                t[u'completed'] = datetime.datetime.strptime(datetime_completed, "%Y-%m-%dT%H:%M:%S.000Z")
-            
             if tasklist_dict.has_key(u'tasks'):
               # This is the n'th page of task data for this taslkist, so extend the existing list of tasks
               tasklist_dict[u'tasks'].extend(tasks)

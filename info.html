@@ -99,16 +99,16 @@
     </div>
     
     <div class="break">
-        Most of the properties are self-explanatory, however the relationship between <span class="property-name">completed</span>, <span class="property-name">hidden</span> and <span class="property-name">deleted</span> may require some additional explanation.
+        Most of the properties are self-explanatory, however the relationship between <span class="property-name">status</span>, <span class="property-name">hidden</span> and <span class="property-name">deleted</span> may require some additional explanation.
         <ul>
             <li>
-                Mark a task complete ==> <span class="property-name">completed</span> changes from "needsAction" to "completed".
+                Mark a task complete ==> <span class="property-name">status</span> changes from "needsAction" to "completed".
                 <ul>
                     <li>Task remains visible in [My Order] and [Sort by date] views.</li>
                 </ul>
             </li>
             <li>
-                Mark a task complete, and then click [Clear completed] ==> <span class="property-name">completed</span> = "completed", <span class="property-name">hidden</span> = "True"
+                Mark a task complete, and then click [Clear completed] ==> <span class="property-name">status</span> = "completed", <span class="property-name">hidden</span> = "True"
                 <ul>
                     <li>
                          Task only appears in [Completed tasks] view
@@ -116,7 +116,7 @@
                 </ul>
             </li>
             <li>
-                Mark a task complete, and then click [Delete] ==> <span class="property-name">completed</span> = "completed", <span class="property-name">deleted</span> = "True"
+                Mark a task complete, and then click [Delete] ==> <span class="property-name">status</span> = "completed", <span class="property-name">deleted</span> = "True"
                 <ul>
                     <li>
                         Task only appears in [Trash] view <span class="take-note-smaller">(<a href="#notes">Note</a> 3)</span>
@@ -138,7 +138,7 @@
             <th colspan="3">Task properties <span class="take-note-smaller">(<a href="#notes">Note</a> 1, 2)</span></th><th rowspan="2">Description</th><th colspan="3">Visible in View:</th>
         </tr>
         <tr>
-            <th><span class="property-name">completed</span></th>
+            <th><span class="property-name">status</span></th>
             <th><span class="property-name">deleted</span></th>
             <th><span class="property-name">hidden</span></th>
             <th class="view-tr">My order<br />Sort by date</th>
@@ -175,7 +175,11 @@
     <div class="break">
     </div>
  
- 
+    <h3>Other problems</h3>
+    <div class="break">
+        The <span class="property-name">completed</span> property has occassionally contained invalid timestamps, where the year is stored as a large negative number such as -1701567. In this case, the application sets the <span class="property-name">completed</span> property to "0001-01-01 00:00:00"
+        
+    </div>
 
     <div class="heading">
         <a name="notes">Notes</a>
@@ -194,7 +198,7 @@
                 Note 2 - 
             </td>
             <td>
-                All 3 properties are stored by Google as strings. The <span class="property-name">completed</span> field may be either "needsAction" or "completed". The <span class="property-name">deleted</span> and <span class="property-name">hidden</span> properties can be either an empty string (indicating false), or the word "True".
+                All 3 properties are stored by Google as strings. The <span class="property-name">status</span> field may be either "needsAction" or "completed". The <span class="property-name">deleted</span> and <span class="property-name">hidden</span> properties can be either an empty string (indicating false), or the word "True".
             </td>
         </tr>
         <tr>
@@ -212,9 +216,21 @@
                 Note 4 - 
             </td>
             <td>
-                When determining parent-child relationships, ignore any task which is <span class="property-name">hidden</span> or <span class="property-name">deleted</span>.
+                When a task is deleted or hidden, the task may sometimes retain a <span class="property-name">parent</span> value, so that Google can restore the task to the correct parent. 
                 <br />
-                When a task is deleted or hidden, the task may sometimes retain a <span class="property-name">parent</span> value, although that <span class="property-name">parent</span> value is very often no longer valid, and may even refer to a task in another tasklist!
+                Note, however, that <span class="property-name">parent</span> value may be invalid for a task that has been deleted or hidden. It may even refer to a task in another tasklist!
+                <br />
+                If the value of the <span class="property-name">parent</span> property is invalid, Google does not display that task, even though it remains in the tasklist.
+                <br />
+                One common way that tasks become corrupted is;
+                <ol>
+                    <li>Start with nested tasks A/B/C/D</li>
+                    <li>Delete D</li>
+                    <li>Delete C</li>
+                    <li>Restore D from Trash</li>
+                </ol>
+                Since task D's parent no longer exists, Google doesn't know where to put the task,
+                so it becomes an (invisible) orphan. This program can download or display invalid/corrupted tasks if desired.
             </td>
         </tr>
     </table>

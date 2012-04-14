@@ -51,6 +51,7 @@ logservice.AUTOFLUSH_EVERY_LINES = 5
 logservice.AUTOFLUSH_ENABLED = True
 
 import httplib2
+import Cookie
 
 import model
 import settings
@@ -59,27 +60,59 @@ from datetime import timedelta
 import appversion # appversion.version is set before the upload process to keep the version number consistent
 import shared # Code whis is common between tasks-backup.py and worker.py
 
-
+def _set_cookie(res, key, value='', max_age=None,
+                   path='/', domain=None, secure=None, httponly=False,
+                   version=None, comment=None):
+    """
+    Set (add) a cookie for the response
+    """       
+    cookies = Cookie.SimpleCookie()
+    cookies[key] = value
+    for var_name, var_value in [
+        ('max-age', max_age),
+        ('path', path),
+        ('domain', domain),
+        ('secure', secure),
+        ('HttpOnly', httponly),
+        ('version', version),
+        ('comment', comment),
+        ]:
+        if var_value is not None and var_value is not False:
+            cookies[key][var_name] = str(var_value)
+        if max_age is not None:
+            cookies[key]['expires'] = max_age
+    header_value = cookies[key].output(header='').lstrip()
+    res.headers.add_header("Set-Cookie", header_value)
+        
   
 def _RedirectForOAuth(self, user):
-  """Redirects the webapp response to authenticate the user with OAuth2."""
-  
-  client_id, client_secret, user_agent, app_title, product_name, host_msg = shared.GetSettings(self.request.host)
-  
-  flow = client.OAuth2WebServerFlow(
-      client_id=client_id,
-      client_secret=client_secret,
-      scope="https://www.googleapis.com/auth/tasks",
-      user_agent=user_agent,
-      xoauth_displayname=product_name,
-      state=self.request.path_qs)
+    """Redirects the webapp response to authenticate the user with OAuth2."""
 
-  callback = self.request.relative_url("/oauth2callback")
-  authorize_url = flow.step1_get_authorize_url(callback)
-  memcache.set(user.user_id(), pickle.dumps(flow))
-  logging.debug("_RedirectForOAuth(): Redirecting to " + str(authorize_url))
-  self.redirect(authorize_url)
+    fn_name = "_RedirectForOAuth(): "
+    client_id, client_secret, user_agent, app_title, product_name, host_msg = shared.GetSettings(self.request.host)
 
+    flow = client.OAuth2WebServerFlow(
+        client_id=client_id,
+        client_secret=client_secret,
+        scope="https://www.googleapis.com/auth/tasks",
+        user_agent=user_agent,
+        xoauth_displayname=product_name,
+        state=self.request.path_qs)
+
+    callback = self.request.relative_url("/oauth2callback")
+    authorize_url = flow.step1_get_authorize_url(callback)
+    memcache.set(user.user_id(), pickle.dumps(flow))
+    logging.debug(fn_name + "Redirecting to " + str(authorize_url))
+    if self.request.cookies.has_key('auth_count'):
+        auth_count = int(self.request.cookies['auth_count'])
+    else:
+        auth_count = 0
+    auth_count_str = str(auth_count + 1)
+    logging.debug(fn_name + "Writing cookie: auth_count = " + auth_count_str)
+    logservice.flush()
+    _set_cookie(self.response, 'auth_count', auth_count_str, max_age=120)        
+
+    self.redirect(authorize_url)
 
   
 def _GetCredentials():
@@ -117,6 +150,13 @@ class InvalidCredentialsHandler(webapp.RequestHandler):
         logging.debug(fn_name + "<Start>")
         logservice.flush()
         
+        # DEBUG
+        if self.request.cookies.has_key('auth_count'):
+            logging.debug(fn_name + "Cookie: auth_count = " + str(self.request.cookies['auth_count']))
+        else:
+            logging.debug(fn_name + "No auth_count cookie found")
+        logservice.flush()            
+            
         client_id, client_secret, user_agent, app_title, product_name, host_msg = shared.GetSettings(self.request.host)
         
         path = os.path.join(os.path.dirname(__file__), "invalid_credentials.html")
@@ -124,6 +164,9 @@ class InvalidCredentialsHandler(webapp.RequestHandler):
         template_values = {  'app_title' : app_title,
                              'app_version' : appversion.version,
                              'upload_timestamp' : appversion.upload_timestamp,
+                             'rc' : self.request.get('rc'),
+                             'nr' : self.request.get('nr'),
+                             'err' : self.request.get('err'),
                              'host_msg' : host_msg,
                              'home_page_url' : settings.HOME_PAGE_URL,
                              'product_name' : product_name,
@@ -134,7 +177,10 @@ class InvalidCredentialsHandler(webapp.RequestHandler):
                              'logout_url': users.create_logout_url('/')}
                      
         self.response.out.write(template.render(path, template_values))
+        logging.debug(fn_name + "Writing cookie: Resetting auth_count cookie to zero")
+        _set_cookie(self.response, 'auth_count', '0', max_age=120)
         logging.debug(fn_name + "<End>")
+        logservice.flush()
         
         
 class MainHandler(webapp.RequestHandler):
@@ -148,6 +194,13 @@ class MainHandler(webapp.RequestHandler):
         logging.info(fn_name + "<Start> (app version %s)" %appversion.version )
         logservice.flush()
         
+        # DEBUG
+        if self.request.cookies.has_key('auth_count'):
+            logging.debug(fn_name + "Cookie: auth_count = " + str(self.request.cookies['auth_count']))
+        else:
+            logging.debug(fn_name + "No auth_count cookie found")
+        logservice.flush()            
+            
         client_id, client_secret, user_agent, app_title, product_name, host_msg = shared.GetSettings(self.request.host)
 
         logging.debug(fn_name + "Calling _GetCredentials()")
@@ -176,6 +229,9 @@ class MainHandler(webapp.RequestHandler):
             is_authorized = False
         else:
             is_authorized = True
+            logging.debug(fn_name + "Resetting auth_count cookie to zero")
+            logservice.flush()
+            _set_cookie(self.response, 'auth_count', '0', max_age=120)
             if self.request.host in settings.LIMITED_ACCESS_SERVERS:
                 logging.info(fn_name + "Running on limited-access server")
                 if not shared.isTestUser(user_email):
@@ -209,49 +265,58 @@ class MainHandler(webapp.RequestHandler):
     
 
 class AuthRedirectHandler(webapp.RequestHandler):
-  """Handler for /auth."""
+    """Handler for /auth."""
 
-  def get(self):
-    """Handles GET requests for /auth."""
-    user, credentials = _GetCredentials()
+    def get(self):
+        """Handles GET requests for /auth."""
+        fn_name = "AuthRedirectHandler.get() "
+        
+        logging.debug(fn_name + "<Start>" )
+        logservice.flush()
+        
+        # DEBUG
+        # if self.request.cookies.has_key('auth_count'):
+            # logging.debug(fn_name + "Cookie: auth_count = " + str(self.request.cookies['auth_count']))
+        # else:
+            # logging.debug(fn_name + "No auth_count cookie found")
+        # logservice.flush()            
+            
+        # Check how many times this has been called (without any other pages having been served)
+        if self.request.cookies.has_key('auth_count'):
+            auth_count = int(self.request.cookies['auth_count'])
+            logging.debug(fn_name + "auth_count = " + str(auth_count))
+        else:
+            logging.debug(fn_name + "No auth_count cookie found")
+            auth_count = 0
+            
+        user, credentials = _GetCredentials()
 
-    if not credentials or credentials.invalid:
-      _RedirectForOAuth(self, user)
-    else:
-      self.redirect("/")
+        if not credentials: 
+            if auth_count > settings.MAX_NUM_AUTH_REQUESTS:
+                # Redirect to Invalid Credentials page
+                logging.warning(fn_name + "credentials is None after " + str(auth_count) + " retries, redirecting to " + 
+                    settings.INVALID_CREDENTIALS_URL)
+                self.redirect(settings.INVALID_CREDENTIALS_URL + "?rc=NC&nr=" + str(auth_count))
+            else:
+                # Try to authenticate (again)
+                logging.debug(fn_name + "credentials is None, calling _RedirectForOAuth()")
+                _RedirectForOAuth(self, user)
+        elif credentials.invalid:
+            if auth_count > settings.MAX_NUM_AUTH_REQUESTS:
+                # Redirect to Invalid Credentials page
+                logging.warning(fn_name + "credentials invalid after " + str(auth_count) + " retries, redirecting to " + 
+                    settings.INVALID_CREDENTIALS_URL)
+                self.redirect(settings.INVALID_CREDENTIALS_URL + "?rc=IC&nr=" + str(auth_count))
+            else:
+                # Try to authenticate (again)
+                logging.debug(fn_name + "credentials invalid, calling _RedirectForOAuth()")
+                _RedirectForOAuth(self, user)
+        else:
+            logging.debug(fn_name + "Redirecting to /")
+            self.redirect("/")
+        logging.debug(fn_name + "<End>" )
+        logservice.flush()
 
-
-# class AuthRedirectHandler(webapp.RequestHandler):
-  # """Handler for /auth."""
-
-  # def get(self):
-    # """Handles GET requests for /auth."""
-    # fn_name = "AuthRedirectHandler.get() "
-    
-    # user, credentials = _GetCredentials()
-
-    # if not credentials:
-        # logging.debug(fn_name + "No credentials. Calling _RedirectForOAuth()")
-        # logging.debug(fn_name + "user ==>")
-        # shared.DumpObj(user)
-        # logging.debug(fn_name + "credentials ==>")
-        # shared.DumpObj(credentials)
-        # logservice.flush()
-        # _RedirectForOAuth(self, user)
-    # elif credentials.invalid:
-        # logging.warning(fn_name + "Invalid credentials. Redirecting to " + settings.INVALID_CREDENTIALS_URL)
-        # logging.debug(fn_name + "user ==>")
-        # shared.DumpObj(user)
-        # logging.debug(fn_name + "credentials ==>")
-        # shared.DumpObj(credentials)
-        # logservice.flush()
-        # self.redirect(settings.INVALID_CREDENTIALS_URL)
-    # else:
-        # logging.debug(fn_name + "Credentials valid. Redirecting to /")
-        # logservice.flush()
-        # self.redirect("/")
-
-      
     
 class CompletedHandler(webapp.RequestHandler):
     """Handler for /completed."""
@@ -260,17 +325,24 @@ class CompletedHandler(webapp.RequestHandler):
         """Handles GET requests for /completed"""
         fn_name = "CompletedHandler.get(): "
 
+        # DEBUG
+        if self.request.cookies.has_key('auth_count'):
+            logging.debug(fn_name + "Cookie: auth_count = " + str(self.request.cookies['auth_count']))
+        else:
+            logging.debug(fn_name + "No auth_count cookie found")
+        logservice.flush()            
+            
         user, credentials = _GetCredentials()
         # if user is None:
             # logging.warning(fn_name + "user is None, redirecting to " +
                 # settings.INVALID_CREDENTIALS_URL)
-            # self.redirect(settings.INVALID_CREDENTIALS_URL)
+            # self.redirect(settings.INVALID_CREDENTIALS_URL + "?rc=NU")
             # return
             
         # if credentials is None or credentials.invalid:
             # logging.warning(fn_name + "credentials is None or invalid, redirecting to " + 
                 # settings.INVALID_CREDENTIALS_URL)
-            # self.redirect(settings.INVALID_CREDENTIALS_URL)
+            # self.redirect(settings.INVALID_CREDENTIALS_URL + "?rc=XC")
             # return
             
         user_email = user.email()
@@ -289,6 +361,9 @@ class CompletedHandler(webapp.RequestHandler):
             is_authorized = False
         else:
             is_authorized = True
+            logging.debug(fn_name + "Resetting auth_count cookie to zero")
+            logservice.flush()
+            _set_cookie(self.response, 'auth_count', '0', max_age=120)
             
         template_values = {'app_title' : app_title,
                              'host_msg' : host_msg,
@@ -317,6 +392,13 @@ class StartBackupHandler(webapp.RequestHandler):
         logging.debug(fn_name + "<Start>")
         logservice.flush()
 
+        # DEBUG
+        if self.request.cookies.has_key('auth_count'):
+            logging.debug(fn_name + "Cookie: auth_count = " + str(self.request.cookies['auth_count']))
+        else:
+            logging.debug(fn_name + "No auth_count cookie found")
+        logservice.flush()            
+            
         # client_id, client_secret, user_agent, app_title, product_name, host_msg = shared.GetSettings(self.request.host)
         
         user, credentials = _GetCredentials()
@@ -324,16 +406,19 @@ class StartBackupHandler(webapp.RequestHandler):
             logging.warning(fn_name + "user is None, redirecting to " +
                 settings.INVALID_CREDENTIALS_URL)
             logservice.flush()
-            self.redirect(settings.INVALID_CREDENTIALS_URL)
+            self.redirect(settings.INVALID_CREDENTIALS_URL + "?rc=NU")
             return
             
         if credentials is None or credentials.invalid:
             logging.warning(fn_name + "credentials is None or invalid, redirecting to " + 
                 settings.INVALID_CREDENTIALS_URL)
             logservice.flush()
-            self.redirect(settings.INVALID_CREDENTIALS_URL)
+            self.redirect(settings.INVALID_CREDENTIALS_URL + "?rc=XC")
             return
-            
+        
+        logging.debug(fn_name + "Resetting auth_count cookie to zero")
+        logservice.flush()
+        _set_cookie(self.response, 'auth_count', '0', max_age=120)
         user_email = user.email()
         is_test_user = shared.isTestUser(user_email)
         if self.request.host in settings.LIMITED_ACCESS_SERVERS:
@@ -398,12 +483,19 @@ class ShowProgressHandler(webapp.RequestHandler):
     """Handler to display progress to the user """
     
     def get(self):
-        # TODO: Display the progress page, which includes a refresh meta-tag to recall this page every n seconds
+        """Display the progress page, which includes a refresh meta-tag to recall this page every n seconds"""
         fn_name = "ShowProgressHandler.get(): "
     
         logging.debug(fn_name + "<Start>")
         logservice.flush()
         
+        # DEBUG
+        if self.request.cookies.has_key('auth_count'):
+            logging.debug(fn_name + "Cookie: auth_count = " + str(self.request.cookies['auth_count']))
+        else:
+            logging.debug(fn_name + "No auth_count cookie found")
+        logservice.flush()            
+            
         client_id, client_secret, user_agent, app_title, product_name, host_msg = shared.GetSettings(self.request.host)
       
           
@@ -412,17 +504,19 @@ class ShowProgressHandler(webapp.RequestHandler):
             logging.warning(fn_name + "user is None, redirecting to " +
                 settings.INVALID_CREDENTIALS_URL)
             logservice.flush()
-            self.redirect(settings.INVALID_CREDENTIALS_URL)
+            self.redirect(settings.INVALID_CREDENTIALS_URL + "?rc=NU")
             return
             
         if credentials is None or credentials.invalid:
             logging.warning(fn_name + "credentials is None or invalid, redirecting to " + 
                 settings.INVALID_CREDENTIALS_URL)
             logservice.flush()
-            self.redirect(settings.INVALID_CREDENTIALS_URL)
+            self.redirect(settings.INVALID_CREDENTIALS_URL + "?rc=XC")
             return
-            
-            
+        
+        logging.debug(fn_name + "Resetting auth_count cookie to zero")
+        logservice.flush()
+        _set_cookie(self.response, 'auth_count', '0', max_age=120)    
         user_email = user.email()
         if self.request.host in settings.LIMITED_ACCESS_SERVERS:
             logging.info(fn_name + "Running on limited-access server")
@@ -439,9 +533,8 @@ class ShowProgressHandler(webapp.RequestHandler):
             
         if tasks_backup_job is None:
             logging.error(fn_name + "No DB record for " + user_email)
-            status = 'error'
+            status = 'no-record'
             progress = 0
-            error_message = "No backup job found for " + str(user_email) + ", please restart."
             job_start_timestamp = None
         else:            
             # total_progress is only updated once all the tasks have been retrieved in a single tasklist.
@@ -549,6 +642,13 @@ class ReturnResultsHandler(webapp.RequestHandler):
         
         logging.debug(fn_name + "<Start>")
         logservice.flush()
+
+        # DEBUG
+        if self.request.cookies.has_key('auth_count'):
+            logging.debug(fn_name + "Cookie: auth_count = " + str(self.request.cookies['auth_count']))
+        else:
+            logging.debug(fn_name + "No auth_count cookie found")
+        logservice.flush()            
         
         client_id, client_secret, user_agent, app_title, product_name, host_msg = shared.GetSettings(self.request.host)
         
@@ -557,16 +657,19 @@ class ReturnResultsHandler(webapp.RequestHandler):
             logging.warning(fn_name + "user is None, redirecting to " +
                 settings.INVALID_CREDENTIALS_URL)
             logservice.flush()
-            self.redirect(settings.INVALID_CREDENTIALS_URL)
+            self.redirect(settings.INVALID_CREDENTIALS_URL + "?rc=NU")
             return
             
         if credentials is None or credentials.invalid:
             logging.warning(fn_name + "credentials is None or invalid, redirecting to " + 
                 settings.INVALID_CREDENTIALS_URL)
             logservice.flush()
-            self.redirect(settings.INVALID_CREDENTIALS_URL)
+            self.redirect(settings.INVALID_CREDENTIALS_URL + "?rc=XC")
             return
-            
+        
+        logging.debug(fn_name + "Resetting auth_count cookie to zero")
+        logservice.flush()
+        _set_cookie(self.response, 'auth_count', '0', max_age=120)
         user_email = user.email()
         is_test_user = shared.isTestUser(user_email)
         if self.request.host in settings.LIMITED_ACCESS_SERVERS:
@@ -579,6 +682,18 @@ class ReturnResultsHandler(webapp.RequestHandler):
                 return
         
         # Retrieve the DB record for this user
+        tasks_backup_job = model.TasksBackupJob.get_by_key_name(user_email)
+            
+        if tasks_backup_job is None:
+            logging.error(fn_name + "No tasks_backup_job record for " + user_email)
+            job_start_timestamp = None
+        else:            
+            include_completed = tasks_backup_job.include_completed
+            include_deleted = tasks_backup_job.include_deleted
+            include_hidden = tasks_backup_job.include_hidden
+            total_progress = tasks_backup_job.total_progress
+            
+        # Retrieve the data DB record for this user
         logging.debug(fn_name + "Retrieving details for " + str(user_email))
         
         tasklists_records = db.GqlQuery("SELECT * "
@@ -661,114 +776,121 @@ class ReturnResultsHandler(webapp.RequestHandler):
         display_completed_date_field = (self.request.get('display_completed_date_field') == 'True')
         display_due_date_field = (self.request.get('display_due_date_field') == 'True')
         display_updated_date_field = (self.request.get('display_updated_date_field') == 'True')
+        display_invalid_tasks = (self.request.get('display_invalid_tasks') == 'True')
         
         logging.info(fn_name + "Selected format = " + str(export_format))
-        # logging.debug(fn_name + "dim_completed_tasks = " + str(dim_completed_tasks))
-        # logging.debug(fn_name + "display_completed_date_field = " + str(display_completed_date_field))
-        # logging.debug(fn_name + "display_due_date_field = " + str(display_due_date_field))
-        # logging.debug(fn_name + "display_updated_date_field = " + str(display_updated_date_field))
-        
 
         # Filename format is "tasks_FORMAT_EMAILADDR_YYYY-MM-DD.EXT"
         # CAUTION: Do not include characters that may not be valid on some filesystems (e.g., colon is not valid on Windows)
         output_filename_base = "tasks_%s_%s_%s" % (export_format, user_email, datetime.datetime.now().strftime("%Y-%m-%d"))
         
-        if export_format in ['html1', 'py_nested']:
-            logging.debug(fn_name + "Modifying data for " + export_format + " format")
-            # Modify structure so that the html1 template can indent tasks
-            logging.debug(fn_name + "Building new collection of nested tasks to support indenting")
-            for tasklist in tasklists:
-                tasks = tasklist[u'tasks']
+        # Calculate and add 'depth' property
+        for tasklist in tasklists:
+            tasks = tasklist[u'tasks']
+            
+            num_tasks = len(tasks)
+            if num_tasks > 0: # Non-empty tasklist
+                task_idx = 0
+                possible_parent_ids = []
+                possible_parent_is_active = []
                 
-                if len(tasks) > 0: # Non-empty tasklist
-                    # Add default metadata to each task, which will be modified in the next round
-                    for task in tasks:
-                        task[u'children'] = []
-                        task[u'depth'] = 0
+                while task_idx < num_tasks:
+                    task = tasks[task_idx]
+                    # By default, assume parent is valid
+                    task[u'parent_is_active'] = True
 
-                    # Find the sub task relationships
-                    for task in tasks:
-                        id = task['id']
-                        for stask in tasks:
-                            sid = stask['id']
-                            if stask.has_key(u'parent'):
-                                if stask[u'parent'] == id:
-                                    stask[u'depth'] = task[u'depth'] + 1
-                                    # stask is a child of this task
-                                    task[u'children'].append(stask)
-                                    
+                    # if task.has_key(u'deleted') or task.has_key(u'hidden'):
+                        # # Don't try to calculate depth of hidden and deleted tasks, 
+                        # # as the parent value for those tasks is often invalid (see below)
+                        # task[u'depth'] = -1
+                        # task_idx = task_idx + 1
+                        # continue
+                    
+                    if task.has_key(u'parent'):
+                        if task[u'parent'] in possible_parent_ids:
+                            idx = possible_parent_ids.index(task[u'parent'])
+                            try:
+                                task[u'parent_is_active'] = possible_parent_is_active[idx]
+                            except Exception, e:
+                                logging.exception("idx = " + str(idx) + ", id = " + task[u'id'] + ", parent = " + task[u'parent'] + ", [" + task[u'title'] + "]")
+                                logging(possible_parent_ids)
+                                logging(possible_parent_is_active)
+                            depth = idx + 1
+                            task[u'depth'] = depth
                             
-                    # Set parent_ to None for root tasks; required by Django recurse tag
-                    for task in tasks:
-                        depth = task[u'depth']
-                        # If not using customdjango, use inline style attribute to indent by this much
-                        # e.g., style="padding-left:{{ task.indent }}px"
-                        task[u'indent'] = str(depth * settings.TASK_INDENT)
-                        if depth == 0:
-                            task['parent_'] = None
+                            # Remove parent tasks which are deeper than current parent
+                            del(possible_parent_ids[depth:])
+                            del(possible_parent_is_active[depth:])
+                                
+                            if task[u'id'] not in possible_parent_ids:
+                                # This task may have sub-tasks, so add to list of possible  parents
+                                possible_parent_ids.append(task[u'id'])
+                                task_is_active = not (task.has_key(u'deleted') or task.has_key(u'hidden'))
+                                possible_parent_is_active.append(task_is_active)
                         else:
-                            task['parent_'] = task['parent']
-                            
-        if export_format in ['html_raw']:
-            logging.debug(fn_name + "Modifying data for " + export_format + " format")
-            # Calculate 'depth' and add 'indent' property so that WriteHtmlRaw() can indent tasks
-            for tasklist in tasklists:
-                tasks = tasklist[u'tasks']
-                
-                if len(tasks) > 0: # Non-empty tasklist
-                    # Add default metadata to each task, which will be modified in the next round
-                    for task in tasks:
+                            task[u'parent_is_active'] = False
+                            if task.has_key(u'deleted') or task.has_key(u'hidden'):
+                                # Don't try to calculate depth of hidden and deleted tasks, 
+                                # as the parent value for those tasks is often invalid (see below)
+                                task[u'depth'] = -1
+                            else:
+                                # Non-deleted/hidden task with invalid parent.
+                                # This task has an unknown depth, since it's parent no longer exists. 
+                                # The parent task may have been deleted or moved.
+                                # One way this can happen:
+                                #       Start with A/B/C/D
+                                #       Delete D
+                                #       Delete C
+                                #       Restore D from Trash
+                                # This task is NOT displayed in any view by Google!
+                                if display_invalid_tasks:
+                                    task[u'depth'] = -99
+                                else:
+                                    # Remove the invalid task
+                                    tasks.pop(task_idx)
+                                    # Adjust indexes to compensate for removed item
+                                    task_idx = task_idx - 1
+                                    num_tasks = num_tasks - 1
+                                
+                    else:
+                        # This is a parentless (root) task;
+                        #   It is therefore the end of any potential sub-task tree
+                        #   It could be the parent of a future task
+                        possible_parent_ids = [task[u'id']]
+                        task_is_active = not (task.has_key(u'deleted') or task.has_key(u'hidden'))
+                        possible_parent_is_active = [task_is_active]
                         task[u'depth'] = 0
+                    
+                    task_idx = task_idx + 1   
 
-                    # Find the sub task relationships
+                # Add 'indent' property for HTML pages so that tasks can be indented in HTML view
+                if export_format in ['html_raw', 'html']:      
+                    #logging.debug(fn_name + "Setting indent metadata for " + export_format + " format")
                     for task in tasks:
-                        id = task['id']
-                        for stask in tasks:
-                            sid = stask['id']
-                            if stask.has_key(u'parent'):
-                                if stask[u'parent'] == id:
-                                    stask[u'depth'] = task[u'depth'] + 1
-                                    
-                            
-                    for task in tasks:
-                        depth = task[u'depth']
+                        try:
+                            depth = task[u'depth']
+                        except KeyError, e:
+                            logging.exception(fn_name + "Missing depth for " + task[u'id'] + ", " + task[u'title'])
+                            task[u'depth'] = -2
+                            depth = 0
+                        if depth < 0:
+                            depth = 0
+                        # Set number of pixels to indent task by, as a string,
+                        # to use in style="padding-left:nnn" in HTML pages
                         task[u'indent'] = str(depth * settings.TASK_INDENT).strip()
                             
-        # # TODO: Fix this, so that we can use the recurse tag in the hTodo template
-        # # Currently throws AttributeError: 'dict' object has no attribute 'position'
-        # if export_format == 'hTodo':
-            # logging.debug(fn_name + "Modifying data for " + export_format + " format")
-            # # Use the collection of Task object when using the hTodo Django template
-            # # Create structure so that the Django template can recurse tasks
-            # logging.debug(fn_name + "Building collection of Task objects for hTodo")
-            # list_of_tasklists = []
-            # for tasklist in tasks_data.tasklists:
-                # list_of_tasks = []
-                # tasks = tasklist[u'tasks']
-                
-                # if len(tasks) > 0: # Non-empty tasklist
-                    # # Find the sub task relationships
-                    # for task in tasks:
-                        # new_task = model.Task(task)
-                        # list_of_tasks.append(new_task)
-                        
-                    # for t in list_of_tasks:    
-                        # id = t.id
-                        # for st in list_of_tasks:
-                            # sid = st.id
-                            # if st.parent:
-                                # if st.parent == id:
-                                    # t.children.append(st)
-
-            # #template_values['tasklists'] = list_of_tasklists
-            # tasklists = list_of_tasklists
           
         template_values = {'app_title' : app_title,
                            'host_msg' : host_msg,
                            'home_page_url' : settings.HOME_PAGE_URL,
                            'product_name' : product_name,
                            'tasklists': tasklists,
+                           'total_progress' : total_progress,
                            'dim_completed_tasks' : dim_completed_tasks,
+                           'display_invalid_tasks' : display_invalid_tasks,
+                           'include_completed' : include_completed,
+                           'include_deleted' : include_deleted,
+                           'include_hidden' : include_hidden,
                            'display_completed_date_field' : display_completed_date_field,
                            'display_due_date_field' : display_due_date_field,
                            'display_updated_date_field' : display_updated_date_field,
@@ -790,16 +912,14 @@ class ReturnResultsHandler(webapp.RequestHandler):
             self.WriteIcsUsingTemplate(template_values, export_format, output_filename_base)
         elif export_format in ['outlook', 'raw', 'raw1']:
             self.WriteCsvUsingTemplate(template_values, export_format, output_filename_base)
-        elif export_format in ['html', 'html1']:
+        elif export_format == 'html':
             self.WriteHtmlTemplate(template_values, export_format)
-        # elif export_format == 'hTodo':
-            # self.WriteHtmlTemplate(template_values, export_format)
-        elif export_format == 'RTM':
-            self.SendEmailUsingTemplate(template_values, export_format, user_email, output_filename_base)
-        elif export_format in ['py', 'py_nested']:
-            self.WriteTextUsingTemplate(template_values, export_format, output_filename_base, 'py')
         elif export_format == 'html_raw':
             self.WriteHtmlRaw(template_values)
+        elif export_format == 'RTM':
+            self.SendEmailUsingTemplate(template_values, export_format, user_email, output_filename_base)
+        elif export_format == 'py':
+            self.WriteTextUsingTemplate(template_values, export_format, output_filename_base, 'py')
         else:
             logging.warning(fn_name + "Unsupported export format: %s" % export_format)
             # TODO: Handle invalid export_format nicely - display message to user & go back to main page
@@ -810,8 +930,7 @@ class ReturnResultsHandler(webapp.RequestHandler):
         logging.debug(fn_name + "<End>")
         logservice.flush()
 
-  
-
+        
     def DisplayErrorPage(self,
                        exc_type, 
                        err_desc = None, 
@@ -863,272 +982,14 @@ class ReturnResultsHandler(webapp.RequestHandler):
         logservice.flush()
 
         
-    
-    def EscapeHtml(self, text):
-        """Produce entities within text."""
-        if text is None:
-            return None
-        return cgi.escape(text).encode('ascii', 'xmlcharrefreplace')
-        #return "".join(html_escape_table.get(c,c) for c in text)
-
-        
-        
-    def WriteHtmlRaw(self, template_values):
-        """ Manually build an HTML representation of the user's tasks.
-        
-            This method creates the page manually, in an attempt to reduce the
-            amount of memory used when using Django templates to build HTML pages
-        """
-        
-        fn_name = "WriteHtmlRaw() "
-        
-        user_email = template_values.get('user_email')
-        logout_url = template_values.get('logout_url')
-        tasklists = template_values.get('tasklists')
-        job_start_timestamp = template_values.get('job_start_timestamp')
-        dim_completed_tasks = template_values.get('dim_completed_tasks')
-        display_completed_date_field = template_values.get('display_completed_date_field')
-        display_updated_date_field = template_values.get('display_updated_date_field')
-        display_due_date_field = template_values.get('display_due_date_field')
-        url_discussion_group = template_values.get('url_discussion_group')
-        email_discussion_group = template_values.get('email_discussion_group')
-        url_issues_page = template_values.get('url_issues_page')
-        url_source_code = template_values.get('url_source_code')
-        app_title = template_values.get('app_title')
-        app_version = template_values.get('app_version')
-        
-        self.response.out.write("""<html>
-            <head>
-                <title>""")
-        self.response.out.write(app_title)
-        self.response.out.write("""- List of tasks</title>
-                <link rel="stylesheet" type="text/css" href="tasks_backup.css"></link>
-                <script type="text/javascript">
-
-                  var _gaq = _gaq || [];
-                  _gaq.push(['_setAccount', 'UA-30118203-1']);
-                  _gaq.push(['_trackPageview']);
-
-                  (function() {
-                    var ga = document.createElement('script'); ga.type = 'text/javascript'; ga.async = true;
-                    ga.src = ('https:' == document.location.protocol ? 'https://ssl' : 'http://www') + '.google-analytics.com/ga.js';
-                    var s = document.getElementsByTagName('script')[0]; s.parentNode.insertBefore(ga, s);
-                  })();
-
-                </script>
-            </head>
-            <body>
-            <div class="usertitle">
-                Authorised user: """)
-        self.response.out.write(user_email)
-        self.response.out.write(' <span class="logout-link">[ <a href="')
-        self.response.out.write(logout_url)
-        self.response.out.write('">Log out</a> ]</span></div>')
-            
-        num_tasklists = len(tasklists)
-        if num_tasklists > 0:
-            # Display the job timestamp, so that it is clear when the snapshot was taken
-            self.response.out.write("""
-                    <div class="break">
-                        <h3>Tasks for """)
-            self.response.out.write(user_email)
-            self.response.out.write(""" as at """)
-            self.response.out.write(job_start_timestamp)
-            self.response.out.write(""" UTC</h3>
-                        <p>""")
-            self.response.out.write(num_tasklists)
-            self.response.out.write(""" task lists.</p>
-                    </div>""")
-                    
-            for tasklist in tasklists:
-                num_tasks = len(tasklist)
-                if num_tasks > 0:
-                
-                    tasklist_title = tasklist.get(u'title')
-                    if len(tasklist_title.strip()) == 0:
-                        tasklist_title = "<Unnamed Tasklist>"
-                    tasklist_title = self.EscapeHtml(tasklist_title)
-
-                    tasks = tasklist.get(u'tasks')
-                    num_tasks = len(tasks)
-                    self.response.out.write("""
-                        <div class="tasklist">
-                            <div class="tasklistheading">
-                                Task List: """)
-                    self.response.out.write(tasklist_title)
-                    self.response.out.write(""" - """)
-                    self.response.out.write(num_tasks)
-                    self.response.out.write(""" tasks.
-                            </div>""")
-                                        
-                    self.response.out.write("""
-                        <div class="tasks">""")
-                        
-                    for task in tasks:
-                        task_title = task.get(u'title', "<No Task Title>")
-                        if len(task_title.strip()) == 0:
-                            task_title = "<Unnamed Task>"
-                        task_title = self.EscapeHtml(task_title)
-                        
-                        task_notes = self.EscapeHtml(task.get(u'notes', None))
-                        task_deleted = task.get(u'deleted', None)
-                        task_hidden = task.get(u'hidden', None)
-                        task_indent = str(task.get('indent', 0))
-                        
-                        
-                        if u'due' in task:
-                            task_due = task[u'due'].strftime('%a, %d %b %Y') + " UTC"
-                        else:
-                            task_due = None
-                            
-                        if u'updated' in task:
-                            task_updated = task[u'updated'].strftime('%H:%M:%S %a, %d %b %Y') + " UTC"
-                        else:
-                            task_updated = None
-                            
-                        if u'completed' in task:
-                            task_completed = True
-                            task_completed_date = task[u'completed'].strftime('%H:%M %a, %d %b %Y') + " UTC"
-                            task_status_str = "&#x2713;"
-                        else:
-                            task_completed = False
-                            task_status_str = "[ &nbsp;]"
-                        
-                        dim_class = ""
-                        if task_completed and dim_completed_tasks:
-                            dim_class = "dim"
-                        if task_deleted or task_hidden:
-                            dim_class = "dim"
-                        
-                        self.response.out.write("""
-                            <!-- Task will be dim if; 
-                                  task is deleted OR 
-                                  task is hidden OR 
-                                  task is completed AND user checked dim_completed_tasks
-                            -->
-                            <div 
-                                style="padding-left:""")
-                        self.response.out.write(task_indent)
-                        self.response.out.write("""px" 
-                                class="task-html1 """)
-                        self.response.out.write(dim_class)
-                        # Note, additional double-quote (4 total), as the class= attribute is 
-                        # terminated with a double-quote after the class name
-                        self.response.out.write("""" 
-                            >
-                                <div >
-                                    <span class="status-cell">""")
-                        self.response.out.write(task_status_str)
-                        self.response.out.write("""</span>
-                                    <span class="task-title-html1">""")
-                        self.response.out.write(task_title)
-                        self.response.out.write("""</span>
-                                </div>
-                                <div class="task-details-html1">""")
-                        
-                        if task_completed and display_completed_date_field:
-                            self.response.out.write("""<div class="task-attribute">
-                                    <span class="fieldlabel">COMPLETED:</span> """)
-                            self.response.out.write(task_completed_date)
-                            self.response.out.write("""</div>""")
-                                    
-                        if task_notes:
-                            self.response.out.write("""<div class="task-notes">""")
-                            self.response.out.write(task_notes)
-                            self.response.out.write("""</div>""")
-                                    
-                        if task_due and display_due_date_field:
-                            self.response.out.write("""<div class="task-attribute">
-                                    <span class="fieldlabel">Due: </span>""")
-                            self.response.out.write(task_due)        
-                            self.response.out.write("""</div>""")
-                                    
-                        if task_updated and display_updated_date_field:
-                            self.response.out.write("""<div class="task-attribute">
-                                    <span class="fieldlabel">Updated:</span> """)
-                            self.response.out.write(task_updated)
-                            self.response.out.write("""</div>""")
-                            
-                        if task_deleted:
-                            self.response.out.write("""
-                                <div class="task-attribute-hidden-or-deleted">- Deleted -</div>
-                                """)
-                                
-                        if task_hidden:
-                            self.response.out.write("""
-                                <div class="task-attribute-hidden-or-deleted">- Hidden -</div>
-                                """)
-                                
-                        self.response.out.write("""
-                                </div>  <!-- End of task details div -->
-                            </div> <!-- End of task div -->
-                            """)
-                            
-                    self.response.out.write("""
-                            </div> <!-- End of tasks div -->
-                        """)
-                                           
-                else:
-                    self.response.out.write("""
-                            <div class="tasklistheading">Task List: %s</div>
-                                <div class="no-tasks">
-                                     No tasks
-                            </div>""" % tasklist_title)
-                    
-            self.response.out.write("""
-                    <div class="break">
-                        NOTE: Due, Updated and Completed dates and times are UTC, because that is how Google stores them.
-                    </div>""")
-                    
-        else:
-            self.response.out.write("""
-                <div class="break">
-                        <h3>No tasklists found for %s</h3>
-                    </div>""" % user_email)
-
-        self.response.out.write("""
-                <div class="break footer">
-                    Produced by %(app_title)s, version %(app_version)s
-                </div>
-                <div class="project-footer">
-                    <div class="break">
-                        Questions or comments? Go to <a href="http://%(url_discussion_group)s">%(url_discussion_group)s</a>
-                        or email <a href="mailto:%(email_discussion_group)s">%(email_discussion_group)s</a>
-                    </div>
-                    <div class="break">
-                        Please report bugs or suggest improvements at <a href="http:/%(url_issues_page)s">%(url_issues_page)s</a>
-                    </div>
-                    <div class="break">
-                        Source code for this project is at <a href="http://%(url_source_code)s">%(url_source_code)s</a>
-                    </div>
-                </div>""" %
-                { 'url_discussion_group' : url_discussion_group,
-                  'email_discussion_group' : email_discussion_group,
-                  'url_issues_page' : url_issues_page,
-                  'url_source_code' : url_source_code,
-                  'app_title' : app_title,
-                  'app_version' : app_version }
-            )
-
-        self.response.out.write("""</body></html>""")
-        tasklists = None
-        logging.debug(fn_name + "Calling garbage collection")
-        gc.collect()
-        logging.debug(fn_name + "<End>")
-        logservice.flush()
-               
-        
-        
-        
-
-    # Potential TODO items (if email quota is sufficient)
-    #   TODO: Allow other formats
-    #   TODO: Allow attachments (e.g. Outlook CSV) ???
-    #   TODO: Improve subject line
     def SendEmailUsingTemplate(self, template_values, export_format, user_email, output_filename_base):
         """ Send an email, formatted according to the specified .txt template file
             Currently supports export_format = 'RTM' (Remember The Milk)
         """
+        # Potential TODO items (if email quota is sufficient)
+        #   TODO: Allow other formats
+        #   TODO: Allow attachments (e.g. Outlook CSV) ???
+        #   TODO: Improve subject line
         fn_name = "SendEmailUsingTemplate(): "
 
         logging.debug(fn_name + "<Start>")
@@ -1156,6 +1017,16 @@ class ReturnResultsHandler(webapp.RequestHandler):
                            to=user_email,
                            subject=output_filename_base,
                            body=email_body)
+        except apiproxy_errors.OverQuotaError:
+            # Refer to https://developers.google.com/appengine/docs/quotas#When_a_Resource_is_Depleted
+            logging.exception(fn_name + "Unable to send email")
+            self.response.out.write("""Sorry, unable to send email due to quota limitations of my AppSpot account.
+                                       <br />
+                                       It may be that your email is too large, or that to many emails have been sent by others in the past 24 hours.
+                                    """)
+            logging.debug(fn_name + "<End> (due to exception)")
+            logservice.flush()
+            return
         except Exception, e:
             logging.exception(fn_name + "Unable to send email")
             self.response.out.write("""Unable to send email. 
@@ -1164,6 +1035,7 @@ class ReturnResultsHandler(webapp.RequestHandler):
                 %s
                 """ % (settings.url_issues_page, settings.url_issues_page, str(e)))
             logging.debug(fn_name + "<End> (due to exception)")
+            logservice.flush()
             return
             
             
@@ -1246,7 +1118,7 @@ class ReturnResultsHandler(webapp.RequestHandler):
 
     def WriteTextUsingTemplate(self, template_values, export_format, output_filename_base, file_extension):
         """ Write a TXT file according to the specified .txt template file
-            Currently supports export_format = 'py' and 'py_nested' 
+            Currently supports export_format = 'py' 
         """
         fn_name = "WriteTextUsingTemplate(): "
 
@@ -1360,9 +1232,275 @@ class ReturnResultsHandler(webapp.RequestHandler):
         logservice.flush()
 
 
+    def WriteHtmlRaw(self, template_values):
+        """ Manually build an HTML representation of the user's tasks.
+        
+            This method creates the page manually, which uses significantly less memory than using Django templates.
+            It is also faster, but does not support multi-line notes. Notes are displayed on a single line.
+        """
+        
+        fn_name = "WriteHtmlRaw() "
+        
+        user_email = template_values.get('user_email')
+        logout_url = template_values.get('logout_url')
+        tasklists = template_values.get('tasklists')
+        total_progress = template_values.get('total_progress')
+        include_completed = template_values.get('include_completed')
+        include_hidden = template_values.get('include_hidden')
+        include_deleted = template_values.get('include_deleted')
+        display_invalid_tasks = template_values.get('display_invalid_tasks')
+        job_start_timestamp = template_values.get('job_start_timestamp')
+        dim_completed_tasks = template_values.get('dim_completed_tasks')
+        display_completed_date_field = template_values.get('display_completed_date_field')
+        display_updated_date_field = template_values.get('display_updated_date_field')
+        display_due_date_field = template_values.get('display_due_date_field')
+        url_discussion_group = template_values.get('url_discussion_group')
+        email_discussion_group = template_values.get('email_discussion_group')
+        url_issues_page = template_values.get('url_issues_page')
+        url_source_code = template_values.get('url_source_code')
+        app_title = template_values.get('app_title')
+        app_version = template_values.get('app_version')
+        
+        self.response.out.write("""<html>
+            <head>
+                <title>""")
+        self.response.out.write(app_title)
+        self.response.out.write("""- List of tasks</title>
+                <link rel="stylesheet" type="text/css" href="tasks_backup.css"></link>
+                <script type="text/javascript">
+
+                  var _gaq = _gaq || [];
+                  _gaq.push(['_setAccount', 'UA-30118203-1']);
+                  _gaq.push(['_trackPageview']);
+
+                  (function() {
+                    var ga = document.createElement('script'); ga.type = 'text/javascript'; ga.async = true;
+                    ga.src = ('https:' == document.location.protocol ? 'https://ssl' : 'http://www') + '.google-analytics.com/ga.js';
+                    var s = document.getElementsByTagName('script')[0]; s.parentNode.insertBefore(ga, s);
+                  })();
+
+                </script>
+            </head>
+            <body>
+            <div class="usertitle">
+                Authorised user: """)
+        self.response.out.write(user_email)
+        self.response.out.write(' <span class="logout-link">[ <a href="')
+        self.response.out.write(logout_url)
+        self.response.out.write('">Log out</a> ]</span></div>')
+            
+        num_tasklists = len(tasklists)
+        if num_tasklists > 0:
+            # Display the job timestamp, so that it is clear when the snapshot was taken
+            self.response.out.write("""
+                    <div class="break">
+                        <h3>Tasks for """)
+            self.response.out.write(user_email)
+            self.response.out.write(""" as at """)
+            self.response.out.write(job_start_timestamp)
+            self.response.out.write(""" UTC</h3>""")
+            self.response.out.write("""<dib class="break">Backup completed. Retrieved """)
+            self.response.out.write(total_progress)
+            self.response.out.write(""" tasks from """)
+            self.response.out.write(num_tasklists)
+            self.response.out.write(""" task lists.""")
+            
+            if include_completed:
+                self.response.out.write("""<br />
+                    <span class="comment">Displaying completed tasks</span>""")
+            if include_hidden:
+                self.response.out.write("""<br />
+                    <span class="comment">Displaying hidden tasks</span>""")
+            if include_deleted:
+                self.response.out.write("""<br />
+                    <span class="comment">Displaying deleted tasks</span>""")
+            if display_invalid_tasks:
+                self.response.out.write("""<br />
+                    <span class="comment">Displaying invalid/corrupted tasks</span>""")
+            self.response.out.write("""</div>""")
+                    
+            for tasklist in tasklists:
+                num_tasks = len(tasklist)
+                if num_tasks > 0:
+                
+                    tasklist_title = tasklist.get(u'title')
+                    if len(tasklist_title.strip()) == 0:
+                        tasklist_title = "<Unnamed Tasklist>"
+                    tasklist_title = shared.EscapeHtml(tasklist_title)
+
+                    tasks = tasklist.get(u'tasks')
+                    num_tasks = len(tasks)
+                    self.response.out.write("""
+                        <div class="tasklist">
+                            <div class="tasklistheading">
+                                Task List: """)
+                    self.response.out.write(tasklist_title)
+                    self.response.out.write(""" - """)
+                    self.response.out.write(num_tasks)
+                    self.response.out.write(""" tasks.
+                            </div>""")
+                                        
+                    self.response.out.write("""
+                        <div class="tasks">""")
+                        
+                    for task in tasks:
+                        task_title = task.get(u'title', "<No Task Title>")
+                        if len(task_title.strip()) == 0:
+                            task_title = "<Unnamed Task>"
+                        task_title = shared.EscapeHtml(task_title)
+                        
+                        task_notes = shared.EscapeHtml(task.get(u'notes', None))
+                        task_deleted = task.get(u'deleted', None)
+                        task_hidden = task.get(u'hidden', None)
+                        task_indent = str(task.get('indent', 0))
+                        
+                        
+                        if u'due' in task:
+                            task_due = task[u'due'].strftime('%a, %d %b %Y') + " UTC"
+                        else:
+                            task_due = None
+                            
+                        if u'updated' in task:
+                            task_updated = task[u'updated'].strftime('%H:%M:%S %a, %d %b %Y') + " UTC"
+                        else:
+                            task_updated = None
+                            
+                        if u'completed' in task:
+                            task_completed = True
+                            task_completed_date = task[u'completed'].strftime('%H:%M %a, %d %b %Y') + " UTC"
+                            task_status_str = "&#x2713;"
+                        else:
+                            task_completed = False
+                            task_status_str = "[ &nbsp;]"
+                        
+                        dim_class = ""
+                        if task_completed and dim_completed_tasks:
+                            dim_class = "dim"
+                        if task_deleted or task_hidden:
+                            dim_class = "dim"
+                        
+                        self.response.out.write("""
+                            <!-- Task will be dim if; 
+                                  task is deleted OR 
+                                  task is hidden OR 
+                                  task is completed AND user checked dim_completed_tasks
+                            -->
+                            <div 
+                                style="padding-left:""")
+                        self.response.out.write(task_indent)
+                        self.response.out.write("""px" 
+                                class="task-html1 """)
+                        self.response.out.write(dim_class)
+                        # Note, additional double-quote (4 total), as the class= attribute is 
+                        # terminated with a double-quote after the class name
+                        self.response.out.write("""" 
+                            >
+                                <div >
+                                    <span class="status-cell">""")
+                        self.response.out.write(task_status_str)
+                        self.response.out.write("""</span>
+                                    <span class="task-title-html1">""")
+                        self.response.out.write(task_title)
+                        self.response.out.write("""</span>
+                                </div>
+                                <div class="task-details-html1">""")
+                        
+                        if task_completed and display_completed_date_field:
+                            self.response.out.write("""<div class="task-attribute">
+                                    <span class="fieldlabel">COMPLETED:</span> """)
+                            self.response.out.write(task_completed_date)
+                            self.response.out.write("""</div>""")
+                                    
+                        if task_notes:
+                            self.response.out.write("""<div class="task-notes">""")
+                            self.response.out.write(task_notes.replace('\n','<br />'))
+                            self.response.out.write("""</div>""")
+                                    
+                        if task_due and display_due_date_field:
+                            self.response.out.write("""<div class="task-attribute">
+                                    <span class="fieldlabel">Due: </span>""")
+                            self.response.out.write(task_due)        
+                            self.response.out.write("""</div>""")
+                                    
+                        if task_updated and display_updated_date_field:
+                            self.response.out.write("""<div class="task-attribute">
+                                    <span class="fieldlabel">Updated:</span> """)
+                            self.response.out.write(task_updated)
+                            self.response.out.write("""</div>""")
+                            
+                        if task_deleted:
+                            self.response.out.write("""
+                                <div class="task-attribute-hidden-or-deleted">- Deleted -</div>
+                                """)
+                                
+                        if task_hidden:
+                            self.response.out.write("""
+                                <div class="task-attribute-hidden-or-deleted">- Hidden -</div>
+                                """)
+                                
+                        self.response.out.write("""
+                                </div>  <!-- End of task details div -->
+                            </div> <!-- End of task div -->
+                            """)
+                            
+                    self.response.out.write("""
+                            </div> <!-- End of tasks div -->
+                        """)
+                                           
+                else:
+                    self.response.out.write("""
+                            <div class="tasklistheading">Task List: %s</div>
+                                <div class="no-tasks">
+                                     No tasks
+                            </div>""" % tasklist_title)
+                    
+            self.response.out.write("""
+                    <div class="break">
+                        NOTE: Due, Updated and Completed dates and times are UTC, because that is how Google stores them.
+                    </div>""")
+                    
+        else:
+            self.response.out.write("""
+                <div class="break">
+                        <h3>No tasklists found for %s</h3>
+                    </div>""" % user_email)
+
+        self.response.out.write("""
+                <div class="break footer">
+                    Produced by %(app_title)s, version %(app_version)s
+                </div>
+                <div class="project-footer">
+                    <div class="break">
+                        Questions or comments? Go to <a href="http://%(url_discussion_group)s">%(url_discussion_group)s</a>
+                        or email <a href="mailto:%(email_discussion_group)s">%(email_discussion_group)s</a>
+                    </div>
+                    <div class="break">
+                        Please report bugs or suggest improvements at <a href="http:/%(url_issues_page)s">%(url_issues_page)s</a>
+                    </div>
+                    <div class="break">
+                        Source code for this project is at <a href="http://%(url_source_code)s">%(url_source_code)s</a>
+                    </div>
+                </div>""" %
+                { 'url_discussion_group' : url_discussion_group,
+                  'email_discussion_group' : email_discussion_group,
+                  'url_issues_page' : url_issues_page,
+                  'url_source_code' : url_source_code,
+                  'app_title' : app_title,
+                  'app_version' : app_version }
+            )
+
+        self.response.out.write("""</body></html>""")
+        tasklists = None
+        logging.debug(fn_name + "Calling garbage collection")
+        gc.collect()
+        logging.debug(fn_name + "<End>")
+        logservice.flush()
+               
+        
 class OAuthHandler(webapp.RequestHandler):
     """Handler for /oauth2callback."""
 
+    # TODO: Simplify - Compare with orig in GTP
     def get(self):
         """Handles GET requests for /oauth2callback."""
         fn_name = "OAuthHandler.get() "
@@ -1376,19 +1514,29 @@ class OAuthHandler(webapp.RequestHandler):
         logging.debug(fn_name + "Retrieving flow for " + str(user.user_id()))
         flow = pickle.loads(memcache.get(user.user_id()))
         if flow:
-            logging.debug(fn_name + "Got flow. Retrieving credentials for " + str(self.request.params))
+            logging.debug(fn_name + "Got flow. Retrieving credentials")
             error = False
-            try:
-                credentials = flow.step2_exchange(self.request.params)
-            except client.FlowExchangeError, e:
-                logging.exception(fn_name + "FlowExchangeError")
-                credentials = None
-                error = True
-            except Exception, e:
-                logging.exception(fn_name + "Redirecting to " + settings.INVALID_CREDENTIALS_URL)
-                logservice.flush()
-                self.redirect(settings.INVALID_CREDENTIALS_URL)
-                return
+            retry_count = 3
+            while retry_count > 0:
+                try:
+                    credentials = flow.step2_exchange(self.request.params)
+                    break
+                except client.FlowExchangeError, e:
+                    logging.warning(fn_name + "FlowExchangeError " + str(e))
+                    credentials = None
+                    error = True
+                except Exception, e:
+                    if retry_count > 0:
+                        logging.exception(fn_name + "Error retrieving credentials. " + 
+                                str(retry_count) + " retries remaining")
+                        logservice.flush()
+                    else:
+                        logging.exception(fn_name + "Unable to retrieve credentials after 3 retries. Redirecting to " + settings.INVALID_CREDENTIALS_URL)
+                        logservice.flush()
+                        self.redirect(settings.INVALID_CREDENTIALS_URL + "?rc=EX&err=" + str(type(e)))
+                        return
+                retry_count = retry_count - 1
+                
             appengine.StorageByKeyName(
                 model.Credentials, user.user_id(), "credentials").put(credentials)
             if error:
@@ -1396,27 +1544,31 @@ class OAuthHandler(webapp.RequestHandler):
                 logservice.flush()
                 self.redirect("/?msg=ACCOUNT_ERROR")
             else:
-                logging.debug(fn_name + "Retrieved credentials ==>")
-                shared.DumpObj(credentials)
-                logservice.flush()
+                # logging.debug(fn_name + "Retrieved credentials ==>")
+                # shared.DumpObj(credentials)
+                # logservice.flush()
                 
                 if not credentials:
                     logging.debug(fn_name + "No credentials. Redirecting to " + settings.INVALID_CREDENTIALS_URL)
-                    logging.debug(fn_name + "user ==>")
-                    shared.DumpObj(user)
+                    # logging.debug(fn_name + "user ==>")
+                    # shared.DumpObj(user)
                     logservice.flush()
-                    self.redirect(settings.INVALID_CREDENTIALS_URL)
+                    self.redirect(settings.INVALID_CREDENTIALS_URL + "?rc=NC")
                 elif credentials.invalid:
                     logging.warning(fn_name + "Invalid credentials. Redirecting to " + settings.INVALID_CREDENTIALS_URL)
-                    logging.debug(fn_name + "user ==>")
-                    shared.DumpObj(user)
-                    logging.debug(fn_name + "credentials ==>")
-                    shared.DumpObj(credentials)
+                    # logging.debug(fn_name + "user ==>")
+                    # shared.DumpObj(user)
+                    # logging.debug(fn_name + "credentials ==>")
+                    # shared.DumpObj(credentials)
                     logservice.flush()
-                    self.redirect(settings.INVALID_CREDENTIALS_URL)
+                    self.redirect(settings.INVALID_CREDENTIALS_URL + "?rc=IC")
                 else:
                     logging.debug(fn_name + "Credentials valid. Redirecting to " + str(self.request.get("state")))
                     logservice.flush()
+                    # logging.debug(fn_name + "Resetting auth_count cookie to zero")
+                    # logservice.flush()
+                    # _set_cookie(self.response, 'auth_count', '0', max_age=120)
+                    
                     self.redirect(self.request.get("state"))
 
         
@@ -1439,6 +1591,7 @@ def real_main():
     logging.info("main(): <End>")
 
 def profile_main():
+    # From https://developers.google.com/appengine/kb/commontasks#profiling
     # This is the main function for profiling
     # We've renamed our original main() above to real_main()
     import cProfile, pstats, StringIO

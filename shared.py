@@ -1,3 +1,5 @@
+import cgi
+
 import settings
 import logging
 from google.appengine.api import logservice # To flush logs
@@ -73,6 +75,15 @@ def DumpObj(obj):
     for attr in dir(obj):
         logging.debug("    obj.%s = %s" % (attr, getattr(obj, attr)))
     logservice.flush()
+
+    
+def EscapeHtml(text):
+    """Ensure that text is properly escaped as valid HTML"""
+    if text is None:
+        return None
+    return cgi.escape(text).encode('ascii', 'xmlcharrefreplace')
+    #return "".join(html_escape_table.get(c,c) for c in text)
+
     
 # TODO: Untested
 # def runningOnDev():
