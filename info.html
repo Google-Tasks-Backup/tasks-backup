@@ -216,12 +216,12 @@
                 Note 4 - 
             </td>
             <td>
-                When a task is deleted or hidden, the task may sometimes retain a <span class="property-name">parent</span> value, so that Google can restore the task to the correct parent. 
-                <br />
-                Note, however, that <span class="property-name">parent</span> value may be invalid for a task that has been deleted or hidden. It may even refer to a task in another tasklist!
-                <br />
-                If the value of the <span class="property-name">parent</span> property is invalid, Google does not display that task, even though it remains in the tasklist.
-                <br />
+                <span class="take-note">CAUTION:</span> Sometimes, tasks can become corrupted, leaving an invalid <span class="property-name">parent</span> value. These tasks still exist in the Google Tasks database, although Google does not display them.
+                <div class="small-break">
+                </div>
+                When a sub-task is deleted or hidden, the sub-task retains the <span class="property-name">parent</span> value, so that Google can restore the task to the correct parent. However, that <span class="property-name">parent</span> value may be invalid for a task that has been deleted or hidden, or whose parent was hidden, deleted or moved whilst the subtask was deleted. It may even refer to a task in another tasklist!
+                <div class="small-break">
+                </div>
                 One common way that tasks become corrupted is;
                 <ol>
                     <li>Start with nested tasks A/B/C/D</li>
@@ -230,7 +230,7 @@
                     <li>Restore D from Trash</li>
                 </ol>
                 Since task D's parent no longer exists, Google doesn't know where to put the task,
-                so it becomes an (invisible) orphan. This program can download or display invalid/corrupted tasks if desired.
+                so it becomes an (invisible) orphan. There is an option to attempt to identify and display invalid/corrupted tasks.
             </td>
         </tr>
     </table>

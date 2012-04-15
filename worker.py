@@ -559,43 +559,57 @@ class CreateBackupWorker(webapp.RequestHandler):
             # ------------------------------------------------------------------------------------------------
             # Fix date/time format for each task, so that the date/time values can be used in Django templates
             # Convert the yyyy-mm-ddThh:mm:ss.dddZ format to a datetime object, and store that
+            # There have been occassional format errors in the 'completed' property, 
+            # due to 'completed' value such as "-1701567-04-26T07:12:55.000Z"
+            # so if any date/timestamp value is invalid, set the property to a sensible default value
             # ------------------------------------------------------------------------------------------------
             for t in tasks:
-              num_tasks = num_tasks + 1
+                num_tasks = num_tasks + 1
               
-              date_due = t.get(u'due')
-              if date_due:
-                t[u'due'] = datetime.datetime.strptime(date_due, "%Y-%m-%dT00:00:00.000Z").date()
+                date_due = t.get(u'due')
+                if date_due:
+                    try:
+                        new_due_date = datetime.datetime.strptime(date_due, "%Y-%m-%dT00:00:00.000Z").date()
+                    except ValueError, e:
+                        new_due_date = datetime.date(datetime.MINYEAR, 1, 1)
+                        logging.exception(fn_name + "Invalid 'due' timestamp format, so using " + str(new_due_date))
+                        logging.debug(fn_name + "Invalid value was " + str(date_due))
+                        logservice.flush()
+                    t[u'due'] = new_due_date
                 
-              datetime_updated = t.get(u'updated')
-              if datetime_updated:
-                t[u'updated'] = datetime.datetime.strptime(datetime_updated, "%Y-%m-%dT%H:%M:%S.000Z")
-              
-              # There have been occassional format errors in the 'completed' property, 
-              # due to 'completed' value such as "-1701567-04-26T07:12:55.000Z"
-              # so if the format change fails, set 'completed' to None
-              try:
+                datetime_updated = t.get(u'updated')
+                if datetime_updated:
+                    try:
+                        new_datetime_updated = datetime.datetime.strptime(datetime_updated, "%Y-%m-%dT%H:%M:%S.000Z")
+                    except ValueError, e:
+                        new_datetime_updated = datetime.datetime(datetime.MINYEAR, 1, 1, 0, 0, 0)
+                        logging.exception(fn_name + "Invalid 'updated' timestamp format, so using " + str(new_datetime_updated))
+                        logging.debug(fn_name + "Invalid value was " + str(datetime_updated))
+                        logservice.flush()
+                    t[u'updated'] = new_datetime_updated
+                
                 datetime_completed = t.get(u'completed')
                 if datetime_completed:
-                  new_datetime_completed = datetime.datetime.strptime(datetime_completed, "%Y-%m-%dT%H:%M:%S.000Z")
-                  t[u'completed'] = new_datetime_completed
-              except ValueError, e:
-                  t[u'completed'] = datetime.datetime(datetime.MINYEAR, 1, 1, 0, 0, 0)
-                  logging.exception(fn_name + "Invalid 'completed' timestamp format, so setting to 0001-01-01 00:00:00")
-                  logging.debug(fn_name + "Invalid value was " + str(datetime_completed))
-                  logservice.flush()
+                    try:
+                        new_datetime_completed = datetime.datetime.strptime(datetime_completed, "%Y-%m-%dT%H:%M:%S.000Z")
+                    except ValueError, e:
+                        new_datetime_completed = datetime.datetime(datetime.MINYEAR, 1, 1, 0, 0, 0)
+                        logging.exception(fn_name + "Invalid 'completed' timestamp format, so using " + str(new_datetime_completed))
+                        logging.debug(fn_name + "Invalid value was " + str(datetime_completed))
+                        logservice.flush()
+                    t[u'completed'] = new_datetime_completed
                 
             if tasklist_dict.has_key(u'tasks'):
-              # This is the n'th page of task data for this taslkist, so extend the existing list of tasks
-              tasklist_dict[u'tasks'].extend(tasks)
+                # This is the n'th page of task data for this taslkist, so extend the existing list of tasks
+                tasklist_dict[u'tasks'].extend(tasks)
             else:
-              # This is the first (or only) list of task for this tasklist
-              tasklist_dict[u'tasks'] = tasks
+                # This is the first (or only) list of task for this tasklist
+                tasklist_dict[u'tasks'] = tasks
             
             # if is_test_user:
-              # logging.debug(fn_name + "Adding %d items for %s" % (len(tasks), tasklist_title))
+                # logging.debug(fn_name + "Adding %d items for %s" % (len(tasks), tasklist_title))
             # else:
-              # logging.debug(fn_name + "Adding %d items to tasklist" % len(tasks))
+                # logging.debug(fn_name + "Adding %d items to tasklist" % len(tasks))
 
         
           # ---------------------------------------------------------------------

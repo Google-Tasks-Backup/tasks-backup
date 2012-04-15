@@ -24,6 +24,23 @@ This is the Django template used by test-taskqueue.py
                 document.getElementById("retrieve-tasks-button").disabled = true;
             }
             
+            function changeDimCompletedButton() {
+                if (document.getElementById("only_display_due_tasks").checked) {
+                    document.getElementById("dim_completed_tasks").checked = false;
+                    document.getElementById("dim_completed_tasks").disabled = true;
+                } else {
+                    document.getElementById("dim_completed_tasks").disabled = false;
+                }
+            }
+            
+            function setCurrentDueDate() {
+                // Set the current date, which is used when displaying current due tasks.
+                // We take the date from the browser, so that the due date is today in the user's current timezone is used
+                var today = new Date();
+                document.getElementById("due_year").value = today.getFullYear();
+                document.getElementById("due_month").value = today.getMonth() + 1; // JS Months are 0-11
+                document.getElementById("due_day").value = + today.getDate();
+            }
         
         </script>
         <script type="text/javascript">
@@ -41,7 +58,7 @@ This is the Django template used by test-taskqueue.py
         </script>
     </head>
 
-<body>
+<body onload="setCurrentDueDate()" > 
     <div class="usertitle">
         Authorised user: {{ user_email }} <span class="logout-link">[ <a href="{{ logout_url }}">Log out</a> ]</span>
     </div>
@@ -50,7 +67,7 @@ This is the Django template used by test-taskqueue.py
 
     <noscript>
         <br />
-        <h3>Javascript should be enabled for maximum application functionality</h3>
+        <h3>Javascript must be enabled for maximum application functionality</h3>
         <br />
     </noscript>
     
@@ -200,37 +217,34 @@ This is the Django template used by test-taskqueue.py
         
 
         <form method="POST" action="{{ results_url }}" onsubmit="disableDisplayHtmlButton();" >
-            <!--  <input type="hidden" name="format" value="html_raw" />  -->
+            <input type="hidden" name="format" value="html_raw" />
             <input type="hidden" name="job_start_timestamp" value="{{ job_start_timestamp }}" />
+            
+            <!-- These values are set by setCurrentDueDate() on page load, but they could also be set by the user if required -->
+            <input type="hidden" id="due_year" name="due_year" value="0001" />
+            <input type="hidden" id="due_month" name="due_month" value="1" />
+            <input type="hidden" id="due_day" name="due_day" value="1" />
+            
             
 			<fieldset>
 				<legend>Display all tasks as a single web page, suitable for printing <span class="take-note-smaller"> (<a href="#notes">Note</a> 4)</legend>
 				<table class="format-selection">
-                    <tr>
-                        <td>
-                            <input type="radio" name="format" class="choose_display_format" value="html" {% if progress < large_list_html_warning_limit %}checked="checked"{% endif %}/>
-                            <label class="choose_display_format">
-                                    Method 1 - Slower, but correctly displays multi-line notes.
-                                    <br />
-                                    May fail for lists with more than {{ large_list_html_warning_limit }} tasks.
-                            </label>
-                        </td>
-                    </tr>
-                    <tr>
-                        <td>
-                            <input type="radio" name="format" class="choose_display_format" value="html_raw" {% if progress >= large_list_html_warning_limit %}checked="checked"{% endif %}/>
-                            <label class="choose_display_format">
-                                Method 2 - Faster, but displays notes on a single line.
-                                <br />
-                                Use this if method 1 generates an error. Recommended for large lists.
-                            </label>
-                        </td>
-                    </tr>
-                    <tr></tr>
-					<tr>
+                    {% if include_completed %}
+ 					<tr>
 						<td>
-							<input type="checkbox" name="dim_completed_tasks" value="True" checked="checked" >
+							<input type="checkbox" id="dim_completed_tasks" name="dim_completed_tasks" value="True" checked="checked" >
 								&nbsp;Dim completed tasks? <span class="take-note-smaller"> (<a href="#notes">Note</a> 5)</span>
+							</input>
+						</td>
+					</tr>
+                    {% endif %}
+ 					<tr>
+						<td>
+							<input type="checkbox" id="only_display_due_tasks" name="only_display_due_tasks" onchange="changeDimCompletedButton();" value="True" >
+								&nbsp;Only display tasks currently due? <span class="take-note-smaller"> (<a href="#notes">Note</a> 6)</span>
+                                <noscript>
+                                <span class="take-note">Javascript must be enabled to determine current date</span>
+                                </noscript>
 							</input>
 						</td>
 					</tr>
@@ -258,7 +272,7 @@ This is the Django template used by test-taskqueue.py
 					<tr>
 						<td>
 							<input type="checkbox" name="display_invalid_tasks" value="True" >
-								&nbsp;Display invalid/corrupted tasks? (<a href="#notes">Note</a> 6)
+								&nbsp;Display invalid/corrupted tasks? (<a href="#notes">Note</a> 7)
 							</input>
 						</td>
 					</tr>
@@ -323,7 +337,7 @@ This is the Django template used by test-taskqueue.py
                     Note 5 - 
                 </td>
                 <td>
-                    If checked, the HTML page will display completed tasks using a grey font. Hidden and deleted tasks are always dim.
+                    If checked, completed tasks are displayed using a dimmed grey font. Hidden and deleted tasks are always dim.
                 </td>
             </tr>
             <tr>
@@ -331,8 +345,17 @@ This is the Django template used by test-taskqueue.py
                     Note 6 - 
                 </td>
                 <td>
-                    Sometimes, tasks can become corrupted. They still exist in the Google Tasks database,
-                    but are not displayed in the normal Google Tasks display. Refer to <a href="info.html#notes">note 4 on the information page</a> for more details.
+                    If checked, only display incomplete tasks, where the due date is less than or equal to today.
+                </td>
+            </tr>
+            <tr>
+                <td class="note-heading-smaller">
+                    Note 7 - 
+                </td>
+                <td>
+                    If checked, the application tries to identify and label potentially invalid tasks.
+                    <br />
+                    Refer to <a href="info.html#notes">note 4 on the information page</a> for more details.
                 </td>
             </tr>
             <tr>

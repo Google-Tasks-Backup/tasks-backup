@@ -191,7 +191,7 @@ class MainHandler(webapp.RequestHandler):
 
         fn_name = "MainHandler.get(): "
 
-        logging.info(fn_name + "<Start> (app version %s)" %appversion.version )
+        logging.debug(fn_name + "<Start> (app version %s)" %appversion.version )
         logservice.flush()
         
         # DEBUG
@@ -233,7 +233,7 @@ class MainHandler(webapp.RequestHandler):
             logservice.flush()
             _set_cookie(self.response, 'auth_count', '0', max_age=120)
             if self.request.host in settings.LIMITED_ACCESS_SERVERS:
-                logging.info(fn_name + "Running on limited-access server")
+                logging.debug(fn_name + "Running on limited-access server")
                 if not shared.isTestUser(user_email):
                     logging.info(fn_name + "Rejecting non-test user on limited access server")
                     self.response.out.write("<h2>This is a test server. Access is limited to test users.</h2>")
@@ -422,7 +422,7 @@ class StartBackupHandler(webapp.RequestHandler):
         user_email = user.email()
         is_test_user = shared.isTestUser(user_email)
         if self.request.host in settings.LIMITED_ACCESS_SERVERS:
-            logging.info(fn_name + "Running on limited-access server")
+            logging.debug(fn_name + "Running on limited-access server")
             if not is_test_user:
                 logging.info(fn_name + "Rejecting non-test user on limited access server")
                 self.response.out.write("<h2>This is a test server. Access is limited to test users.</h2>")
@@ -458,7 +458,7 @@ class StartBackupHandler(webapp.RequestHandler):
         # databse record
         q = taskqueue.Queue(settings.BACKUP_REQUEST_QUEUE_NAME)
         t = taskqueue.Task(url='/worker', params={settings.TASKS_QUEUE_KEY_NAME : user_email}, method='POST')
-        logging.info(fn_name + "Adding task to " + str(settings.BACKUP_REQUEST_QUEUE_NAME) + 
+        logging.debug(fn_name + "Adding task to " + str(settings.BACKUP_REQUEST_QUEUE_NAME) + 
             " queue, for " + str(user_email))
         logservice.flush()
         
@@ -519,7 +519,7 @@ class ShowProgressHandler(webapp.RequestHandler):
         _set_cookie(self.response, 'auth_count', '0', max_age=120)    
         user_email = user.email()
         if self.request.host in settings.LIMITED_ACCESS_SERVERS:
-            logging.info(fn_name + "Running on limited-access server")
+            logging.debug(fn_name + "Running on limited-access server")
             if not shared.isTestUser(user_email):
                 logging.info(fn_name + "Rejecting non-test user on limited access server")
                 self.response.out.write("<h2>This is a test server. Access is limited to test users.</h2>")
@@ -570,9 +570,12 @@ class ShowProgressHandler(webapp.RequestHandler):
                     if tasks_backup_job.error_message:
                         error_message = error_message + ", previous error was " + tasks_backup_job.error_message
                     status = 'job_stalled'
-                    
-        logging.debug(fn_name + "Status = " + str(status) + ", progress = " + str(progress) + 
-            " for " + str(user_email) + ", started at " + str(job_start_timestamp) + " UTC")
+        
+        if status == 'completed':
+            logging.info(fn_name + "Retrieved " + str(progress) + " tasks for " + str(user_email))
+        else:
+            logging.debug(fn_name + "Status = " + str(status) + ", progress = " + str(progress) + 
+                " for " + str(user_email) + ", started at " + str(job_start_timestamp) + " UTC")
         
         if error_message:
             logging.error(fn_name + "Error message: " + str(error_message))
@@ -622,11 +625,12 @@ class ReturnResultsHandler(webapp.RequestHandler):
     """Handler to return results to user in the requested format """
     
     def get(self):
+        """ If user attempts to go direct to /results, we redirect to /progress so user can choose format """
         fn_name = "ReturnResultsHandler.get(): "
         logging.debug(fn_name + "<Start>")
         logservice.flush()
         
-        logging.warning(fn_name + "Expected POST for " + str(settings.RESULTS_URL) + 
+        logging.info(fn_name + "Expected POST for " + str(settings.RESULTS_URL) + 
                         ", so redirecting to " + str(settings.PROGRESS_URL))
         logservice.flush()
         # Display the progress page to allow user to choose format for results
@@ -673,7 +677,7 @@ class ReturnResultsHandler(webapp.RequestHandler):
         user_email = user.email()
         is_test_user = shared.isTestUser(user_email)
         if self.request.host in settings.LIMITED_ACCESS_SERVERS:
-            logging.info(fn_name + "Running on limited-access server")
+            logging.debug(fn_name + "Running on limited-access server")
             if not is_test_user:
                 logging.info(fn_name + "Rejecting non-test user on limited access server")
                 self.response.out.write("<h2>This is a test server. Access is limited to test users.</h2>")
@@ -713,38 +717,20 @@ class ReturnResultsHandler(webapp.RequestHandler):
             self.response.set_status(412, "No data for this user. Please retry backup request.")
             return
         
-        logging.debug("Reassembling tasks data from " + str(num_records) + " blobs")
+        logging.debug(fn_name + "Reassembling tasks data from " + str(num_records) + " blobs")
         rebuilt_pkl = ""
         for tasklists_record in tasklists_records:
             #logging.debug("Reassembling blob number " + str(tasklists_record.idx))
             rebuilt_pkl = rebuilt_pkl + tasklists_record.pickled_tasks_data
             
-        logging.debug("Reassembled " + str(len(rebuilt_pkl)) + " bytes")
+        logging.debug(fn_name + "Reassembled " + str(len(rebuilt_pkl)) + " bytes")
         
         tasklists = pickle.loads(rebuilt_pkl)
         rebuilt_pkl = None # Not needed, so release it
         
-        # ------------------------------------------------------
-        #               Return the data to the user
-        # ------------------------------------------------------
-        
-        #      self.WriteDebugHtmlTemplate(debugmessage, datadump1, datadump2, datadump3, datadump4)
-        
-        # if is_test_user:
-          # logging.debug(fn_name + "Writing template data")
 
 
         """
-          Structure used in Django CSV templates
-            {% for tasklist in tasklists %}
-              {% for task in tasklist.tasks %}
-              
-          Structure to pass to django
-          {
-            "now": datetime.datetime.now(),  # Timestamp for the creation of this report/backup
-            "tasklists": [ tasklist ]        # List of tasklist items
-          }
-          
           structure of tasklist
           { 
             "title" : tasklist.title,        # Name of this tasklist
@@ -762,7 +748,6 @@ class ReturnResultsHandler(webapp.RequestHandler):
             "updated" : updated, # Timestamp, e.g., 2012-01-26T07:47:18.000Z
             "completed" : completed # Timestamp, e.g., 2012-01-27T10:38:56.000Z
           }
-
         """
           
         # User chose which format to export as
@@ -777,16 +762,32 @@ class ReturnResultsHandler(webapp.RequestHandler):
         display_due_date_field = (self.request.get('display_due_date_field') == 'True')
         display_updated_date_field = (self.request.get('display_updated_date_field') == 'True')
         display_invalid_tasks = (self.request.get('display_invalid_tasks') == 'True')
+        only_display_due_tasks = (self.request.get('only_display_due_tasks') == 'True')
         
-        logging.info(fn_name + "Selected format = " + str(export_format))
+        logging.debug(fn_name + "Selected format = " + str(export_format))
 
         # Filename format is "tasks_FORMAT_EMAILADDR_YYYY-MM-DD.EXT"
         # CAUTION: Do not include characters that may not be valid on some filesystems (e.g., colon is not valid on Windows)
         output_filename_base = "tasks_%s_%s_%s" % (export_format, user_email, datetime.datetime.now().strftime("%Y-%m-%d"))
-        
+ 
+        if only_display_due_tasks:
+            # If only_display_due_tasks is true, use this value to determine which tasks are due on or before the specified due date.
+            # Using value from user's browser, since that will be in user's current timezone. Server doesn't know user's current timesone.
+            logging.debug(fn_name + "User chose to only display tasks due, where due_year = " + str(self.request.get('due_year')) +
+                            ", due_month = " + str(self.request.get('due_month')) +
+                            ", due_day = " + str(self.request.get('due_day')))
+            try:
+                due_date_limit = datetime.date(int(self.request.get('due_year')),
+                                            int(self.request.get('due_month')), 
+                                            int(self.request.get('due_day'))) 
+            except Exception, e:
+                due_date_limit = datetime.date(datetime.MINYEAR,1,1)
+                logging.exception(fn_name + "Error intepretting date from browser. Using " + str(due_date_limit))
+            
         # Calculate and add 'depth' property
         for tasklist in tasklists:
             tasks = tasklist[u'tasks']
+            tasklist_has_due_tasks = False
             
             num_tasks = len(tasks)
             if num_tasks > 0: # Non-empty tasklist
@@ -799,13 +800,6 @@ class ReturnResultsHandler(webapp.RequestHandler):
                     # By default, assume parent is valid
                     task[u'parent_is_active'] = True
 
-                    # if task.has_key(u'deleted') or task.has_key(u'hidden'):
-                        # # Don't try to calculate depth of hidden and deleted tasks, 
-                        # # as the parent value for those tasks is often invalid (see below)
-                        # task[u'depth'] = -1
-                        # task_idx = task_idx + 1
-                        # continue
-                    
                     if task.has_key(u'parent'):
                         if task[u'parent'] in possible_parent_ids:
                             idx = possible_parent_ids.index(task[u'parent'])
@@ -863,10 +857,22 @@ class ReturnResultsHandler(webapp.RequestHandler):
                     
                     task_idx = task_idx + 1   
 
-                # Add 'indent' property for HTML pages so that tasks can be indented in HTML view
-                if export_format in ['html_raw', 'html']:      
+                # Add extra properties for HTML view;
+                #    Add 'indent' property for HTML pages so that tasks can be correctly indented
+                #    If only_display_due_tasks is true, add 'is_due' property if task is due on or before due_date_limit
+                if export_format == 'html_raw':
                     #logging.debug(fn_name + "Setting indent metadata for " + export_format + " format")
                     for task in tasks:
+                        if only_display_due_tasks:
+                            try:
+                                if task[u'status'] == 'needsAction' and task.has_key(u'due'):
+                                    if task[u'due'] <= due_date_limit:
+                                        task[u'is_due'] = True
+                                        tasklist_has_due_tasks = True
+                            except Exception, e:
+                                logging.exception(fn_name + "Exception determining if task is due")
+                                logging.debug(fn_name + "Task ==>")
+                                logging.debug(task)
                         try:
                             depth = task[u'depth']
                         except KeyError, e:
@@ -879,7 +885,9 @@ class ReturnResultsHandler(webapp.RequestHandler):
                         # to use in style="padding-left:nnn" in HTML pages
                         task[u'indent'] = str(depth * settings.TASK_INDENT).strip()
                             
-          
+            if tasklist_has_due_tasks:
+                tasklist[u'tasklist_has_due_tasks'] = True
+                
         template_values = {'app_title' : app_title,
                            'host_msg' : host_msg,
                            'home_page_url' : settings.HOME_PAGE_URL,
@@ -887,6 +895,8 @@ class ReturnResultsHandler(webapp.RequestHandler):
                            'tasklists': tasklists,
                            'total_progress' : total_progress,
                            'dim_completed_tasks' : dim_completed_tasks,
+                           'only_display_due_tasks' : only_display_due_tasks,
+                           'due_date_limit' : str(due_date_limit),
                            'display_invalid_tasks' : display_invalid_tasks,
                            'include_completed' : include_completed,
                            'include_deleted' : include_deleted,
@@ -912,8 +922,6 @@ class ReturnResultsHandler(webapp.RequestHandler):
             self.WriteIcsUsingTemplate(template_values, export_format, output_filename_base)
         elif export_format in ['outlook', 'raw', 'raw1']:
             self.WriteCsvUsingTemplate(template_values, export_format, output_filename_base)
-        elif export_format == 'html':
-            self.WriteHtmlTemplate(template_values, export_format)
         elif export_format == 'html_raw':
             self.WriteHtmlRaw(template_values)
         elif export_format == 'RTM':
@@ -927,57 +935,6 @@ class ReturnResultsHandler(webapp.RequestHandler):
         tasklists = None
         logging.debug(fn_name + "Calling garbage collection")
         gc.collect()
-        logging.debug(fn_name + "<End>")
-        logservice.flush()
-
-        
-    def DisplayErrorPage(self,
-                       exc_type, 
-                       err_desc = None, 
-                       err_details = None,
-                       err_msg = None, 
-                       app_title = settings.DEFAULT_APP_TITLE,
-                       host_msg = None):
-        """ Display an error page to the user """
-        fn_name = "DisplayErrorPage(): "
-
-        logging.debug(fn_name + "<Start>")
-        logservice.flush()
-        
-        app_version = None
-        app_upload_timestamp = None
-           
-        if hasattr(appversion, 'version'):
-          app_version = appversion.version
-          
-        if hasattr(appversion, 'upload_timestamp'):
-          app_upload_timestamp = appversion.upload_timestamp
-
-        err_template_values = {'app_title' : app_title,
-                               'host_msg' : host_msg,
-                               'exc_type' : exc_type,
-                               'err_desc' : err_desc,
-                               'err_details' : err_details,
-                               'err_msg' : err_msg,
-                               'app_version' : app_version,
-                               'app_upload_timestamp' : app_upload_timestamp,
-                               'err_datetimestamp' : datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S %Z'),
-                               'url_discussion_group' : settings.url_discussion_group,
-                               'email_discussion_group' : settings.email_discussion_group,
-                               'url_issues_page' : settings.url_issues_page,
-                               'url_source_code' : settings.url_source_code}
-                                 
-        
-        # Log and flush before starting operation which may cause memory limit exceeded error
-        logging.debug(fn_name + "building template")
-        logservice.flush() 
-        
-        path = os.path.join(os.path.dirname(__file__), "error_message.html")
-        logging.debug(fn_name + "Writing error page")
-        logging.debug(err_template_values)
-        self.response.out.write(template.render(path, err_template_values))
-        # logging.debug(fn_name + "Calling garbage collection")
-        # gc.collect()
         logging.debug(fn_name + "<End>")
         logservice.flush()
 
@@ -1151,87 +1108,6 @@ class ReturnResultsHandler(webapp.RequestHandler):
         logservice.flush()
 
 
-    def WriteHtmlTemplate(self, template_values, export_format):
-        """ Write an HTML page according to the specified .html template file
-            Currently supports export_format = 'html'
-        """
-        fn_name = "WriteHtmlTemplate(): "
-
-        logging.debug(fn_name + "<Start>")
-        logservice.flush()
-        
-        logging.debug(fn_name + "dim_completed_tasks = " + str(template_values['dim_completed_tasks']))
-        logging.debug(fn_name + "display_completed_date_field = " + str(template_values['display_completed_date_field']))
-        logging.debug(fn_name + "display_due_date_field = " + str(template_values['display_due_date_field']))
-        logging.debug(fn_name + "display_updated_date_field = " + str(template_values['display_updated_date_field']))
-        
-        template_filename = "tasks_template_%s.html" % export_format
-        
-        # Log and flush before starting operation which may cause memory limit exceeded error
-        logging.debug(fn_name + "building template")
-        logservice.flush() 
-        
-        path = os.path.join(os.path.dirname(__file__), template_filename)
-        logging.debug(fn_name + "Writing %s format" % export_format)
-        
-        # logging.debug(fn_name + "len of template_values = " + str(len(str(template_values))))
-        # logservice.flush()
-        
-        logging.debug(fn_name + "rendering template")
-        logservice.flush() 
-        
-        rendered_page = template.render(path, template_values)
-        # logging.debug(fn_name + "len of rendered_page = " + str(len(str(rendered_page))))
-        # logservice.flush()
-        
-        logging.debug(fn_name + "writing response")
-        logservice.flush() 
-        self.response.out.write(rendered_page)
-        #self.response.out.write(str(template_values))
-        
-        # logging.debug(fn_name + "Calling garbage collection")
-        # gc.collect()
-        logging.debug(fn_name + "<End>")
-        logservice.flush()
-
-
-    def WriteDebugHtmlTemplate(self, 
-                             debugmessages, 
-                             datadump1, 
-                             datadump2, 
-                             datadump3, 
-                             datadump4, 
-                             app_title = settings.DEFAULT_APP_TITLE, 
-                             host_msg = None):
-        fn_name = "WriteDebugHtmlTemplate(): "                       
-        logging.debug(fn_name + "<Start>")
-        logservice.flush()
-        
-        # Log and flush before starting operation which may cause memory limit exceeded error
-        logging.debug(fn_name + "building template")
-        logservice.flush() 
-        
-        debug_template_values = {'debug_version' : datetime.datetime.now().strftime("%Y-%m-%d %H:%M"),
-                                 'debugmessages': debugmessages,
-                                 'datadump1': datadump1,
-                                 'datadump2': datadump2,
-                                 'datadump3': datadump3,
-                                 'datadump4': datadump4,
-                                 'url_discussion_group' : settings.url_discussion_group,
-                                 'email_discussion_group' : settings.email_discussion_group,
-                                 'url_issues_page' : settings.url_issues_page,
-                                 'url_source_code' : settings.url_source_code,
-                                 'app_title' : app_title,
-                                 'host_msg' : host_msg}
-        path = os.path.join(os.path.dirname(__file__), 'debug_template.html')
-        logging.debug(fn_name + "Writing debug HTML")
-        self.response.out.write(template.render(path, debug_template_values))
-        # logging.debug(fn_name + "Calling garbage collection")
-        # gc.collect()
-        logging.debug(fn_name + "<End>")
-        logservice.flush()
-
-
     def WriteHtmlRaw(self, template_values):
         """ Manually build an HTML representation of the user's tasks.
         
@@ -1251,6 +1127,8 @@ class ReturnResultsHandler(webapp.RequestHandler):
         display_invalid_tasks = template_values.get('display_invalid_tasks')
         job_start_timestamp = template_values.get('job_start_timestamp')
         dim_completed_tasks = template_values.get('dim_completed_tasks')
+        only_display_due_tasks = template_values.get('only_display_due_tasks')
+        due_date_limit = template_values.get('due_date_limit')
         display_completed_date_field = template_values.get('display_completed_date_field')
         display_updated_date_field = template_values.get('display_updated_date_field')
         display_due_date_field = template_values.get('display_due_date_field')
@@ -1299,15 +1177,21 @@ class ReturnResultsHandler(webapp.RequestHandler):
             self.response.out.write(""" as at """)
             self.response.out.write(job_start_timestamp)
             self.response.out.write(""" UTC</h3>""")
-            self.response.out.write("""<dib class="break">Backup completed. Retrieved """)
+            self.response.out.write("""<div class="break">Backup completed. Retrieved """)
             self.response.out.write(total_progress)
             self.response.out.write(""" tasks from """)
             self.response.out.write(num_tasklists)
             self.response.out.write(""" task lists.""")
             
-            if include_completed:
+            if only_display_due_tasks:
                 self.response.out.write("""<br />
-                    <span class="comment">Displaying completed tasks</span>""")
+                    <span class="comment">Displaying only tasks due on or before """)
+                self.response.out.write(due_date_limit)
+                self.response.out.write("""</span>""")
+            else:
+                if include_completed:
+                    self.response.out.write("""<br />
+                        <span class="comment">Displaying completed tasks</span>""")
             if include_hidden:
                 self.response.out.write("""<br />
                     <span class="comment">Displaying hidden tasks</span>""")
@@ -1320,6 +1204,10 @@ class ReturnResultsHandler(webapp.RequestHandler):
             self.response.out.write("""</div>""")
                     
             for tasklist in tasklists:
+                if only_display_due_tasks and not tasklist.has_key(u'tasklist_has_due_tasks'):
+                    # If user chooses only_display_due_tasks, skip tasklists that don't have any due tasks
+                    continue
+                    
                 num_tasks = len(tasklist)
                 if num_tasks > 0:
                 
@@ -1344,6 +1232,10 @@ class ReturnResultsHandler(webapp.RequestHandler):
                         <div class="tasks">""")
                         
                     for task in tasks:
+                        if only_display_due_tasks and not task.has_key(u'is_due'):
+                            # If user chooses only_display_due_tasks, skip non-due tasks
+                            continue
+                    
                         task_title = task.get(u'title', "<No Task Title>")
                         if len(task_title.strip()) == 0:
                             task_title = "<Unnamed Task>"
@@ -1506,7 +1398,7 @@ class OAuthHandler(webapp.RequestHandler):
         fn_name = "OAuthHandler.get() "
         
         if not self.request.get("code"):
-            logging.info(fn_name + "No 'code', so redirecting to /")
+            logging.debug(fn_name + "No 'code', so redirecting to /")
             logservice.flush()
             self.redirect("/")
             return
@@ -1573,7 +1465,7 @@ class OAuthHandler(webapp.RequestHandler):
 
         
 def real_main():
-    logging.info("main(): Starting tasks-backup (app version %s)" %appversion.version)
+    logging.debug("main(): Starting tasks-backup (app version %s)" %appversion.version)
     template.register_template_library("common.customdjango")
 
     application = webapp.WSGIApplication(
@@ -1588,7 +1480,7 @@ def real_main():
             ("/oauth2callback",                 OAuthHandler),
         ], debug=False)
     util.run_wsgi_app(application)
-    logging.info("main(): <End>")
+    logging.debug("main(): <End>")
 
 def profile_main():
     # From https://developers.google.com/appengine/kb/commontasks#profiling

@@ -85,6 +85,10 @@ MAX_BLOB_SIZE = 1000000
 # i.e., display error message and stop refreshing progress.html
 MAX_JOB_TIME =  650
 
+# If the user has more than this number of tasks, display a warning message that
+# displaying as an HTML page may fail
+LARGE_LIST_HTML_WARNING_LIMIT = 6000
+
 # If the job hasn't been updated in MAX_JOB_PROGRESS_INTERVAL seconds, assume that the job has stalled, 
 # and display error message and stop refreshing progress.html
 MAX_JOB_PROGRESS_INTERVAL = 90
@@ -100,13 +104,23 @@ PROGRESS_PAGE_REFRESH_INTERVAL = 8
 # e.g., for a 3rd level subtask, indent would be 3 * TASK_INDENT
 TASK_INDENT = 40
 
+
+# Maximum number of consecutive authorisation requests
+# Redirect user to Invalid Credentials page if there are more than this number of tries
+MAX_NUM_AUTH_REQUESTS = 4
+
 # ###############################################
 #                  Debug settings
 # ###############################################
 
 # Extra detailed and/or personal details may be logged when user is one of the test accounts
-TEST_ACCOUNTS = ["Julie.Smith.1999@gmail.com", "JS1999.Outlook@gmail.com"]
-#TEST_ACCOUNTS = ["Julie.Smith.1999@gmail.com", "Paul.Buisman@gmail.com"]
+TEST_ACCOUNTS = ["My.Email.Address@gmail.com", "Test.Email.Address@gmail.com"]
+
+
+# When the app is running on one of these servers, users will be rejected unless they are in TEST_ACCOUNTS list
+# If there is/are no limited-access servers, set this to an empty list []
+LIMITED_ACCESS_SERVERS = []
+#LIMITED_ACCESS_SERVERS = ['my-test-server.appspot.com']
 
 # Logs dumps of raw data for test users when True
 DUMP_DATA = False
