@@ -129,7 +129,7 @@
 
 
     <div class="break">
-        Table 1 lists the various states and the corresponding task property values. 
+        <a name="Table1">Table 1 lists the various states and the corresponding task property values.</a>
     </div>
 
     <table border="1" cellpadding="5">
@@ -180,7 +180,196 @@
         The <span class="property-name">completed</span> property has occassionally contained invalid timestamps, where the year is stored as a large negative number such as -1701567. In this case, the application sets the <span class="property-name">completed</span> property to "0001-01-01 00:00:00"
         
     </div>
-
+    
+    <a name="import_export_description"></a>
+    <h2>Description of the {{ app_title }} "Import/Export CSV" file format</h2>
+    <div class="break">
+        The file is a standard Windows-format CSV (comma-separated-values) file, and contains all the data that is needed to re-create the tasklists and tasks in a Google account. . 
+        <ul>
+            <li>The first row is a header row, and contains the column names.</li>
+            <li>Tasks must be grouped by tasklist.</li>
+            <li>Tasks must appear in the file in the order that they should appear in the standard "My Order" view in Google Tasks. See the <a href="#import_example">example</a> below.</li>
+            <li>All fields except depth are double-quote delimited strings.</li>
+            <li>Double-quotes within text must be escaped (i.e., replace the single <span class="fixed-font">"</span> with <span class="fixed-font">""</span>)</li>
+            <li>There must be no spaces between fields and the comma separators.</li>
+            <li>Multi-line text is allowed in the notes field, by using <span class="fixed-font">\n</span> as the line break.</li>
+            <li>A blank field may be indicated by <span class="fixed-font">""</span> (empty string) or by having no space between consecutive commas.</li>
+            <li>Dates and times are UTC.</li>
+            <li>Task state must be consistent. Refer to <a href="#Table1">Table 1</a> for valid states.
+        </ul>
+    </div>
+    <table border="1" cellpadding="5">
+        <caption class="heading" >Table 2: Import file format</caption>
+        <tr>
+            <th>
+                Column name
+            </th>
+            <th>
+                Description
+            </th>
+        </tr>
+        <tr>
+            <td>tasklist_name</td>
+            <td>
+                If this is the name of an existing tasklist, tasks will be added to that list.
+                <br />
+                If the tasklist does not exist, a new tasklist will be created.
+            </td>
+        </tr>
+        <tr>
+            <td>title</td>
+            <td>
+                Task title.
+            </td>
+        </tr><tr>
+            <td>notes</td>
+            <td>
+                Task notes. May be multi-line, using <span class="fixed-font">\n</span> as the line break.
+            </td>
+        </tr>
+        <tr>
+            <td>status</td>
+            <td>
+                Can be either <span class="fixed-font">"needsAction"</span> or <span class="fixed-font">"completed"</span>
+            </td>
+        </tr>
+        <tr>
+            <td>due</td>
+            <td>
+                If the task has a due date, the date that the task is due, in the format <span class="fixed-font">"YYYY-mm-dd"</span>
+                <br />
+                If the task does not have a due date, leave this field blank
+            </td>
+        </tr>
+        <tr>
+            <td>completed</td>
+            <td>
+                If the task has been completed, the date and time that the task was completed, in the format <span class="fixed-font">"YYYY-mm-dd HH:MM:SS"</span>
+                <br />
+                If the task has not been completed, leave this field blank
+            </td>
+        </tr>
+        <tr>
+            <td>deleted</td>
+            <td>
+                If the task has been deleted (see above), the single word <span class="fixed-font">"True"</span>
+                <br />
+                If the task has not been deleted, leave this field blank
+            </td>
+        </tr>
+        <tr>
+            <td>hidden</td>
+            <td>
+                If the task has been hidden (see above), the single word <span class="fixed-font">"True"</span>
+                <br />
+                If the task has not been hidden, leave this field blank
+            </td>
+        </tr>
+        <tr>
+            <td>depth</td>
+            <td>
+                The depth of the task indicates the parent-child relationship between tasks. 
+                <br />
+                Depth is a positive number. Higher numbers indicate greater depth.
+                <br />
+                Tasks with depth 0 are root tasks.
+            </td>
+        </tr>
+    </table>
+    
+    <a name="import_example"></a>
+    <div class="minor-heading">Example import/export file</div>
+    <p class="comment">Note the <span class="fixed-font">\n</span> in the multi-line notes in "Second subtask", and the escaped double-quotes in the notes for "Second task"
+    <div class="break fixed-font smaller-font">
+        "tasklist_name","title","notes","status","due","completed","deleted","hidden",depth
+        <br />
+        "My Tasklist","First task","This is a root task","needsAction","2012-08-23",,,,0
+        <br />
+        "My Tasklist","First subtask","This is a subtask of the first task","needsAction","2012-08-19",,,,1
+        <br />
+        "My Tasklist","Second subtask","This is a subtask\nof the first subtask","needsAction","2012-04-21",,,,2
+        <br />
+        "My Tasklist","Third subtask","This is a subtask of the second subtask","needsAction",,,,,3
+        <br />
+        "My Tasklist","Fourth subtask","This is a 2nd subtask of the first subtask","needsAction","2012-07-25",,,,1
+        <br />
+        "My Tasklist","Second task","This is another ""root"" task","completed",,"2012-04-22 02:42:36",,,0
+    </div>
+    
+    <div class="minor-heading">This is displayed in Google Tasks as;</div>
+    <div>
+        <img class="sample-image" src="Example-Tasks-My_order.PNG">
+    </div>
+    
+    <div class="minor-heading">{{ app_title }} displays this as;</div>
+    <div class="task-sample">
+        <div class="tasklistheading">
+            Task List: My Tasklist - 6 tasks.
+        </div>
+        <div class="tasks">
+            <div style="padding-left:0px" class="task-html1 ">
+                <div>
+                    <span class="status-cell">[ &nbsp;]</span>
+                    <span class="task-title-html1">First task</span>
+                </div>
+                <div class="task-details-html1"><div class="task-notes">This is a root task</div><div class="task-attribute">
+                    <span class="fieldlabel">Due: </span>Thu, 23 Aug 2012 UTC</div>
+                </div>  <!-- End of task details div -->
+            </div> <!-- End of task div -->
+            
+            <div style="padding-left:40px" class="task-html1 ">
+                <div>
+                    <span class="status-cell">[ &nbsp;]</span>
+                    <span class="task-title-html1">First subtask</span>
+                </div>
+                <div class="task-details-html1"><div class="task-notes">This is a subtask of the first task</div><div class="task-attribute">
+                    <span class="fieldlabel">Due: </span>Sun, 19 Aug 2012 UTC</div>
+                </div>  <!-- End of task details div -->
+            </div> <!-- End of task div -->
+            
+            <div style="padding-left:80px" class="task-html1 ">
+                <div>
+                    <span class="status-cell">[ &nbsp;]</span>
+                    <span class="task-title-html1">Second subtask</span>
+                </div>
+                <div class="task-details-html1"><div class="task-notes">This is a subtask<br>of the first subtask</div><div class="task-attribute">
+                    <span class="fieldlabel">Due: </span>Sat, 21 Apr 2012 UTC</div>
+                </div>  <!-- End of task details div -->
+            </div> <!-- End of task div -->
+            
+            <div style="padding-left:120px" class="task-html1 ">
+                <div>
+                    <span class="status-cell">[ &nbsp;]</span>
+                    <span class="task-title-html1">Third subtask</span>
+                </div>
+                <div class="task-details-html1"><div class="task-notes">This is a subtask of the second subtask</div>
+                </div>  <!-- End of task details div -->
+            </div> <!-- End of task div -->
+            
+            <div style="padding-left:40px" class="task-html1 ">
+                <div>
+                    <span class="status-cell">[ &nbsp;]</span>
+                    <span class="task-title-html1">Fourth subtask</span>
+                </div>
+                <div class="task-details-html1"><div class="task-notes">This is a 2nd subtask of the first subtask</div><div class="task-attribute">
+                    <span class="fieldlabel">Due: </span>Wed, 25 Jul 2012 UTC</div>
+                </div>  <!-- End of task details div -->
+            </div> <!-- End of task div -->
+            
+            <div style="padding-left:0px" class="task-html1 dim">
+                <div>
+                    <span class="status-cell">✓</span>
+                    <span class="task-title-html1">Second task</span>
+                </div>
+                <div class="task-details-html1"><div class="task-attribute">
+                    <span class="fieldlabel">COMPLETED:</span> 02:42 Sun, 22 Apr 2012 UTC</div><div class="task-notes">This is another "root" task</div>
+                </div>  <!-- End of task details div -->
+            </div> <!-- End of task div -->
+            
+        </div>    
+    </div>
+    
+    
     <div class="heading">
         <a name="notes">Notes</a>
     </div>

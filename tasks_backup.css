@@ -49,6 +49,20 @@ label.choose_display_format {
   display: block;
 } 
 
+.sample-image {
+    margin-left: 30px;
+    margin-bottom:10px;
+    width:80%;
+}
+
+.smaller-font {
+    font-size: smaller;
+}
+
+.task-sample {
+    margin-left: 30px;
+    font-size: smaller;
+}
 
 
 legend
@@ -63,6 +77,10 @@ legend
     margin-bottom: 5px;
 }
 
+.fixed-font {
+    font-family: "Courier New", Courier, monospace;
+}
+
 .property-name {
   font-weight: bold;
   font-family: "Courier New", Courier, monospace;
@@ -75,6 +93,12 @@ legend
     valign: top;
 }
 
+.minor-heading {
+    font-weight: bold;
+    margin-top:12px;
+    margin-bottom:6px;
+}
+  
 .take-note {
   font-weight: bold;
 }
@@ -193,6 +217,49 @@ table.include-selection {
     margin-bottom:15px;
 }
 
+
+div.selection-column-header {
+    padding-top:5px;    
+    font-weight: bold;
+    }
+
+span.due_date {
+    border-style:solid;
+    padding:3px;
+}
+    
+ul.format-selection {
+    list-style-type:none;
+    padding: 0;
+    margin-left: 0;
+    margin-top:3px;
+}
+
+ul.sub-list {
+    margin-left: 15px;
+}
+
+div.left-column {
+    float:left;
+    width: 60%;
+    padding-left:10px;
+    margin-right:10px;
+}
+    
+div.right-column {
+    float:left;
+    //width:50%;
+    padding-left:10px;
+    padding-right:10px;
+}
+    
+div.end-columns {
+    clear:both;
+}
+    
+    
+    
+    
 table.format-selection {
 	border-collapse:separate;
 	border-spacing:5px 10px; /* Horiz, vert */

@@ -32,13 +32,13 @@ def GetSettings(hostname):
         client_id = settings.client_ids[hostname]
     else:
         client_id = None
-        raise KeyError("No ID entry in settings module for host = %s" % hostname)
+        raise KeyError("No ID entry in settings module for host = %s\nPlease check the adress" % hostname)
   
     if settings.client_secrets.has_key(hostname):
         client_secret = settings.client_secrets[hostname]
     else:
         client_secret = None
-        raise KeyError("No secret entry in settings module for host = %s" % hostname)
+        raise KeyError("No secret entry in settings module for host = %s\nPlease check the address" % hostname)
   
     if hasattr(settings, 'user_agents') and settings.user_agents.has_key(hostname):
         user_agent = settings.user_agents[hostname]
@@ -81,7 +81,8 @@ def EscapeHtml(text):
     """Ensure that text is properly escaped as valid HTML"""
     if text is None:
         return None
-    return cgi.escape(text).encode('ascii', 'xmlcharrefreplace')
+    return cgi.escape(text).encode('ascii', 'xmlcharrefreplace').replace('\n','<br />')
+    #return cgi.escape(text.decode('unicode_escape')).replace('\n', '<br />')
     #return "".join(html_escape_table.get(c,c) for c in text)
 
     

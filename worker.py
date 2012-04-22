@@ -48,11 +48,10 @@ __author__ = "julie.smith.1999@gmail.com (Julie Smith)"
 
 
 
-
-class CreateBackupWorker(webapp.RequestHandler):
+class CreateImportWorker(webapp.RequestHandler):
     
     def post(self):
-        fn_name = "CreateBackupWorker.post(): "
+        fn_name = "CreateImportWorker.post(): "
         
         start_time = datetime.datetime.now()
        
@@ -69,6 +68,93 @@ class CreateBackupWorker(webapp.RequestHandler):
         
         
         #logging.debug(fn_name + "User email = " + str(user_email))
+        
+        if user_email:
+            
+            # Retrieve the DB record for this user
+            task_import_job = model.TasksBackupJob.get_by_key_name(user_email)
+            
+            if task_import_job is None:
+                logging.error(fn_name + "No DB record for " + user_email)
+                logservice.flush()
+                # TODO: Find some way of notifying the user?????
+            else:
+                logging.info(fn_name + "Retrieved tasks import job for " + str(user_email))
+                logservice.flush()
+                task_import_job.status = 'building'
+                task_import_job.job_progress_timestamp = datetime.datetime.now()
+                task_import_job.put()
+                
+                user = task_import_job.user
+                if not user:
+                    logging.error(fn_name + "No user object in DB record for " + str(user_email))
+                    logservice.flush()
+                    task_import_job.status = 'error'
+                    task_import_job.error_message = "Problem with user details. Please restart."
+                    task_import_job.job_progress_timestamp = datetime.datetime.now()
+                    task_import_job.put()
+                    self.response.set_status(401, "No user object")
+                    return
+                      
+                credentials = task_import_job.credentials
+                if not credentials:
+                    logging.error(fn_name + "No credentials in DB record for " + str(user_email))
+                    logservice.flush()
+                    task_import_job.status = 'error'
+                    task_import_job.error_message = "Problem with user credentials. Please restart."
+                    task_import_job.job_progress_timestamp = datetime.datetime.now()
+                    task_import_job.put()
+                    self.response.set_status(401, "No credentials")
+                    return
+              
+                if credentials.invalid:
+                    logging.error(fn_name + "Invalid credentials in DB record for " + str(user_email))
+                    logservice.flush()
+                    task_import_job.status = 'error'
+                    task_import_job.error_message = "Invalid credentials. Please restart and re-authenticate."
+                    task_import_job.job_progress_timestamp = datetime.datetime.now()
+                    task_import_job.put()
+                    self.response.set_status(401, "Invalid credentials")
+                    return
+              
+                # TODO: Build tasks data structure from DB records
+                
+                # TODO: Import tasks
+                #   For each tasklist in tasklists data
+                #       If tasklist doesn't exist:
+                #           create it
+                #       For each task in tasklist
+                #           If check_for_duplicates:
+                #               % X X X X X   CAUTION: This could require O(n^2)   X X X X X
+                #               % Task exists if :
+                #               %   Task has same; title, due date, hidden/deleted flags
+                #               %   {Possibly compare notes? Might need to ignore white space (space, tabs, CRLF)
+                #               If task exists: 
+                #                   continue (skip task)
+                #           create task
+    
+        
+
+        
+        
+
+class ProcessTasksWorker(webapp.RequestHandler):
+    
+    def post(self):
+        fn_name = "ProcessTasksWorker.post(): "
+        
+        start_time = datetime.datetime.now()
+       
+        logging.debug(fn_name + "<start> (app version %s)" %appversion.version)
+        logservice.flush()
+
+        client_id, client_secret, user_agent, app_title, project_name, host_msg = shared.GetSettings(self.request.host)
+        
+        
+        user_email = self.request.get(settings.TASKS_QUEUE_KEY_NAME)
+        
+        is_test_user = shared.isTestUser(user_email)
+        
         
         if user_email:
             
@@ -118,335 +204,14 @@ class CreateBackupWorker(webapp.RequestHandler):
                     self.response.set_status(401, "Invalid credentials")
                     return
               
-                include_hidden = tasks_backup_job.include_hidden
-                include_completed = tasks_backup_job.include_completed
-                include_deleted = tasks_backup_job.include_deleted
-                
-                # User is authorised
-                #logging.debug(fn_name + "Retrieved credentials from DB record")
-                
-                # Retrieve all tasks for the user
-                try:
-
-                    if is_test_user:
-                        logging.debug(fn_name + "User is test user %s" % user_email)
-                        logservice.flush()
-                        
-                    logging.info(fn_name + "include_hidden = " + str(include_hidden) +
-                        ", include_completed = " + str(include_completed) +
-                        ", include_deleted = " + str(include_deleted))
+                if is_test_user:
+                    logging.debug(fn_name + "User is test user %s" % user_email)
                     logservice.flush()
                     
-                    #logging.debug(fn_name + "setting up http")
-                    http = httplib2.Http()
-                    http = credentials.authorize(http)
-                    service = discovery.build("tasks", "v1", http)
-                    
-                    # Services to retrieve tasklists and tasks
-                    #logging.debug(fn_name + "Setting up services to retrieve tasklists and tasks")
-                    tasklists_svc = service.tasklists()
-                    tasks_svc = service.tasks() 
-                    
-                    
-                    
-                    # ##############################################
-                    # FLOW
-                    # ----------------------------------------------
-                    # For each page of taskslists
-                    #   For each tasklist
-                    #     For each page of tasks
-                    #       For each task
-                    #         Fix date format
-                    #       Add tasks to tasklist collection
-                    #     Add tasklist to tasklists collection
-                    # Use tasklists collection to return tasks backup to user
-                    
-                    # This list will contain zero or more tasklist dictionaries, which each contain tasks
-                    tasklists = [] 
-                    
-                    total_num_tasklists = 0
-                    total_num_tasks = 0
-                    tasks_per_list = []
-                    
-                    # ---------------------------------------
-                    # Retrieve all the tasklists for the user
-                    # ---------------------------------------
-                    logging.debug(fn_name + "Retrieve all the tasklists for the user")
-                    logservice.flush()
-                    next_tasklists_page_token = None
-                    more_tasklists_data_to_retrieve = True
-                    while more_tasklists_data_to_retrieve:
-                        if is_test_user:
-                            logging.debug(fn_name + "calling tasklists.list().execute() to create tasklists list")
-                            logservice.flush()
-                    
-                        retry_count = 3
-                        while retry_count > 0:
-                          try:
-                            if next_tasklists_page_token:
-                               tasklists_data = tasklists_svc.list(pageToken=next_tasklists_page_token).execute()
-                            else:
-                               tasklists_data = tasklists_svc.list().execute()
-                            # Successfully retrieved data, so break out of retry loop
-                            break
-                          except Exception, e:
-                            retry_count = retry_count - 1
-                            if retry_count > 0:
-                                logging.warning(fn_name + "Error retrieving list of tasklists. " + 
-                                    str(retry_count) + " retries remaining")
-                                logservice.flush()
-                            else:
-                                logging.exception(fn_name + "Still error retrieving list of tasklists after retries. Giving up")
-                                logservice.flush()
-                                raise e
-                    
-                        if is_test_user and settings.DUMP_DATA:
-                            logging.debug(fn_name + "tasklists_data ==>")
-                            logging.debug(tasklists_data)
-                            logservice.flush()
-
-                        if tasklists_data.has_key(u'items'):
-                          tasklists_list = tasklists_data[u'items']
-                        else:
-                          # If there are no tasklists, then there will be no 'items' element. This could happen if
-                          # the user has deleted all their tasklists. Not sure if this is even possible, but
-                          # checking anyway, since it is possible to have a tasklist without 'items' (see issue #9)
-                          logging.warning(fn_name + "User has no tasklists.")
-                          logservice.flush()
-                          tasklists_list = []
-                      
-                        # tasklists_list is a list containing the details of the user's tasklists. 
-                        # We are only interested in the title
-                      
-                        # if is_test_user and settings.DUMP_DATA:
-                            # logging.debug(fn_name + "tasklists_list ==>")
-                            # logging.debug(tasklists_list)
-
-
-                        # ---------------------------------------
-                        # Process all the tasklists for this user
-                        # ---------------------------------------
-                        for tasklist_data in tasklists_list:
-                            total_num_tasklists = total_num_tasklists + 1
-                          
-                            if is_test_user and settings.DUMP_DATA:
-                                logging.debug(fn_name + "tasklist_data ==>")
-                                logging.debug(tasklist_data)
-                                logservice.flush()
-                          
-                            """
-                                Example of a tasklist entry;
-                                    u'id': u'MDAxNTkzNzU0MzA0NTY0ODMyNjI6MDow',
-                                    u'kind': u'tasks#taskList',
-                                    u'selfLink': u'https://www.googleapis.com/tasks/v1/users/@me/lists/MDAxNTkzNzU0MzA0NTY0ODMyNjI6MDow',
-                                    u'title': u'Default List',
-                                    u'updated': u'2012-01-28T07:30:18.000Z'},
-                            """ 
-                       
-                            tasklist_title = tasklist_data[u'title']
-                            tasklist_id = tasklist_data[u'id']
-                          
-                            if is_test_user and settings.DUMP_DATA:
-                                logging.debug(fn_name + "Process all the tasks in " + str(tasklist_title))
-                                logservice.flush()
-                                    
-                            # Process all the tasks in this task list
-                            tasklist_dict, num_tasks = self.GetTasksInTasklist(tasks_svc, tasklist_title, tasklist_id, is_test_user,
-                                tasks_backup_job, include_hidden, include_completed, include_deleted)
-                            # Track number of tasks per tasklist
-                            tasks_per_list.append(num_tasks)
-                            
-                            total_num_tasks = total_num_tasks + num_tasks
-                            tasks_backup_job.total_progress = total_num_tasks
-                            tasks_backup_job.tasklist_progress = 0 # Because total_progress now includes num_tasks for current tasklist
-                            tasks_backup_job.job_progress_timestamp = datetime.datetime.now()
-                            tasks_backup_job.put()
-                            
-                            # if is_test_user:
-                                # logging.debug(fn_name + "Adding %d tasks to tasklist" % len(tasklist_dict[u'tasks']))
-                                
-                            # Add the data for this tasklist (including all the tasks) into the collection of tasklists
-                            tasklists.append(tasklist_dict)
-                      
-                        # Check if there is another page of tasklists to be retrieved
-                        if tasklists_data.has_key('nextPageToken'):
-                            # There is another page of tasklists to be retrieved for this user, 
-                            # which we'll retrieve next time around the while loop.
-                            # This happens if there is more than 1 page of tasklists.
-                            # It seems that each page contains 20 tasklists.
-                            more_tasklists_data_to_retrieve = True # Go around while loop again
-                            next_tasklists_page_token = tasklists_data['nextPageToken']
-                            # if is_test_user:
-                                # logging.debug(fn_name + "There is (at least) one more page of tasklists to be retrieved")
-                        else:
-                            # This is the last (or only) page of results (list of tasklists)
-                            more_tasklists_data_to_retrieve = False
-                            next_tasklists_page_token = None
-                          
-                    # *** end while more_tasks_data_to_retrieve ***
-                    
-                    # These values are also sent by email at the end of this method
-                    summary_msg = "Retrieved %d tasks from %d tasklists" % (total_num_tasks, total_num_tasklists)
-                    breakdown_msg = "Tasks per list: " + str(tasks_per_list)
-                    logging.info(fn_name + summary_msg + " - " + breakdown_msg)
-                    logservice.flush()
-                    
-                    # ------------------------------------------------------
-                    #   Store the data, so we can return it to the user
-                    # ------------------------------------------------------
-                      
- 
-                    """
-                        Structure used in Django CSV templates
-                            {% for tasklist in tasklists %}
-                                {% for task in tasklist.tasks %}
-                                
-                        Structure to pass to django
-                        {
-                            "now": datetime.datetime.now(),  # Timestamp for the creation of this report/backup
-                            "tasklists": [ tasklist ]        # List of tasklist items
-                        }
-
-                        structure of tasklist
-                        { 
-                            "title" : tasklist.title,        # Name of this tasklist
-                            "tasks"  : [ task ]              # List of task items in this tasklist
-                        }
-
-                        structure of task
-                        {
-                            "title" : title, # Free text
-                            "status" : status, # "completed" | "needsAction"
-                            "id" : id, # Used when determining parent-child relationships
-                            "parent" : parent, # OPT: ID of the parent of this task (only if this is a sub-task)
-                            "notes" : notes, # OPT: Free text
-                            "due" : due, # OPT: Date due, e.g. 2012-01-30T00:00:00.000Z NOTE time = 0
-                            "updated" : updated, # Timestamp, e.g., 2012-01-26T07:47:18.000Z
-                            "completed" : completed # Timestamp, e.g., 2012-01-27T10:38:56.000Z
-                        }
-
-                    """
-                    
-                    # Delete existing job records
-                    tasklist_data_records = model.TasklistsData.gql("WHERE ANCESTOR IS :1",
-                                                                db.Key.from_path(settings.DB_KEY_TASKS_DATA, user_email))
-
-                    num_records = tasklist_data_records.count()
-                    logging.debug(fn_name + "Deleting " + str(num_records) + " old blobs")
-                    logservice.flush()
-                    
-                    for tasklists_data_record in tasklist_data_records:
-                        tasklists_data_record.delete()
-
-                    
-                    # logging.debug(fn_name + "Pickling tasks data ...")
-                    pickled_tasklists = pickle.dumps(tasklists)
-                    # logging.debug(fn_name + "Pickled data size = " + str(len(pickled_tasklists)))
-                    data_len = len(pickled_tasklists)
-                    
-                    # Multiply by 1.0 float value so that we can use ceiling to find number of Blobs required
-                    num_of_blobs = int(math.ceil(data_len * 1.0 / settings.MAX_BLOB_SIZE))
-                    logging.debug(fn_name + "Calculated " + str(num_of_blobs) + " blobs required to store " + str(data_len) + " bytes")
-                    logservice.flush()
-                    
-                    
-                    
-                    
-                    try:
-                        for i in range(num_of_blobs):
-                            tasklist_rec = model.TasklistsData(db.Key.from_path(settings.DB_KEY_TASKS_DATA, user_email))
-                            slice_start = int(i*settings.MAX_BLOB_SIZE)
-                            slice_end = int((i+1)*settings.MAX_BLOB_SIZE)
-                            # logging.debug(fn_name + "Creating part " + str(i+1) + " of " + str(num_of_blobs) + 
-                                # " using slice " + str(slice_start) + " to " + str(slice_end))
-                            
-                            pkl_part = pickled_tasklists[slice_start : slice_end]
-                            tasklist_rec.pickled_tasks_data = pkl_part
-                            tasklist_rec.idx = i
-                            tasklist_rec.put()
-                            
-                        # logging.debug(fn_name + "Marking backup job complete")
-                        
-                        # Mark backup completed
-                        tasks_backup_job.status = 'completed'
-                        tasks_backup_job.job_progress_timestamp = datetime.datetime.now()
-                        tasks_backup_job.put()
-                        logging.info(fn_name + "Marked job complete for " + str(user_email) + ", with progress = " + 
-                            str(tasks_backup_job.total_progress))
-                        logservice.flush()
-                    except apiproxy_errors.RequestTooLargeError, e:
-                        logging.exception(fn_name + "Error putting results in DB")
-                        logservice.flush()
-                        tasks_backup_job.status = 'error'
-                        tasks_backup_job.error_message = "Tasklists data is too large - Unable to store tasklists in DB: " + str(e)
-                        tasks_backup_job.job_progress_timestamp = datetime.datetime.now()
-                        tasks_backup_job.put()
-                    
-                    except Exception, e:
-                        logging.exception(fn_name + "Error putting results in DB")
-                        logservice.flush()
-                        tasks_backup_job.status = 'error'
-                        tasks_backup_job.error_message = "Unable to store tasklists in DB: " + str(e)
-                        tasks_backup_job.job_progress_timestamp = datetime.datetime.now()
-                        tasks_backup_job.put()
-
-
-                      
-                      
-
-                except urlfetch_errors.DeadlineExceededError, e:
-                    logging.exception(fn_name + "urlfetch_errors.DeadlineExceededError:")
-                    logservice.flush()
-                    tasks_backup_job.status = 'error'
-                    tasks_backup_job.error_message = "urlfetch_errors.DeadlineExceededError: " + str(e)
-                    tasks_backup_job.job_progress_timestamp = datetime.datetime.now()
-                    tasks_backup_job.put()
-              
-                except apiproxy_errors.DeadlineExceededError, e:
-                    logging.exception(fn_name + "apiproxy_errors.DeadlineExceededError:")
-                    logservice.flush()
-                    tasks_backup_job.status = 'error'
-                    tasks_backup_job.error_message = "apiproxy_errors.DeadlineExceededError: " + str(e)
-                    tasks_backup_job.job_progress_timestamp = datetime.datetime.now()
-                    tasks_backup_job.put()
-                
-                except DeadlineExceededError, e:
-                    logging.exception(fn_name + "DeadlineExceededError:")
-                    logservice.flush()
-                    tasks_backup_job.status = 'error'
-                    tasks_backup_job.error_message = "DeadlineExceededError: " + str(e)
-                    tasks_backup_job.job_progress_timestamp = datetime.datetime.now()
-                    tasks_backup_job.put()
-                
-                except Exception, e:
-                    logging.exception(fn_name + "Exception:") 
-                    logservice.flush()
-                    tasks_backup_job.status = 'error'
-                    tasks_backup_job.error_message = "Exception: " + str(e)
-                    tasks_backup_job.job_progress_timestamp = datetime.datetime.now()
-                    tasks_backup_job.put()
-                
-                end_time = datetime.datetime.now()
-                process_time = end_time - start_time
-                proc_time_str = "Processing time = " + str(process_time.seconds) + "." + str(process_time.microseconds) + " seconds"
-                logging.info(fn_name + proc_time_str)
-                logservice.flush()
-                
-                included_options_str = "Includes: Completed = %s, Deleted = %s, Hidden = %s" % (str(include_completed), str(include_deleted), str(include_hidden))
-                try:
-                    # sender = "stats@" + os.environ['APPLICATION_ID'] + ".appspotmail.com"
-                    sender = "stats@" + get_application_id() + ".appspotmail.com"
-                    subject = "[" + get_application_id() + "] " + summary_msg
-                    #logging.info(fn_name + "Send stats email from " + sender)
-                    mail.send_mail(sender=sender,
-                        to="Julie.Smith.1999@gmail.com",
-                        subject=subject,
-                        body="Started: %s UTC\nFinished: %s UTC\n%s\n%s\n%s" % (str(start_time), str(end_time), proc_time_str, breakdown_msg, included_options_str ))
-                except Exception, e:
-                    logging.exception(fn_name + "Unable to send email")
-                  
-
-                
+                if tasks_backup_job == 'import':
+                    self.import_tasks(credentials, is_test_user, tasks_backup_job)
+                else:
+                    self.export_tasks(credentials, is_test_user, tasks_backup_job)
                 # logging.info(fn_name + "Finished processing. Total progress = " + 
                     # str(tasks_backup_job.total_progress) + " for " + str(user_email))
         else:
@@ -455,9 +220,349 @@ class CreateBackupWorker(webapp.RequestHandler):
             
         logging.debug(fn_name + "<End>, user = " + str(user_email))
         logservice.flush()
+
+    def export_tasks(credentials, is_test_user, tasks_backup_job):
+        fn_name = "export_tasks: "
+        logging.debug(fn_name + "<Start>")
+        logservice.flush()
+        
+        # TODO: Import tasks
+        logging.error(fn_name + "TODO: Import tasks")
+        logservice.flush()
+        
+        logging.debug(fn_name + "<End>")
+        logservice.flush()
+        
+        
+    def export_tasks(credentials, is_test_user, tasks_backup_job):
+        fn_name = "export_tasks: "
+        logging.debug(fn_name + "<Start>")
+        logservice.flush()
+        
+        include_hidden = tasks_backup_job.include_hidden
+        include_completed = tasks_backup_job.include_completed
+        include_deleted = tasks_backup_job.include_deleted
+        
+        
+        # Retrieve all tasks for the user
+        try:
+
+            logging.info(fn_name + "include_hidden = " + str(include_hidden) +
+                ", include_completed = " + str(include_completed) +
+                ", include_deleted = " + str(include_deleted))
+            logservice.flush()
+            
+            #logging.debug(fn_name + "setting up http")
+            http = httplib2.Http()
+            http = credentials.authorize(http)
+            service = discovery.build("tasks", "v1", http)
+            
+            # Services to retrieve tasklists and tasks
+            #logging.debug(fn_name + "Setting up services to retrieve tasklists and tasks")
+            tasklists_svc = service.tasklists()
+            tasks_svc = service.tasks() 
+            
+            
+            
+            # ##############################################
+            # FLOW
+            # ----------------------------------------------
+            # For each page of taskslists
+            #   For each tasklist
+            #     For each page of tasks
+            #       For each task
+            #         Fix date format
+            #       Add tasks to tasklist collection
+            #     Add tasklist to tasklists collection
+            # Use tasklists collection to return tasks backup to user
+            
+            # This list will contain zero or more tasklist dictionaries, which each contain tasks
+            tasklists = [] 
+            
+            total_num_tasklists = 0
+            total_num_tasks = 0
+            tasks_per_list = []
+            
+            # ---------------------------------------
+            # Retrieve all the tasklists for the user
+            # ---------------------------------------
+            logging.debug(fn_name + "Retrieve all the tasklists for the user")
+            logservice.flush()
+            next_tasklists_page_token = None
+            more_tasklists_data_to_retrieve = True
+            while more_tasklists_data_to_retrieve:
+                if is_test_user:
+                    logging.debug(fn_name + "calling tasklists.list().execute() to create tasklists list")
+                    logservice.flush()
+            
+                retry_count = 3
+                while retry_count > 0:
+                  try:
+                    if next_tasklists_page_token:
+                       tasklists_data = tasklists_svc.list(pageToken=next_tasklists_page_token).execute()
+                    else:
+                       tasklists_data = tasklists_svc.list().execute()
+                    # Successfully retrieved data, so break out of retry loop
+                    break
+                  except Exception, e:
+                    retry_count = retry_count - 1
+                    if retry_count > 0:
+                        logging.warning(fn_name + "Error retrieving list of tasklists. " + 
+                            str(retry_count) + " retries remaining")
+                        logservice.flush()
+                    else:
+                        logging.exception(fn_name + "Still error retrieving list of tasklists after retries. Giving up")
+                        logservice.flush()
+                        raise e
+            
+                if is_test_user and settings.DUMP_DATA:
+                    logging.debug(fn_name + "tasklists_data ==>")
+                    logging.debug(tasklists_data)
+                    logservice.flush()
+
+                if tasklists_data.has_key(u'items'):
+                  tasklists_list = tasklists_data[u'items']
+                else:
+                  # If there are no tasklists, then there will be no 'items' element. This could happen if
+                  # the user has deleted all their tasklists. Not sure if this is even possible, but
+                  # checking anyway, since it is possible to have a tasklist without 'items' (see issue #9)
+                  logging.warning(fn_name + "User has no tasklists.")
+                  logservice.flush()
+                  tasklists_list = []
+              
+                # tasklists_list is a list containing the details of the user's tasklists. 
+                # We are only interested in the title
+              
+                # if is_test_user and settings.DUMP_DATA:
+                    # logging.debug(fn_name + "tasklists_list ==>")
+                    # logging.debug(tasklists_list)
+
+
+                # ---------------------------------------
+                # Process all the tasklists for this user
+                # ---------------------------------------
+                for tasklist_data in tasklists_list:
+                    total_num_tasklists = total_num_tasklists + 1
+                  
+                    if is_test_user and settings.DUMP_DATA:
+                        logging.debug(fn_name + "tasklist_data ==>")
+                        logging.debug(tasklist_data)
+                        logservice.flush()
+                  
+                    """
+                        Example of a tasklist entry;
+                            u'id': u'MDAxNTkzNzU0MzA0NTY0ODMyNjI6MDow',
+                            u'kind': u'tasks#taskList',
+                            u'selfLink': u'https://www.googleapis.com/tasks/v1/users/@me/lists/MDAxNTkzNzU0MzA0NTY0ODMyNjI6MDow',
+                            u'title': u'Default List',
+                            u'updated': u'2012-01-28T07:30:18.000Z'},
+                    """ 
+               
+                    tasklist_title = tasklist_data[u'title']
+                    tasklist_id = tasklist_data[u'id']
+                  
+                    if is_test_user and settings.DUMP_DATA:
+                        logging.debug(fn_name + "Process all the tasks in " + str(tasklist_title))
+                        logservice.flush()
+                            
+                    # Process all the tasks in this task list
+                    tasklist_dict, num_tasks = self.get_tasks_in_tasklist(tasks_svc, tasklist_title, tasklist_id, is_test_user,
+                        tasks_backup_job, include_hidden, include_completed, include_deleted)
+                    # Track number of tasks per tasklist
+                    tasks_per_list.append(num_tasks)
+                    
+                    total_num_tasks = total_num_tasks + num_tasks
+                    tasks_backup_job.total_progress = total_num_tasks
+                    tasks_backup_job.tasklist_progress = 0 # Because total_progress now includes num_tasks for current tasklist
+                    tasks_backup_job.job_progress_timestamp = datetime.datetime.now()
+                    tasks_backup_job.put()
+                    
+                    # if is_test_user:
+                        # logging.debug(fn_name + "Adding %d tasks to tasklist" % len(tasklist_dict[u'tasks']))
+                        
+                    # Add the data for this tasklist (including all the tasks) into the collection of tasklists
+                    tasklists.append(tasklist_dict)
+              
+                # Check if there is another page of tasklists to be retrieved
+                if tasklists_data.has_key('nextPageToken'):
+                    # There is another page of tasklists to be retrieved for this user, 
+                    # which we'll retrieve next time around the while loop.
+                    # This happens if there is more than 1 page of tasklists.
+                    # It seems that each page contains 20 tasklists.
+                    more_tasklists_data_to_retrieve = True # Go around while loop again
+                    next_tasklists_page_token = tasklists_data['nextPageToken']
+                    # if is_test_user:
+                        # logging.debug(fn_name + "There is (at least) one more page of tasklists to be retrieved")
+                else:
+                    # This is the last (or only) page of results (list of tasklists)
+                    more_tasklists_data_to_retrieve = False
+                    next_tasklists_page_token = None
+                  
+            # *** end while more_tasks_data_to_retrieve ***
+            
+            # These values are also sent by email at the end of this method
+            summary_msg = "Retrieved %d tasks from %d tasklists" % (total_num_tasks, total_num_tasklists)
+            breakdown_msg = "Tasks per list: " + str(tasks_per_list)
+            logging.info(fn_name + summary_msg + " - " + breakdown_msg)
+            logservice.flush()
+            
+            # ------------------------------------------------------
+            #   Store the data, so we can return it to the user
+            # ------------------------------------------------------
+              
+
+            """
+                Structure used in Django CSV templates
+                    {% for tasklist in tasklists %}
+                        {% for task in tasklist.tasks %}
+                        
+                Structure to pass to django
+                {
+                    "now": datetime.datetime.now(),  # Timestamp for the creation of this report/backup
+                    "tasklists": [ tasklist ]        # List of tasklist items
+                }
+
+                structure of tasklist
+                { 
+                    "title" : tasklist.title,        # Name of this tasklist
+                    "tasks"  : [ task ]              # List of task items in this tasklist
+                }
+
+                structure of task
+                {
+                    "title" : title, # Free text
+                    "status" : status, # "completed" | "needsAction"
+                    "id" : id, # Used when determining parent-child relationships
+                    "parent" : parent, # OPT: ID of the parent of this task (only if this is a sub-task)
+                    "notes" : notes, # OPT: Free text
+                    "due" : due, # OPT: Date due, e.g. 2012-01-30T00:00:00.000Z NOTE time = 0
+                    "updated" : updated, # Timestamp, e.g., 2012-01-26T07:47:18.000Z
+                    "completed" : completed # Timestamp, e.g., 2012-01-27T10:38:56.000Z
+                }
+
+            """
+            
+            # Delete existing backup data records
+            tasklist_data_records = model.TasklistsData.gql("WHERE ANCESTOR IS :1",
+                                                        db.Key.from_path(settings.DB_KEY_TASKS_BACKUP_DATA, user_email))
+
+            num_records = tasklist_data_records.count()
+            logging.debug(fn_name + "Deleting " + str(num_records) + " old blobs")
+            logservice.flush()
+            
+            for tasklists_data_record in tasklist_data_records:
+                tasklists_data_record.delete()
+
+            
+            # logging.debug(fn_name + "Pickling tasks data ...")
+            pickled_tasklists = pickle.dumps(tasklists)
+            # logging.debug(fn_name + "Pickled data size = " + str(len(pickled_tasklists)))
+            data_len = len(pickled_tasklists)
+            
+            # Multiply by 1.0 float value so that we can use ceiling to find number of Blobs required
+            num_of_blobs = int(math.ceil(data_len * 1.0 / settings.MAX_BLOB_SIZE))
+            logging.debug(fn_name + "Calculated " + str(num_of_blobs) + " blobs required to store " + str(data_len) + " bytes")
+            logservice.flush()
+            
+            try:
+                for i in range(num_of_blobs):
+                    # Write backup data records
+                    tasklist_rec = model.TasklistsData(db.Key.from_path(settings.DB_KEY_TASKS_BACKUP_DATA, user_email))
+                    slice_start = int(i*settings.MAX_BLOB_SIZE)
+                    slice_end = int((i+1)*settings.MAX_BLOB_SIZE)
+                    # logging.debug(fn_name + "Creating part " + str(i+1) + " of " + str(num_of_blobs) + 
+                        # " using slice " + str(slice_start) + " to " + str(slice_end))
+                    
+                    pkl_part = pickled_tasklists[slice_start : slice_end]
+                    tasklist_rec.pickled_tasks_data = pkl_part
+                    tasklist_rec.idx = i
+                    tasklist_rec.put()
+                    
+                # logging.debug(fn_name + "Marking backup job complete")
+                
+                # Mark backup completed
+                tasks_backup_job.status = 'completed'
+                tasks_backup_job.job_progress_timestamp = datetime.datetime.now()
+                tasks_backup_job.put()
+                logging.info(fn_name + "Marked job complete for " + str(user_email) + ", with progress = " + 
+                    str(tasks_backup_job.total_progress))
+                logservice.flush()
+            except apiproxy_errors.RequestTooLargeError, e:
+                logging.exception(fn_name + "Error putting results in DB")
+                logservice.flush()
+                tasks_backup_job.status = 'error'
+                tasks_backup_job.error_message = "Tasklists data is too large - Unable to store tasklists in DB: " + str(e)
+                tasks_backup_job.job_progress_timestamp = datetime.datetime.now()
+                tasks_backup_job.put()
+            
+            except Exception, e:
+                logging.exception(fn_name + "Error putting results in DB")
+                logservice.flush()
+                tasks_backup_job.status = 'error'
+                tasks_backup_job.error_message = "Unable to store tasklists in DB: " + str(e)
+                tasks_backup_job.job_progress_timestamp = datetime.datetime.now()
+                tasks_backup_job.put()
+
+
+              
+              
+
+        except urlfetch_errors.DeadlineExceededError, e:
+            logging.exception(fn_name + "urlfetch_errors.DeadlineExceededError:")
+            logservice.flush()
+            tasks_backup_job.status = 'error'
+            tasks_backup_job.error_message = "urlfetch_errors.DeadlineExceededError: " + str(e)
+            tasks_backup_job.job_progress_timestamp = datetime.datetime.now()
+            tasks_backup_job.put()
+      
+        except apiproxy_errors.DeadlineExceededError, e:
+            logging.exception(fn_name + "apiproxy_errors.DeadlineExceededError:")
+            logservice.flush()
+            tasks_backup_job.status = 'error'
+            tasks_backup_job.error_message = "apiproxy_errors.DeadlineExceededError: " + str(e)
+            tasks_backup_job.job_progress_timestamp = datetime.datetime.now()
+            tasks_backup_job.put()
+        
+        except DeadlineExceededError, e:
+            logging.exception(fn_name + "DeadlineExceededError:")
+            logservice.flush()
+            tasks_backup_job.status = 'error'
+            tasks_backup_job.error_message = "DeadlineExceededError: " + str(e)
+            tasks_backup_job.job_progress_timestamp = datetime.datetime.now()
+            tasks_backup_job.put()
+        
+        except Exception, e:
+            logging.exception(fn_name + "Exception:") 
+            logservice.flush()
+            tasks_backup_job.status = 'error'
+            tasks_backup_job.error_message = "Exception: " + str(e)
+            tasks_backup_job.job_progress_timestamp = datetime.datetime.now()
+            tasks_backup_job.put()
+        
+        end_time = datetime.datetime.now()
+        process_time = end_time - start_time
+        proc_time_str = "Processing time = " + str(process_time.seconds) + "." + str(process_time.microseconds) + " seconds"
+        logging.info(fn_name + proc_time_str)
+        logservice.flush()
+        
+        included_options_str = "Includes: Completed = %s, Deleted = %s, Hidden = %s" % (str(include_completed), str(include_deleted), str(include_hidden))
+        try:
+            # sender = "stats@" + os.environ['APPLICATION_ID'] + ".appspotmail.com"
+            sender = "stats@" + get_application_id() + ".appspotmail.com"
+            subject = "[" + get_application_id() + "] " + summary_msg
+            #logging.info(fn_name + "Send stats email from " + sender)
+            mail.send_mail(sender=sender,
+                to="Julie.Smith.1999@gmail.com",
+                subject=subject,
+                body="Started: %s UTC\nFinished: %s UTC\n%s\n%s\n%s" % (str(start_time), str(end_time), proc_time_str, breakdown_msg, included_options_str ))
+        except Exception, e:
+            logging.exception(fn_name + "Unable to send email")
+
+        logging.debug(fn_name + "<End>")
+        logservice.flush()
+            
     
-    
-    def GetTasksInTasklist(self, tasks_svc, tasklist_title, tasklist_id, is_test_user, tasks_backup_job, 
+    def get_tasks_in_tasklist(self, tasks_svc, tasklist_title, tasklist_id, is_test_user, tasks_backup_job, 
                            include_hidden, include_completed, include_deleted):
         """ Returns all the tasks in the tasklist 
         
@@ -478,7 +583,7 @@ class CreateBackupWorker(webapp.RequestHandler):
                 'tasks' is a list. Each element in the list is dictionary representing 1 task
               number of tasks
         """        
-        fn_name = "CreateBackupHandler.GetTasksInTasklist(): "
+        fn_name = "CreateBackupHandler.get_tasks_in_tasklist(): "
         
         
         tasklist_dict = {} # Blank dictionary for this tasklist
@@ -646,6 +751,7 @@ class CreateBackupWorker(webapp.RequestHandler):
         return tasklist_dict, num_tasks
         
 
+        
 def urlfetch_timeout_hook(service, call, request, response):
     if call != 'Fetch':
         return
@@ -664,7 +770,7 @@ def real_main():
     apiproxy_stub_map.apiproxy.GetPreCallHooks().Append(
         'urlfetch_timeout_hook', urlfetch_timeout_hook, 'urlfetch')
     run_wsgi_app(webapp.WSGIApplication([
-        ('/worker', CreateBackupWorker),
+        (settings.WORKER_URL, ProcessTasksWorker),
     ], debug=True))
     logging.debug("main(): <End>")
 
@@ -683,7 +789,7 @@ def profile_main():
     stats.print_callers()
     logging.info("Profile data:\n%s", stream.getvalue())
     
-main = profile_main
+main = real_main
 
 if __name__ == '__main__':
     main()

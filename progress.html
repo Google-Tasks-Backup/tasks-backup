@@ -11,6 +11,13 @@ This is the Django template used by test-taskqueue.py
         
         <title>{{ app_title }}</title>
         <link rel="stylesheet" type="text/css" href="tasks_backup.css"></link>
+        
+        <script language="javascript" type="text/javascript" src="datetimepicker.js">
+            //Date Time Picker script- by TengYong Ng of http://www.rainforestnet.com
+            //Script featured on JavaScript Kit (http://www.javascriptkit.com)
+            //For this script, visit http://www.javascriptkit.com 
+        </script>
+        
         <script type="text/javascript">
 
             function disableDisplayHtmlButton() {
@@ -24,22 +31,62 @@ This is the Django template used by test-taskqueue.py
                 document.getElementById("retrieve-tasks-button").disabled = true;
             }
             
-            function changeDimCompletedButton() {
-                if (document.getElementById("only_display_due_tasks").checked) {
+            function changeCompletedSuboptions() {
+                if (document.getElementById("display_completed_tasks").checked) 
+                {
+                    document.getElementById("dim_completed_tasks").checked = true; // Default
+                    document.getElementById("dim_completed_tasks").disabled = false;
+                    document.getElementById("display_completed_date_field").checked = true;
+                    document.getElementById("display_completed_date_field").disabled = false;
+                } else {
                     document.getElementById("dim_completed_tasks").checked = false;
                     document.getElementById("dim_completed_tasks").disabled = true;
-                } else {
-                    document.getElementById("dim_completed_tasks").disabled = false;
+                    document.getElementById("display_completed_date_field").checked = false;
+                    document.getElementById("display_completed_date_field").disabled = true;
                 }
+            }
+            
+            function changeCompletedOptions() {
+                if (document.getElementById("due_selection_any_due").checked ||
+                    document.getElementById("due_selection_due_now").checked ||
+                    document.getElementById("due_selection_overdue").checked)
+                {
+                    e = false;
+                } else {
+                    e = true;
+                }
+                document.getElementById("display_completed_tasks").checked = e;
+                changeCompletedSuboptions();
+//                document.getElementById("dim_completed_tasks").checked = e;
+//                document.getElementById("display_completed_date_field").checked = e;
+        }
+            
+            function changeDisplayCompleted() {
+                if (document.getElementById("dim_completed_tasks").checked ||
+                    document.getElementById("display_completed_date_field").checked) 
+                {
+                    document.getElementById("display_completed_tasks").checked = true;
+                }
+            }
+            
+            function setDateFields(day, month, year) {
+                document.getElementById("due_year").value = year;
+                document.getElementById("due_month").value = month + 1; // JS Months are 0-11
+                document.getElementById("due_day").value = day;
+                yearStr = "0000" + year.toString();
+                yearStr = yearStr.substring(yearStr.length - 4);
+                monthStr = "00" + (month + 1).toString();
+                monthStr = monthStr.substring(monthStr.length -2);
+                dayStr = "00" + day.toString();
+                dayStr = dayStr.substring(dayStr.length - 2);
+                document.getElementById("due_date").innerHTML = yearStr + "-" + monthStr + "-" + dayStr;
             }
             
             function setCurrentDueDate() {
                 // Set the current date, which is used when displaying current due tasks.
                 // We take the date from the browser, so that the due date is today in the user's current timezone is used
                 var today = new Date();
-                document.getElementById("due_year").value = today.getFullYear();
-                document.getElementById("due_month").value = today.getMonth() + 1; // JS Months are 0-11
-                document.getElementById("due_day").value = + today.getDate();
+                setDateFields(today.getDate(), today.getMonth(), today.getFullYear());
             }
         
         </script>
@@ -58,7 +105,7 @@ This is the Django template used by test-taskqueue.py
         </script>
     </head>
 
-<body onload="setCurrentDueDate()" > 
+<body onload="changeCompletedSuboptions(); changeCompletedOptions(); changeDisplayCompleted(); setCurrentDueDate()" > 
     <div class="usertitle">
         Authorised user: {{ user_email }} <span class="logout-link">[ <a href="{{ logout_url }}">Log out</a> ]</span>
     </div>
@@ -67,7 +114,7 @@ This is the Django template used by test-taskqueue.py
 
     <noscript>
         <br />
-        <h3>Javascript must be enabled for maximum application functionality</h3>
+        <h3>Javascript must be enabled for full application functionality</h3>
         <br />
     </noscript>
     
@@ -151,6 +198,7 @@ This is the Django template used by test-taskqueue.py
         
         <!-- Choose format to return backup data -->
         <form method="POST" action="{{ results_url }}" >
+        
 			<fieldset>
 				<legend>Export all tasks</legend>
 				<table class="format-selection">
@@ -158,7 +206,15 @@ This is the Django template used by test-taskqueue.py
 					<col width="80%">-->
 					<tr>
 						<td class="format-name">
-							<input type="radio" name="format" value="outlook" checked="checked" /> Outlook CSV<br />
+							<input type="radio" name="format" value="import_export" checked="checked" /> Import/Export CSV<br />
+						</td>
+						<td>
+							CSV formatted for importing back into {{ app_title }} (e.g. as a backup, or when transferring tasks to another Google account).
+						</td>
+					</tr>
+					<tr>
+						<td class="format-name">
+							<input type="radio" name="format" value="outlook" /> Outlook CSV<br />
 						</td>
 						<td>
 							CSV file suitable for importing into Outlook.
@@ -201,7 +257,7 @@ This is the Django template used by test-taskqueue.py
 							<input type="radio" name="format" value="RTM" /> RTM email<br />
 						</td>
 						<td>
-							Emails tasks in Remember The Milk format. 
+							Email tasks in Remember The Milk format. 
                             <span class="take-note-smaller">(<a href="#notes">Notes</a> 1, 2 &amp; 3)</span>
 						</td>
 					</tr>
@@ -217,75 +273,115 @@ This is the Django template used by test-taskqueue.py
         
 
         <form method="POST" action="{{ results_url }}" onsubmit="disableDisplayHtmlButton();" >
+        
             <input type="hidden" name="format" value="html_raw" />
             <input type="hidden" name="job_start_timestamp" value="{{ job_start_timestamp }}" />
             
-            <!-- These values are set by setCurrentDueDate() on page load, but they could also be set by the user if required -->
+            <!-- These values are set by setDateFields(), which is originally called by setCurrentDueDate() on page load.
+                 setDateFields() is also called when the user clicks on a date the date picker form.
+            -->
             <input type="hidden" id="due_year" name="due_year" value="0001" />
             <input type="hidden" id="due_month" name="due_month" value="1" />
             <input type="hidden" id="due_day" name="due_day" value="1" />
             
             
 			<fieldset>
-				<legend>Display all tasks as a single web page, suitable for printing <span class="take-note-smaller"> (<a href="#notes">Note</a> 4)</legend>
-				<table class="format-selection">
-                    {% if include_completed %}
- 					<tr>
-						<td>
-							<input type="checkbox" id="dim_completed_tasks" name="dim_completed_tasks" value="True" checked="checked" >
-								&nbsp;Dim completed tasks? <span class="take-note-smaller"> (<a href="#notes">Note</a> 5)</span>
-							</input>
-						</td>
-					</tr>
-                    {% endif %}
- 					<tr>
-						<td>
-							<input type="checkbox" id="only_display_due_tasks" name="only_display_due_tasks" onchange="changeDimCompletedButton();" value="True" >
-								&nbsp;Only display tasks currently due? <span class="take-note-smaller"> (<a href="#notes">Note</a> 6)</span>
-                                <noscript>
-                                <span class="take-note">Javascript must be enabled to determine current date</span>
-                                </noscript>
-							</input>
-						</td>
-					</tr>
-					<tr>
-						<td>
-							<input type="checkbox" name="display_completed_date_field" value="True" checked="checked" >
-								&nbsp;Display completed date field?
-							</input>
-						</td>
-					</tr>
-					<tr>
-						<td>
-							<input type="checkbox" name="display_due_date_field" value="True" checked="checked" >
-								&nbsp;Display due date field?
-							</input>
-						</td>
-					</tr>
-					<tr>
-						<td>
-							<input type="checkbox" name="display_updated_date_field" value="True" >
-								&nbsp;Display updated date field?
-							</input>
-						</td>
-					</tr>
-					<tr>
-						<td>
-							<input type="checkbox" name="display_invalid_tasks" value="True" >
-								&nbsp;Display invalid/corrupted tasks? (<a href="#notes">Note</a> 7)
-							</input>
-						</td>
-					</tr>
-				</table>
-				<br />
-                {% if progress >= large_list_html_warning_limit %}
-                    <div class="take-note-para">
-                    <span class="take-note">CAUTION: You have a very large number of tasks. Attempting to display the tasks page (especially if using method 1) may result in the server running out of memory and/or your browser timing out.
-                    </span>
-                    <br />
-                    You may wish to export your tasks first, before attempting to display the tasks page.
+				<legend>
+                    Display all tasks as a single web page, suitable for printing <span class="take-note-smaller"> (<a href="#notes">Note</a> 4)</span>
+                </legend>
+                <div class="format-selection">
+                    <div class="left-column">
+                        <div class="selection-column-header">
+                            Filter by due date <span id="due_date" class="due_date" onclick="javascript:NewCal('due_date')" >0001-01-01</span>&nbsp;<button type="button" onclick="javascript:NewCal('due_date')" >Choose date <img src="cal.gif" width="16" height="16" border="0" alt="Set due date filter"></button>&nbsp;or&nbsp;<button type="button" onclick="setCurrentDueDate()" >Use today</button>
+	  		
+                            </div>
+                        <noscript>
+                            <br />
+                            <span class="take-note">Javascript must be enabled to determine current date, and to enable date to be set</span>
+                            </noscript>
+                        </input>
+                        <ul class="format-selection">
+                            <li>
+                                <input id="due_selection_all" type="radio" name="due_selection" value="all" 
+                                       onchange="changeCompletedOptions();" checked="yes" />
+                                <label for="due_selection_all">All tasks</label>
+                            </li>
+                            <li>
+                                <input id="due_selection_any_due" type="radio" name="due_selection" value="any_due"
+                                       onchange="changeCompletedOptions();" />
+                                <label for="due_selection_all">Any tasks with a due date (incl future due)</label>
+                            </li>
+                            <li>
+                                <input id="due_selection_due_now" type="radio" name="due_selection" value="due_now"
+                                       onchange="changeCompletedOptions();" />
+                                <label for="due_selection_all">Tasks due on or before selected date</label>
+                            </li>
+                            <li>
+                                <input id="due_selection_overdue" type="radio" name="due_selection" value="overdue" 
+                                       onchange="changeCompletedOptions();" />
+                                <label for="due_selection_all">Overdue only(due before selected data)</label>
+                            </li>
+                        </ul>
+                        <div class="selection-column-header">Other task filters</div>
+                        <ul class="format-selection">
+                            <li>
+                                <input type="checkbox" name="display_invalid_tasks" value="True" >
+                                    &nbsp;Display invalid/corrupted tasks? <span class="take-note-smaller">(<a href="#notes">Note</a> 7)</span>
+                                </input>
+                            </li>
+                        </ul>
                     </div>
-                {% endif %}
+                    
+                    <div class="right-column">
+                        <div class="selection-column-header">Display options</div>
+                        <ul class="format-selection">
+                            {% if include_completed %}
+                            <li>
+                                <input type="checkbox" id="display_completed_tasks" name="display_completed_tasks" value="True" 
+                                       checked="checked"  onchange="changeCompletedSuboptions();">
+                                    &nbsp;Display completed tasks? <span class="take-note-smaller"> (<a href="#notes">Note</a> 5)</span>
+                                </input>
+                            </li>
+                            <li>
+                                <ul class="format-selection sub-list">
+                                <li>
+                                    <input type="checkbox" id="dim_completed_tasks" name="dim_completed_tasks" value="True" 
+                                           onchange="changeDisplayCompleted();" checked="checked" >
+                                        &nbsp;Dim completed tasks? <span class="take-note-smaller"> (<a href="#notes">Note</a> 5)</span>
+                                    </input>
+                                </li>
+                                <li>
+                                    <input type="checkbox" id="display_completed_date_field" name="display_completed_date_field" value="True"  
+                                           onchange="changeDisplayCompleted();" checked="checked" >
+                                        &nbsp;Display completed date field?
+                                    </input>
+                                </li>
+                                </ul>
+                            </li>
+                            {% endif %}
+                            <li>
+                                <input type="checkbox" name="display_due_date_field" value="True" checked="checked" >
+                                    &nbsp;Display due date field?
+                                </input>
+                            </li>
+                            <li>
+                                <input type="checkbox" name="display_updated_date_field" value="True" >
+                                    &nbsp;Display updated date field?
+                                </input>
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+				<br />
+                
+                    <div class="take-note-para end-columns">
+                    {% if progress >= large_list_html_warning_limit %}
+                        <span class="take-note">CAUTION: You have a very large number of tasks. Attempting to display the tasks page (especially if using method 1) may result in the server running out of memory and/or your browser timing out.
+                        </span>
+                        <br />
+                        You may wish to export your tasks first, before attempting to display the tasks page.
+                    {% endif %}
+                    </div>
 				<button id="display-tasks-button" type="submit" class="big-button" >Display tasks page</button>
 			</fieldset>
         </form>
@@ -301,7 +397,7 @@ This is the Django template used by test-taskqueue.py
                     Note 1 - 
                 </td>
                 <td>
-                    Attempting to email large tasklists will fail due to App Engine limits.
+                    Attempting to email large tasklists will fail due to App Engine quota limits.
                 </td>
             </tr>
             <tr>
@@ -338,14 +434,6 @@ This is the Django template used by test-taskqueue.py
                 </td>
                 <td>
                     If checked, completed tasks are displayed using a dimmed grey font. Hidden and deleted tasks are always dim.
-                </td>
-            </tr>
-            <tr>
-                <td class="note-heading-smaller">
-                    Note 6 - 
-                </td>
-                <td>
-                    If checked, only display incomplete tasks, where the due date is less than or equal to today.
                 </td>
             </tr>
             <tr>

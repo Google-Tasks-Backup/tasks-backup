@@ -44,6 +44,8 @@ from google.appengine.runtime import apiproxy_errors
 from google.appengine.runtime import DeadlineExceededError
 from google.appengine.api import urlfetch_errors
 from google.appengine.api import logservice # To flush logs
+from google.appengine.ext import blobstore
+from google.appengine.ext.webapp import blobstore_handlers
 
 logservice.AUTOFLUSH_EVERY_SECONDS = 5
 logservice.AUTOFLUSH_EVERY_BYTES = None
@@ -89,30 +91,37 @@ def _RedirectForOAuth(self, user):
     """Redirects the webapp response to authenticate the user with OAuth2."""
 
     fn_name = "_RedirectForOAuth(): "
-    client_id, client_secret, user_agent, app_title, product_name, host_msg = shared.GetSettings(self.request.host)
+    
+    try:
+        client_id, client_secret, user_agent, app_title, product_name, host_msg = shared.GetSettings(self.request.host)
 
-    flow = client.OAuth2WebServerFlow(
-        client_id=client_id,
-        client_secret=client_secret,
-        scope="https://www.googleapis.com/auth/tasks",
-        user_agent=user_agent,
-        xoauth_displayname=product_name,
-        state=self.request.path_qs)
+        flow = client.OAuth2WebServerFlow(
+            client_id=client_id,
+            client_secret=client_secret,
+            scope="https://www.googleapis.com/auth/tasks",
+            user_agent=user_agent,
+            xoauth_displayname=product_name,
+            state=self.request.path_qs)
 
-    callback = self.request.relative_url("/oauth2callback")
-    authorize_url = flow.step1_get_authorize_url(callback)
-    memcache.set(user.user_id(), pickle.dumps(flow))
-    logging.debug(fn_name + "Redirecting to " + str(authorize_url))
-    if self.request.cookies.has_key('auth_count'):
-        auth_count = int(self.request.cookies['auth_count'])
-    else:
-        auth_count = 0
-    auth_count_str = str(auth_count + 1)
-    logging.debug(fn_name + "Writing cookie: auth_count = " + auth_count_str)
-    logservice.flush()
-    _set_cookie(self.response, 'auth_count', auth_count_str, max_age=120)        
+        callback = self.request.relative_url("/oauth2callback")
+        authorize_url = flow.step1_get_authorize_url(callback)
+        memcache.set(user.user_id(), pickle.dumps(flow))
+        logging.debug(fn_name + "Redirecting to " + str(authorize_url))
+        if self.request.cookies.has_key('auth_count'):
+            auth_count = int(self.request.cookies['auth_count'])
+        else:
+            auth_count = 0
+        auth_count_str = str(auth_count + 1)
+        logging.debug(fn_name + "Writing cookie: auth_count = " + auth_count_str)
+        logservice.flush()
+        _set_cookie(self.response, 'auth_count', auth_count_str, max_age=120)        
 
-    self.redirect(authorize_url)
+        self.redirect(authorize_url)
+    except Exception, e:
+        logging.exception(fn_name + "Caught top-level exception")
+        self.response.out.write("""Sorry, something went terribly wrong.<br />%s<br />Please report this error to <a href="http://code.google.com/p/tasks-backup/issues/list">code.google.com/p/tasks-backup/issues/list</a>""" % str(e))
+        logging.debug(fn_name + "<End> due to exception" )
+        logservice.flush()
 
   
 def _GetCredentials():
@@ -137,8 +146,222 @@ def _GetCredentials():
       credentials = None
 
   return user, credentials
+
   
+def _serveRetryPage(self, msg):
+    """ Serve retry.html page to user with message, and a Back button """
+    fn_name = "_serveRetryPage: "
+
+    logging.debug(fn_name + "<Start>")
+    logservice.flush()
+    
+    try:
+        client_id, client_secret, user_agent, app_title, product_name, host_msg = shared.GetSettings(self.request.host)
+
+        logging.debug(fn_name + "Calling _GetCredentials()")
+        user, credentials = _GetCredentials()
+            
+        if user:
+            user_email = user.email()
+        
+        
+        path = os.path.join(os.path.dirname(__file__), "retry.html")
+        if not credentials or credentials.invalid:
+            is_authorized = False
+        else:
+            is_authorized = True
+
+          
+        template_values = {'app_title' : app_title,
+                           'host_msg' : host_msg,
+                           'home_page_url' : settings.HOME_PAGE_URL,
+                           'product_name' : product_name,
+                           'is_authorized': is_authorized,
+                           'user_email' : user_email,
+                           'start_backup_url' : settings.START_BACKUP_URL,
+                           'msg': msg,
+                           'logout_url': users.create_logout_url('/'),
+                           'url_discussion_group' : settings.url_discussion_group,
+                           'email_discussion_group' : settings.email_discussion_group,
+                           'url_issues_page' : settings.url_issues_page,
+                           'url_source_code' : settings.url_source_code,
+                           'app_version' : appversion.version,
+                           'upload_timestamp' : appversion.upload_timestamp}
+        self.response.out.write(template.render(path, template_values))
+        logging.debug(fn_name + "<End>" )
+        logservice.flush()
+    except Exception, e:
+        logging.exception(fn_name + "Caught top-level exception")
+        self.response.out.write("""Sorry, something went terribly wrong.<br />%s<br />Please report this error to <a href="http://code.google.com/p/tasks-backup/issues/list">code.google.com/p/tasks-backup/issues/list</a>""" % str(e))
+        logging.debug(fn_name + "<End> due to exception" )
+        logservice.flush()
+    
+
+class GetNewBlobstoreUrlHandler(webapp.RequestHandler):
+    """ Provides a new Blobstore URL. 
+        This is used when the user submits a file from an HTML form.
+        We don't fill in a Blobstore URL when we build the page, because the URL can expire.
+        
+        Google provides a unique URL to allow the user to upload the contents of large files. 
+        The file contents are then accessible to the applicion through a unique Blobstore key.
+    """
+    
+    def get(self):
+        """ Return a new Blobstore URL, as a string """
+        upload_url = blobstore.create_upload_url(settings.BLOBSTORE_UPLOAD_URL)
+        self.response.out.write(upload_url)
+
+
+class BlobstoreUploadHandler(blobstore_handlers.BlobstoreUploadHandler):
+    def post(self):
+        fn_name = "BlobstoreUploadHandler.post(): "
+        
+        logging.debug(fn_name + "<Start>")
+        logservice.flush()
+        
+        try:
+            client_id, client_secret, user_agent, app_title, product_name, host_msg = shared.GetSettings(self.request.host)
+
+            logging.debug(fn_name + "Calling _GetCredentials()")
+            user, credentials = _GetCredentials()
+                
+            if user:
+                user_email = user.email()
+            
+            upload_files = self.get_uploads('file') # 'file' is the name of the file upload field in the form
+            if upload_files:
+                blob_info = upload_files[0]
+                logging.debug(fn_name + "key = " + str(blob_info.key()) + ", filename = " + str(blob_info.filename) +
+                    ", for " + str(user_email))
+                logservice.flush()
+                
+                # Create a Taskqueue entry to start the import
+                
+                # Create a DB record, using the user's email address as the key
+                tasks_backup_job = model.TasksBackupJob(key_name=user_email)
+                tasks_backup_job.job_type = 'import'
+                tasks_backup_job.blobstore_key = str(blob_info.key())
+                tasks_backup_job.user = user
+                tasks_backup_job.credentials = credentials
+                tasks_backup_job.put()
+                
+                # Add the request to the tasks queue, passing in the user's email so that the task can access the
+                # database record
+                q = taskqueue.Queue(settings.PROCESS_TASKS_REQUEST_QUEUE_NAME)
+                t = taskqueue.Task(url=settings.BACKUP_WORKER_URL, params={settings.TASKS_QUEUE_KEY_NAME : user_email}, method='POST')
+                logging.debug(fn_name + "Adding task to " + str(settings.PROCESS_TASKS_REQUEST_QUEUE_NAME) + 
+                    " queue, for " + str(user_email))
+                logservice.flush()
+                
+                try:
+                    q.add(t)
+                except exception, e:
+                    logging.exception(fn_name + "Exception adding task to taskqueue. Redirecting to " + str(settings.PROGRESS_URL))
+                    logservice.flush()
+                    self.redirect(settings.PROGRESS_URL + "?msg=Exception%20adding%20task%20to%20taskqueue")
+                    return
+
+                logging.debug(fn_name + "Redirect to " + settings.PROGRESS_URL + " for " + str(user_email))
+                logservice.flush()
+                self.redirect(settings.PROGRESS_URL)
+                
+                # Redirect to Progress page
+                self.redirect(settings.PROGRESS_URL)
+            else:
+                _serveRetryPage(self, 'No file uploaded, please try again.')
+            logging.debug(fn_name + "<End>" )
+            logservice.flush()
+        except Exception, e:
+            logging.exception(fn_name + "Caught top-level exception")
+            self.response.out.write("""Sorry, something went terribly wrong.<br />%s<br />Please report this error to <a href="http://code.google.com/p/tasks-backup/issues/list">code.google.com/p/tasks-backup/issues/list</a>""" % str(e))
+            logging.debug(fn_name + "<End> due to exception" )
+            logservice.flush()
+
+            
+class StartImportHandler(webapp.RequestHandler):
+    """ Handler for importing tasks """
+    
   
+    def post(self):
+        """ Handles request which starts the import process. """
+        
+        fn_name = "StartImportHandler.post(): "
+       
+        logging.debug(fn_name + "<Start>")
+        logservice.flush()
+
+        try:
+            # TODO: Read data from supplied CSV file
+            # For a way of handling files >1MB,
+            #   check https://developers.google.com/appengine/docs/python/blobstore/overview
+            #   "Applications can use the Blobstore to accept large files as uploads from users and to serve those files. 
+            #    Files are called blobs once they're uploaded. Applications don't access blobs directly. 
+            #    Instead, applications work with blobs through blob info entities (represented by the BlobInfo class) in the datastore."
+            #
+            #   "Blobstore values can be served to the user, or accessed by the application in a file-like stream, using the Blobstore API."
+            #   "Note: Blobs as defined by the Blobstore service are not related to blob property values used by the datastore."
+            #   "... rewrites the request to contain the blob key, and passes it to a path in your application."
+            #       Probably can't be the URL of a worker, since worker must be started via taskqueue
+            #   "An application can read a Blobstore value a portion at a time using an API call. 
+            #    The size of the portion can be up to the maximum size of an API return value. 
+            #    This size is a little less than 32 megabytes, represented in Python by the constant google.appengine.ext.blobstore.MAX_BLOB_FETCH_SIZE 
+            #    An application cannot create or modify Blobstore values except through files uploaded by the user."
+            
+            # For each row in CSV file:
+            #   If tasklist_title != prev_tasklist.title:
+            #       Add prev_tasklist to tasklists
+            #       prev_tasklist = tasklist
+            #       Create new tasklist
+            #   Add task to tasklist
+            # Pickle tasklists
+            # Sore pickle in DB record(s)
+            # Use taskqueue to start import worker
+            # Display import progress to user
+            
+            # **** OR ****
+            
+            # Use Blobstore to get file from user to server
+            # % Assume that CSV file is ordered
+            # %  * Grouped by tasklist
+            # %  * Subtasks immediately following tasks
+            # Retrieve list of tasklists
+            #   % Handling non-unique tasklist names:
+            #   %   Rename non-unique tasklist on server? {Check that rename doesn't clash}
+            #   %   Only store ID of 1st tasklist
+            # Store in tasklist_title_dict as {'title' : 'id'}
+            # For each row in CSV file:
+            #   If tasklist_title not in tasklist_title_dict: 
+            #       Create tasklist
+            #       Add new tasklist title & ID (from tasklists.insert method) to tasklist_title_dict
+            #   Insert task into tasklist using;
+            #     tasklist_id
+            #     previous_id (id of previous sibling at same depth)
+            #     parent_id (if depth > 0)
+            #     prev_tasklist = tasklist
+            
+            # Option: Ignore duplicates
+            # Read all tasks in tasklist
+            # Sort existing tasks (in memory) by title O(n log n)
+            # Sort new tasks (in memory) by title O(n log n)
+            # Compare side-by-side O(n)
+            # Problem: Requires a lot of memory - size of existing PLUS size of new PLUS sorting overhead
+            
+            # OPTIONS:
+            #   Allow user to specify new tasklist, into which ALL tasks are inserted
+            #   Allow user to specify prefix/suffix for import tasklist names, and import tasks into new tasklists
+            #     Need to check for name clashes. Could just append YYYY-MM-DD_HH-MM-SS 
+            #       (similar to the auto-added group when inserting contacts into Google
+            
+            # CAUTIONS:
+            #   How handle multi-line notes in CSV?
+        except Exception, e:
+            logging.exception(fn_name + "Caught top-level exception")
+            self.response.out.write("""Sorry, something went terribly wrong.<br />%s<br />Please report this error to <a href="http://code.google.com/p/tasks-backup/issues/list">code.google.com/p/tasks-backup/issues/list</a>""" % str(e))
+            logging.debug(fn_name + "<End> due to exception" )
+            logservice.flush()
+    
+    
+    
 class InvalidCredentialsHandler(webapp.RequestHandler):
     """Handler for /invalidcredentials"""
 
@@ -150,37 +373,43 @@ class InvalidCredentialsHandler(webapp.RequestHandler):
         logging.debug(fn_name + "<Start>")
         logservice.flush()
         
-        # DEBUG
-        if self.request.cookies.has_key('auth_count'):
-            logging.debug(fn_name + "Cookie: auth_count = " + str(self.request.cookies['auth_count']))
-        else:
-            logging.debug(fn_name + "No auth_count cookie found")
-        logservice.flush()            
+        try:
+            # DEBUG
+            if self.request.cookies.has_key('auth_count'):
+                logging.debug(fn_name + "Cookie: auth_count = " + str(self.request.cookies['auth_count']))
+            else:
+                logging.debug(fn_name + "No auth_count cookie found")
+            logservice.flush()            
+                
+            client_id, client_secret, user_agent, app_title, product_name, host_msg = shared.GetSettings(self.request.host)
             
-        client_id, client_secret, user_agent, app_title, product_name, host_msg = shared.GetSettings(self.request.host)
-        
-        path = os.path.join(os.path.dirname(__file__), "invalid_credentials.html")
+            path = os.path.join(os.path.dirname(__file__), "invalid_credentials.html")
 
-        template_values = {  'app_title' : app_title,
-                             'app_version' : appversion.version,
-                             'upload_timestamp' : appversion.upload_timestamp,
-                             'rc' : self.request.get('rc'),
-                             'nr' : self.request.get('nr'),
-                             'err' : self.request.get('err'),
-                             'host_msg' : host_msg,
-                             'home_page_url' : settings.HOME_PAGE_URL,
-                             'product_name' : product_name,
-                             'url_discussion_group' : settings.url_discussion_group,
-                             'email_discussion_group' : settings.email_discussion_group,
-                             'url_issues_page' : settings.url_issues_page,
-                             'url_source_code' : settings.url_source_code,
-                             'logout_url': users.create_logout_url('/')}
-                     
-        self.response.out.write(template.render(path, template_values))
-        logging.debug(fn_name + "Writing cookie: Resetting auth_count cookie to zero")
-        _set_cookie(self.response, 'auth_count', '0', max_age=120)
-        logging.debug(fn_name + "<End>")
-        logservice.flush()
+            template_values = {  'app_title' : app_title,
+                                 'app_version' : appversion.version,
+                                 'upload_timestamp' : appversion.upload_timestamp,
+                                 'rc' : self.request.get('rc'),
+                                 'nr' : self.request.get('nr'),
+                                 'err' : self.request.get('err'),
+                                 'host_msg' : host_msg,
+                                 'home_page_url' : settings.HOME_PAGE_URL,
+                                 'product_name' : product_name,
+                                 'url_discussion_group' : settings.url_discussion_group,
+                                 'email_discussion_group' : settings.email_discussion_group,
+                                 'url_issues_page' : settings.url_issues_page,
+                                 'url_source_code' : settings.url_source_code,
+                                 'logout_url': users.create_logout_url('/')}
+                         
+            self.response.out.write(template.render(path, template_values))
+            logging.debug(fn_name + "Writing cookie: Resetting auth_count cookie to zero")
+            _set_cookie(self.response, 'auth_count', '0', max_age=120)
+            logging.debug(fn_name + "<End>")
+            logservice.flush()
+        except Exception, e:
+            logging.exception(fn_name + "Caught top-level exception")
+            self.response.out.write("""Sorry, something went terribly wrong.<br />%s<br />Please report this error to <a href="http://code.google.com/p/tasks-backup/issues/list">code.google.com/p/tasks-backup/issues/list</a>""" % str(e))
+            logging.debug(fn_name + "<End> due to exception" )
+            logservice.flush()
         
         
 class MainHandler(webapp.RequestHandler):
@@ -194,74 +423,81 @@ class MainHandler(webapp.RequestHandler):
         logging.debug(fn_name + "<Start> (app version %s)" %appversion.version )
         logservice.flush()
         
-        # DEBUG
-        if self.request.cookies.has_key('auth_count'):
-            logging.debug(fn_name + "Cookie: auth_count = " + str(self.request.cookies['auth_count']))
-        else:
-            logging.debug(fn_name + "No auth_count cookie found")
-        logservice.flush()            
-            
-        client_id, client_secret, user_agent, app_title, product_name, host_msg = shared.GetSettings(self.request.host)
-
-        logging.debug(fn_name + "Calling _GetCredentials()")
-        user, credentials = _GetCredentials()
-            
-        if user:
-            user_email = user.email()
-        
-        if shared.isTestUser(user_email):
-            logging.debug(fn_name + "Started by test user %s" % user_email)
-            
-            try:
-                headers = self.request.headers
-                for k,v in headers.items():
-                    logging.debug(fn_name + "browser header: " + str(k) + " = " + str(v))
-                    
-            except Exception, e:
-                logging.exception(fn_name + "Exception retrieving request headers")
+        try:
+            # DEBUG
+            if self.request.cookies.has_key('auth_count'):
+                logging.debug(fn_name + "Cookie: auth_count = " + str(self.request.cookies['auth_count']))
+            else:
+                logging.debug(fn_name + "No auth_count cookie found")
+            logservice.flush()            
                 
-        # # Log and flush before starting operation which may cause memory limit exceeded error
-        # logging.debug(fn_name + "building template")
-        # logservice.flush() 
-        
-        path = os.path.join(os.path.dirname(__file__), "index.html")
-        if not credentials or credentials.invalid:
-            is_authorized = False
-        else:
-            is_authorized = True
-            logging.debug(fn_name + "Resetting auth_count cookie to zero")
-            logservice.flush()
-            _set_cookie(self.response, 'auth_count', '0', max_age=120)
-            if self.request.host in settings.LIMITED_ACCESS_SERVERS:
-                logging.debug(fn_name + "Running on limited-access server")
-                if not shared.isTestUser(user_email):
-                    logging.info(fn_name + "Rejecting non-test user on limited access server")
-                    self.response.out.write("<h2>This is a test server. Access is limited to test users.</h2>")
-                    logging.debug(fn_name + "<End> (restricted access)" )
-                    logservice.flush()
-                    return
+            client_id, client_secret, user_agent, app_title, product_name, host_msg = shared.GetSettings(self.request.host)
 
-          
-        template_values = {'app_title' : app_title,
-                           'host_msg' : host_msg,
-                           'home_page_url' : settings.HOME_PAGE_URL,
-                           'product_name' : product_name,
-                           'is_authorized': is_authorized,
-                           'user_email' : user_email,
-                           'start_backup_url' : settings.START_BACKUP_URL,
-                           'msg': self.request.get('msg'),
-                           'logout_url': users.create_logout_url('/'),
-                           'url_discussion_group' : settings.url_discussion_group,
-                           'email_discussion_group' : settings.email_discussion_group,
-                           'url_issues_page' : settings.url_issues_page,
-                           'url_source_code' : settings.url_source_code,
-                           'app_version' : appversion.version,
-                           'upload_timestamp' : appversion.upload_timestamp}
-        self.response.out.write(template.render(path, template_values))
-        # logging.debug(fn_name + "Calling garbage collection")
-        # gc.collect()
-        logging.debug(fn_name + "<End>" )
-        logservice.flush()
+            logging.debug(fn_name + "Calling _GetCredentials()")
+            user, credentials = _GetCredentials()
+                
+            if user:
+                user_email = user.email()
+            
+            if shared.isTestUser(user_email):
+                logging.debug(fn_name + "Started by test user %s" % user_email)
+                
+                try:
+                    headers = self.request.headers
+                    for k,v in headers.items():
+                        logging.debug(fn_name + "browser header: " + str(k) + " = " + str(v))
+                        
+                except Exception, e:
+                    logging.exception(fn_name + "Exception retrieving request headers")
+                    
+            # # Log and flush before starting operation which may cause memory limit exceeded error
+            # logging.debug(fn_name + "building template")
+            # logservice.flush() 
+            
+            path = os.path.join(os.path.dirname(__file__), "index.html")
+            if not credentials or credentials.invalid:
+                is_authorized = False
+            else:
+                is_authorized = True
+                logging.debug(fn_name + "Resetting auth_count cookie to zero")
+                logservice.flush()
+                _set_cookie(self.response, 'auth_count', '0', max_age=120)
+                if self.request.host in settings.LIMITED_ACCESS_SERVERS:
+                    logging.debug(fn_name + "Running on limited-access server")
+                    if not shared.isTestUser(user_email):
+                        logging.info(fn_name + "Rejecting non-test user on limited access server")
+                        self.response.out.write("<h2>This is a test server. Access is limited to test users.</h2>")
+                        logging.debug(fn_name + "<End> (restricted access)" )
+                        logservice.flush()
+                        return
+
+              
+            template_values = {'app_title' : app_title,
+                               'host_msg' : host_msg,
+                               'home_page_url' : settings.HOME_PAGE_URL,
+                               'new_blobstore_url' : settings.GET_NEW_BLOBSTORE_URL,
+                               'product_name' : product_name,
+                               'is_authorized': is_authorized,
+                               'user_email' : user_email,
+                               'start_backup_url' : settings.START_BACKUP_URL,
+                               'msg': self.request.get('msg'),
+                               'logout_url': users.create_logout_url('/'),
+                               'url_discussion_group' : settings.url_discussion_group,
+                               'email_discussion_group' : settings.email_discussion_group,
+                               'url_issues_page' : settings.url_issues_page,
+                               'url_source_code' : settings.url_source_code,
+                               'app_version' : appversion.version,
+                               'upload_timestamp' : appversion.upload_timestamp}
+            self.response.out.write(template.render(path, template_values))
+            # logging.debug(fn_name + "Calling garbage collection")
+            # gc.collect()
+            logging.debug(fn_name + "<End>" )
+            logservice.flush()
+        except Exception, e:
+            logging.exception(fn_name + "Caught top-level exception")
+            self.response.out.write("""Sorry, something went terribly wrong.<br />%s<br />Please report this error to <a href="http://code.google.com/p/tasks-backup/issues/list">code.google.com/p/tasks-backup/issues/list</a>""" % str(e))
+            logging.debug(fn_name + "<End> due to exception" )
+            logservice.flush()
     
 
 class AuthRedirectHandler(webapp.RequestHandler):
@@ -274,48 +510,54 @@ class AuthRedirectHandler(webapp.RequestHandler):
         logging.debug(fn_name + "<Start>" )
         logservice.flush()
         
-        # DEBUG
-        # if self.request.cookies.has_key('auth_count'):
-            # logging.debug(fn_name + "Cookie: auth_count = " + str(self.request.cookies['auth_count']))
-        # else:
-            # logging.debug(fn_name + "No auth_count cookie found")
-        # logservice.flush()            
-            
-        # Check how many times this has been called (without any other pages having been served)
-        if self.request.cookies.has_key('auth_count'):
-            auth_count = int(self.request.cookies['auth_count'])
-            logging.debug(fn_name + "auth_count = " + str(auth_count))
-        else:
-            logging.debug(fn_name + "No auth_count cookie found")
-            auth_count = 0
-            
-        user, credentials = _GetCredentials()
+        try:
+            # DEBUG
+            # if self.request.cookies.has_key('auth_count'):
+                # logging.debug(fn_name + "Cookie: auth_count = " + str(self.request.cookies['auth_count']))
+            # else:
+                # logging.debug(fn_name + "No auth_count cookie found")
+            # logservice.flush()            
+                
+            # Check how many times this has been called (without any other pages having been served)
+            if self.request.cookies.has_key('auth_count'):
+                auth_count = int(self.request.cookies['auth_count'])
+                logging.debug(fn_name + "auth_count = " + str(auth_count))
+            else:
+                logging.debug(fn_name + "No auth_count cookie found")
+                auth_count = 0
+                
+            user, credentials = _GetCredentials()
 
-        if not credentials: 
-            if auth_count > settings.MAX_NUM_AUTH_REQUESTS:
-                # Redirect to Invalid Credentials page
-                logging.warning(fn_name + "credentials is None after " + str(auth_count) + " retries, redirecting to " + 
-                    settings.INVALID_CREDENTIALS_URL)
-                self.redirect(settings.INVALID_CREDENTIALS_URL + "?rc=NC&nr=" + str(auth_count))
+            if not credentials: 
+                if auth_count > settings.MAX_NUM_AUTH_REQUESTS:
+                    # Redirect to Invalid Credentials page
+                    logging.warning(fn_name + "credentials is None after " + str(auth_count) + " retries, redirecting to " + 
+                        settings.INVALID_CREDENTIALS_URL)
+                    self.redirect(settings.INVALID_CREDENTIALS_URL + "?rc=NC&nr=" + str(auth_count))
+                else:
+                    # Try to authenticate (again)
+                    logging.debug(fn_name + "credentials is None, calling _RedirectForOAuth()")
+                    _RedirectForOAuth(self, user)
+            elif credentials.invalid:
+                if auth_count > settings.MAX_NUM_AUTH_REQUESTS:
+                    # Redirect to Invalid Credentials page
+                    logging.warning(fn_name + "credentials invalid after " + str(auth_count) + " retries, redirecting to " + 
+                        settings.INVALID_CREDENTIALS_URL)
+                    self.redirect(settings.INVALID_CREDENTIALS_URL + "?rc=IC&nr=" + str(auth_count))
+                else:
+                    # Try to authenticate (again)
+                    logging.debug(fn_name + "credentials invalid, calling _RedirectForOAuth()")
+                    _RedirectForOAuth(self, user)
             else:
-                # Try to authenticate (again)
-                logging.debug(fn_name + "credentials is None, calling _RedirectForOAuth()")
-                _RedirectForOAuth(self, user)
-        elif credentials.invalid:
-            if auth_count > settings.MAX_NUM_AUTH_REQUESTS:
-                # Redirect to Invalid Credentials page
-                logging.warning(fn_name + "credentials invalid after " + str(auth_count) + " retries, redirecting to " + 
-                    settings.INVALID_CREDENTIALS_URL)
-                self.redirect(settings.INVALID_CREDENTIALS_URL + "?rc=IC&nr=" + str(auth_count))
-            else:
-                # Try to authenticate (again)
-                logging.debug(fn_name + "credentials invalid, calling _RedirectForOAuth()")
-                _RedirectForOAuth(self, user)
-        else:
-            logging.debug(fn_name + "Redirecting to /")
-            self.redirect("/")
-        logging.debug(fn_name + "<End>" )
-        logservice.flush()
+                logging.debug(fn_name + "Redirecting to /")
+                self.redirect("/")
+            logging.debug(fn_name + "<End>" )
+            logservice.flush()
+        except Exception, e:
+            logging.exception(fn_name + "Caught top-level exception")
+            self.response.out.write("""Sorry, something went terribly wrong.<br />%s<br />Please report this error to <a href="http://code.google.com/p/tasks-backup/issues/list">code.google.com/p/tasks-backup/issues/list</a>""" % str(e))
+            logging.debug(fn_name + "<End> due to exception" )
+            logservice.flush()
 
     
 class CompletedHandler(webapp.RequestHandler):
@@ -325,59 +567,68 @@ class CompletedHandler(webapp.RequestHandler):
         """Handles GET requests for /completed"""
         fn_name = "CompletedHandler.get(): "
 
-        # DEBUG
-        if self.request.cookies.has_key('auth_count'):
-            logging.debug(fn_name + "Cookie: auth_count = " + str(self.request.cookies['auth_count']))
-        else:
-            logging.debug(fn_name + "No auth_count cookie found")
-        logservice.flush()            
-            
-        user, credentials = _GetCredentials()
-        # if user is None:
-            # logging.warning(fn_name + "user is None, redirecting to " +
-                # settings.INVALID_CREDENTIALS_URL)
-            # self.redirect(settings.INVALID_CREDENTIALS_URL + "?rc=NU")
-            # return
-            
-        # if credentials is None or credentials.invalid:
-            # logging.warning(fn_name + "credentials is None or invalid, redirecting to " + 
-                # settings.INVALID_CREDENTIALS_URL)
-            # self.redirect(settings.INVALID_CREDENTIALS_URL + "?rc=XC")
-            # return
-            
-        user_email = user.email()
-        if isUserEmail(user_email):
-            logging.debug(fn_name + "user_email = [%s]" % user_email)
+        logging.debug(fn_name + "<Start>" )
+        logservice.flush()
+                
+        try:
+            # DEBUG
+            if self.request.cookies.has_key('auth_count'):
+                logging.debug(fn_name + "Cookie: auth_count = " + str(self.request.cookies['auth_count']))
+            else:
+                logging.debug(fn_name + "No auth_count cookie found")
+            logservice.flush()            
+                
+            user, credentials = _GetCredentials()
+            # if user is None:
+                # logging.warning(fn_name + "user is None, redirecting to " +
+                    # settings.INVALID_CREDENTIALS_URL)
+                # self.redirect(settings.INVALID_CREDENTIALS_URL + "?rc=NU")
+                # return
+                
+            # if credentials is None or credentials.invalid:
+                # logging.warning(fn_name + "credentials is None or invalid, redirecting to " + 
+                    # settings.INVALID_CREDENTIALS_URL)
+                # self.redirect(settings.INVALID_CREDENTIALS_URL + "?rc=XC")
+                # return
+                
+            user_email = user.email()
+            if isUserEmail(user_email):
+                logging.debug(fn_name + "user_email = [%s]" % user_email)
 
-        client_id, client_secret, user_agent, app_title, product_name, host_msg = shared.GetSettings(self.request.host)
+            client_id, client_secret, user_agent, app_title, product_name, host_msg = shared.GetSettings(self.request.host)
 
-        
-        # Log and flush before starting operation which may cause memory limit exceeded error
-        logging.debug(fn_name + "building template")
-        logservice.flush() 
-        
-        path = os.path.join(os.path.dirname(__file__), "completed.html")
-        if not credentials or credentials.invalid:
-            is_authorized = False
-        else:
-            is_authorized = True
-            logging.debug(fn_name + "Resetting auth_count cookie to zero")
+            
+            # Log and flush before starting operation which may cause memory limit exceeded error
+            logging.debug(fn_name + "building template")
+            logservice.flush() 
+            
+            path = os.path.join(os.path.dirname(__file__), "completed.html")
+            if not credentials or credentials.invalid:
+                is_authorized = False
+            else:
+                is_authorized = True
+                logging.debug(fn_name + "Resetting auth_count cookie to zero")
+                logservice.flush()
+                _set_cookie(self.response, 'auth_count', '0', max_age=120)
+                
+            template_values = {'app_title' : app_title,
+                                 'host_msg' : host_msg,
+                                 'home_page_url' : settings.HOME_PAGE_URL,
+                                 'product_name' : product_name,
+                                 'is_authorized': is_authorized,
+                                 'user_email' : user_email,
+                                 'msg': self.request.get('msg'),
+                                 'url_discussion_group' : settings.url_discussion_group,
+                                 'email_discussion_group' : settings.email_discussion_group,
+                                 'url_issues_page' : settings.url_issues_page,
+                                 'url_source_code' : settings.url_source_code,
+                                 'logout_url': users.create_logout_url('/')}
+            self.response.out.write(template.render(path, template_values))
+        except Exception, e:
+            logging.exception(fn_name + "Caught top-level exception")
+            self.response.out.write("""Sorry, something went terribly wrong.<br />%s<br />Please report this error to <a href="http://code.google.com/p/tasks-backup/issues/list">code.google.com/p/tasks-backup/issues/list</a>""" % str(e))
+            logging.debug(fn_name + "<End> due to exception" )
             logservice.flush()
-            _set_cookie(self.response, 'auth_count', '0', max_age=120)
-            
-        template_values = {'app_title' : app_title,
-                             'host_msg' : host_msg,
-                             'home_page_url' : settings.HOME_PAGE_URL,
-                             'product_name' : product_name,
-                             'is_authorized': is_authorized,
-                             'user_email' : user_email,
-                             'msg': self.request.get('msg'),
-                             'url_discussion_group' : settings.url_discussion_group,
-                             'email_discussion_group' : settings.email_discussion_group,
-                             'url_issues_page' : settings.url_issues_page,
-                             'url_source_code' : settings.url_source_code,
-                             'logout_url': users.create_logout_url('/')}
-        self.response.out.write(template.render(path, template_values))
 
       
 class StartBackupHandler(webapp.RequestHandler):
@@ -392,91 +643,97 @@ class StartBackupHandler(webapp.RequestHandler):
         logging.debug(fn_name + "<Start>")
         logservice.flush()
 
-        # DEBUG
-        if self.request.cookies.has_key('auth_count'):
-            logging.debug(fn_name + "Cookie: auth_count = " + str(self.request.cookies['auth_count']))
-        else:
-            logging.debug(fn_name + "No auth_count cookie found")
-        logservice.flush()            
-            
-        # client_id, client_secret, user_agent, app_title, product_name, host_msg = shared.GetSettings(self.request.host)
-        
-        user, credentials = _GetCredentials()
-        if user is None:
-            logging.warning(fn_name + "user is None, redirecting to " +
-                settings.INVALID_CREDENTIALS_URL)
-            logservice.flush()
-            self.redirect(settings.INVALID_CREDENTIALS_URL + "?rc=NU")
-            return
-            
-        if credentials is None or credentials.invalid:
-            logging.warning(fn_name + "credentials is None or invalid, redirecting to " + 
-                settings.INVALID_CREDENTIALS_URL)
-            logservice.flush()
-            self.redirect(settings.INVALID_CREDENTIALS_URL + "?rc=XC")
-            return
-        
-        logging.debug(fn_name + "Resetting auth_count cookie to zero")
-        logservice.flush()
-        _set_cookie(self.response, 'auth_count', '0', max_age=120)
-        user_email = user.email()
-        is_test_user = shared.isTestUser(user_email)
-        if self.request.host in settings.LIMITED_ACCESS_SERVERS:
-            logging.debug(fn_name + "Running on limited-access server")
-            if not is_test_user:
-                logging.info(fn_name + "Rejecting non-test user on limited access server")
-                self.response.out.write("<h2>This is a test server. Access is limited to test users.</h2>")
-                logging.debug(fn_name + "<End> (restricted access)" )
-                logservice.flush()
-                return
-        
-        
-        # if is_test_user:
-          # logging.debug(fn_name + "POST args: include_hidden = " + str(self.request.get('include_hidden')) +
-                            # ", include_completed = " + str(self.request.get('include_completed')) +
-                            # ", include_deleted = " + str(self.request.get('include_deleted')))
-                            
-        logging.debug(fn_name + "Storing details for " + str(user_email))
-        
-  
-        # Create a DB record, using the user's email address as the key
-        tasks_backup_job = model.TasksBackupJob(key_name=user_email)
-        tasks_backup_job.include_completed = (self.request.get('include_completed') == 'True')
-        tasks_backup_job.include_deleted = (self.request.get('include_deleted') == 'True')
-        tasks_backup_job.include_hidden = (self.request.get('include_hidden') == 'True')
-        tasks_backup_job.user = user
-        tasks_backup_job.credentials = credentials
-        tasks_backup_job.put()
-
-        logging.debug(fn_name + "include_hidden = " + str(tasks_backup_job.include_hidden) +
-                                ", include_completed = " + str(tasks_backup_job.include_completed) +
-                                ", include_deleted = " + str(tasks_backup_job.include_deleted))
-        logservice.flush()
-        
-        # Add the task to the taskqueue
-        # Add the request to the tasks queue, passing in the user's email so that the task can access the
-        # databse record
-        q = taskqueue.Queue(settings.BACKUP_REQUEST_QUEUE_NAME)
-        t = taskqueue.Task(url='/worker', params={settings.TASKS_QUEUE_KEY_NAME : user_email}, method='POST')
-        logging.debug(fn_name + "Adding task to " + str(settings.BACKUP_REQUEST_QUEUE_NAME) + 
-            " queue, for " + str(user_email))
-        logservice.flush()
-        
         try:
-            q.add(t)
-        except exception, e:
-            logging.exception(fn_name + "Exception adding task to taskqueue. Redirecting to " + str(settings.PROGRESS_URL))
+            # DEBUG
+            if self.request.cookies.has_key('auth_count'):
+                logging.debug(fn_name + "Cookie: auth_count = " + str(self.request.cookies['auth_count']))
+            else:
+                logging.debug(fn_name + "No auth_count cookie found")
+            logservice.flush()            
+                
+            # client_id, client_secret, user_agent, app_title, product_name, host_msg = shared.GetSettings(self.request.host)
+            
+            user, credentials = _GetCredentials()
+            if user is None:
+                logging.warning(fn_name + "user is None, redirecting to " +
+                    settings.INVALID_CREDENTIALS_URL)
+                logservice.flush()
+                self.redirect(settings.INVALID_CREDENTIALS_URL + "?rc=NU")
+                return
+                
+            if credentials is None or credentials.invalid:
+                logging.warning(fn_name + "credentials is None or invalid, redirecting to " + 
+                    settings.INVALID_CREDENTIALS_URL)
+                logservice.flush()
+                self.redirect(settings.INVALID_CREDENTIALS_URL + "?rc=XC")
+                return
+            
+            logging.debug(fn_name + "Resetting auth_count cookie to zero")
             logservice.flush()
-            self.redirect(settings.PROGRESS_URL + "?msg=Exception%20adding%20task%20to%20taskqueue")
-            return
+            _set_cookie(self.response, 'auth_count', '0', max_age=120)
+            user_email = user.email()
+            is_test_user = shared.isTestUser(user_email)
+            if self.request.host in settings.LIMITED_ACCESS_SERVERS:
+                logging.debug(fn_name + "Running on limited-access server")
+                if not is_test_user:
+                    logging.info(fn_name + "Rejecting non-test user on limited access server")
+                    self.response.out.write("<h2>This is a test server. Access is limited to test users.</h2>")
+                    logging.debug(fn_name + "<End> (restricted access)" )
+                    logservice.flush()
+                    return
+            
+            
+            # if is_test_user:
+              # logging.debug(fn_name + "POST args: include_hidden = " + str(self.request.get('include_hidden')) +
+                                # ", include_completed = " + str(self.request.get('include_completed')) +
+                                # ", include_deleted = " + str(self.request.get('include_deleted')))
+                                
+            logging.debug(fn_name + "Storing details for " + str(user_email))
+            
+      
+            # Create a DB record, using the user's email address as the key
+            tasks_backup_job = model.TasksBackupJob(key_name=user_email)
+            tasks_backup_job.job_type = 'export'
+            tasks_backup_job.include_completed = (self.request.get('include_completed') == 'True')
+            tasks_backup_job.include_deleted = (self.request.get('include_deleted') == 'True')
+            tasks_backup_job.include_hidden = (self.request.get('include_hidden') == 'True')
+            tasks_backup_job.user = user
+            tasks_backup_job.credentials = credentials
+            tasks_backup_job.put()
 
-        logging.debug(fn_name + "Redirect to " + settings.PROGRESS_URL + " for " + str(user_email))
-        logservice.flush()
-        self.redirect(settings.PROGRESS_URL)
-        # logging.debug(fn_name + "Calling garbage collection")
-        # gc.collect()
-        logging.debug(fn_name + "<End> for " + str(user_email))
-        logservice.flush()
+            logging.debug(fn_name + "include_hidden = " + str(tasks_backup_job.include_hidden) +
+                                    ", include_completed = " + str(tasks_backup_job.include_completed) +
+                                    ", include_deleted = " + str(tasks_backup_job.include_deleted))
+            logservice.flush()
+            
+            # Add the request to the tasks queue, passing in the user's email so that the task can access the
+            # databse record
+            q = taskqueue.Queue(settings.PROCESS_TASKS_REQUEST_QUEUE_NAME)
+            t = taskqueue.Task(url=settings.BACKUP_WORKER_URL, params={settings.TASKS_QUEUE_KEY_NAME : user_email}, method='POST')
+            logging.debug(fn_name + "Adding task to " + str(settings.PROCESS_TASKS_REQUEST_QUEUE_NAME) + 
+                " queue, for " + str(user_email))
+            logservice.flush()
+            
+            try:
+                q.add(t)
+            except exception, e:
+                logging.exception(fn_name + "Exception adding task to taskqueue. Redirecting to " + str(settings.PROGRESS_URL))
+                logservice.flush()
+                self.redirect(settings.PROGRESS_URL + "?msg=Exception%20adding%20task%20to%20taskqueue")
+                return
+
+            logging.debug(fn_name + "Redirecting to " + settings.PROGRESS_URL)
+            logservice.flush()
+            self.redirect(settings.PROGRESS_URL)
+            # logging.debug(fn_name + "Calling garbage collection")
+            # gc.collect()
+            logging.debug(fn_name + "<End>")
+            logservice.flush()
+        except Exception, e:
+            logging.exception(fn_name + "Caught top-level exception")
+            self.response.out.write("""Sorry, something went terribly wrong.<br />%s<br />Please report this error to <a href="http://code.google.com/p/tasks-backup/issues/list">code.google.com/p/tasks-backup/issues/list</a>""" % str(e))
+            logging.debug(fn_name + "<End> due to exception" )
+            logservice.flush()
 
         
 class ShowProgressHandler(webapp.RequestHandler):
@@ -489,136 +746,142 @@ class ShowProgressHandler(webapp.RequestHandler):
         logging.debug(fn_name + "<Start>")
         logservice.flush()
         
-        # DEBUG
-        if self.request.cookies.has_key('auth_count'):
-            logging.debug(fn_name + "Cookie: auth_count = " + str(self.request.cookies['auth_count']))
-        else:
-            logging.debug(fn_name + "No auth_count cookie found")
-        logservice.flush()            
-            
-        client_id, client_secret, user_agent, app_title, product_name, host_msg = shared.GetSettings(self.request.host)
-      
+        try:
+            # DEBUG
+            if self.request.cookies.has_key('auth_count'):
+                logging.debug(fn_name + "Cookie: auth_count = " + str(self.request.cookies['auth_count']))
+            else:
+                logging.debug(fn_name + "No auth_count cookie found")
+            logservice.flush()            
+                
+            client_id, client_secret, user_agent, app_title, product_name, host_msg = shared.GetSettings(self.request.host)
           
-        user, credentials = _GetCredentials()
-        if user is None:
-            logging.warning(fn_name + "user is None, redirecting to " +
-                settings.INVALID_CREDENTIALS_URL)
-            logservice.flush()
-            self.redirect(settings.INVALID_CREDENTIALS_URL + "?rc=NU")
-            return
-            
-        if credentials is None or credentials.invalid:
-            logging.warning(fn_name + "credentials is None or invalid, redirecting to " + 
-                settings.INVALID_CREDENTIALS_URL)
-            logservice.flush()
-            self.redirect(settings.INVALID_CREDENTIALS_URL + "?rc=XC")
-            return
-        
-        logging.debug(fn_name + "Resetting auth_count cookie to zero")
-        logservice.flush()
-        _set_cookie(self.response, 'auth_count', '0', max_age=120)    
-        user_email = user.email()
-        if self.request.host in settings.LIMITED_ACCESS_SERVERS:
-            logging.debug(fn_name + "Running on limited-access server")
-            if not shared.isTestUser(user_email):
-                logging.info(fn_name + "Rejecting non-test user on limited access server")
-                self.response.out.write("<h2>This is a test server. Access is limited to test users.</h2>")
-                logging.debug(fn_name + "<End> (restricted access)" )
+              
+            user, credentials = _GetCredentials()
+            if user is None:
+                logging.warning(fn_name + "user is None, redirecting to " +
+                    settings.INVALID_CREDENTIALS_URL)
                 logservice.flush()
+                self.redirect(settings.INVALID_CREDENTIALS_URL + "?rc=NU")
                 return
-        
-        
-        # Retrieve the DB record for this user
-        tasks_backup_job = model.TasksBackupJob.get_by_key_name(user_email)
+                
+            if credentials is None or credentials.invalid:
+                logging.warning(fn_name + "credentials is None or invalid, redirecting to " + 
+                    settings.INVALID_CREDENTIALS_URL)
+                logservice.flush()
+                self.redirect(settings.INVALID_CREDENTIALS_URL + "?rc=XC")
+                return
             
-        if tasks_backup_job is None:
-            logging.error(fn_name + "No DB record for " + user_email)
-            status = 'no-record'
-            progress = 0
-            job_start_timestamp = None
-        else:            
-            # total_progress is only updated once all the tasks have been retrieved in a single tasklist.
-            # tasklist_progress is updated every settings.TASK_COUNT_UPDATE_INTERVAL seconds within the retrieval process
-            # for each tasklist. This ensures progress updates happen at least every settings.TASK_COUNT_UPDATE_INTERVAL seconds,
-            # which wouldn't happen if it takes a long time to retrieve a large number of tasks in a single tasklist.
-            # So, the current progress = total_progress + tasklist_progress
-            status = tasks_backup_job.status
-            error_message = tasks_backup_job.error_message
-            progress = tasks_backup_job.total_progress + tasks_backup_job.tasklist_progress
-            job_start_timestamp = tasks_backup_job.job_start_timestamp
-            job_execution_time = datetime.datetime.now() - job_start_timestamp
-            include_completed = tasks_backup_job.include_completed
-            include_deleted = tasks_backup_job.include_deleted
-            include_hidden = tasks_backup_job.include_hidden
+            logging.debug(fn_name + "Resetting auth_count cookie to zero")
+            logservice.flush()
+            _set_cookie(self.response, 'auth_count', '0', max_age=120)    
+            user_email = user.email()
+            if self.request.host in settings.LIMITED_ACCESS_SERVERS:
+                logging.debug(fn_name + "Running on limited-access server")
+                if not shared.isTestUser(user_email):
+                    logging.info(fn_name + "Rejecting non-test user on limited access server")
+                    self.response.out.write("<h2>This is a test server. Access is limited to test users.</h2>")
+                    logging.debug(fn_name + "<End> (restricted access)" )
+                    logservice.flush()
+                    return
             
-            if status != 'completed' and status != 'error':
-                # Check if the job has exceeded either progress or total times
-                if job_execution_time.seconds > settings.MAX_JOB_TIME:
-                    logging.error(fn_name + "Job created " + str(job_execution_time.seconds) + " seconds ago. Exceeded max allowed " +
-                        str(settings.MAX_JOB_TIME))
-                    error_message = "Job taking too long. Status was " + tasks_backup_job.status
-                    if tasks_backup_job.error_message:
-                        error_message = error_message + ", previous error was " + tasks_backup_job.error_message
-                    status = 'job_exceeded_max_time'
             
-                time_since_last_update = datetime.datetime.now() - tasks_backup_job.job_progress_timestamp
-                if time_since_last_update.seconds > settings.MAX_JOB_PROGRESS_INTERVAL:
-                    logging.error(fn_name + "Last job progress update was " + str(time_since_last_update.seconds) +
-                        " seconds ago. Job appears to have stalled. Job was started " + str(job_execution_time.seconds) + 
-                        " seconds ago at " + str(job_start_timestamp) + " UTC")
-                    error_message = "Job appears to have stalled. Status was " + tasks_backup_job.status
-                    if tasks_backup_job.error_message:
-                        error_message = error_message + ", previous error was " + tasks_backup_job.error_message
-                    status = 'job_stalled'
-        
-        if status == 'completed':
-            logging.info(fn_name + "Retrieved " + str(progress) + " tasks for " + str(user_email))
-        else:
-            logging.debug(fn_name + "Status = " + str(status) + ", progress = " + str(progress) + 
-                " for " + str(user_email) + ", started at " + str(job_start_timestamp) + " UTC")
-        
-        if error_message:
-            logging.error(fn_name + "Error message: " + str(error_message))
-        
-        # Log and flush before starting operation which may cause memory limit exceeded error
-        # logging.debug(fn_name + "building template")
-        # logservice.flush() 
-        
-        path = os.path.join(os.path.dirname(__file__), "progress.html")
-        
-        #refresh_url = self.request.host + '/' + settings.PROGRESS_URL
-        
-        template_values = {'app_title' : app_title,
-                           'host_msg' : host_msg,
-                           'home_page_url' : settings.HOME_PAGE_URL,
-                           'product_name' : product_name,
-                           'status' : status,
-                           'progress' : progress,
-                           'include_completed' : include_completed,
-                           'include_deleted' : include_deleted,
-                           'include_hidden' : include_hidden,
-                           'error_message' : error_message,
-                           'job_start_timestamp' : job_start_timestamp,
-                           'refresh_interval' : settings.PROGRESS_PAGE_REFRESH_INTERVAL,
-                           'large_list_html_warning_limit' : settings.LARGE_LIST_HTML_WARNING_LIMIT,
-                           'user_email' : user_email,
-                           'display_technical_options' : shared.isTestUser(user_email),
-                           'results_url' : settings.RESULTS_URL,
-                           #'start_backup_url' : settings.START_BACKUP_URL,
-                           #'refresh_url' : settings.PROGRESS_URL,
-                           'msg': self.request.get('msg'),
-                           'logout_url': users.create_logout_url('/'),
-                           'url_discussion_group' : settings.url_discussion_group,
-                           'email_discussion_group' : settings.email_discussion_group,
-                           'url_issues_page' : settings.url_issues_page,
-                           'url_source_code' : settings.url_source_code,
-                           'app_version' : appversion.version,
-                           'upload_timestamp' : appversion.upload_timestamp}
-        self.response.out.write(template.render(path, template_values))
-        # logging.debug(fn_name + "Calling garbage collection")
-        # gc.collect()
-        logging.debug(fn_name + "<End>")
-        logservice.flush()
+            # Retrieve the DB record for this user
+            tasks_backup_job = model.TasksBackupJob.get_by_key_name(user_email)
+                
+            if tasks_backup_job is None:
+                logging.error(fn_name + "No DB record for " + user_email)
+                status = 'no-record'
+                progress = 0
+                job_start_timestamp = None
+            else:            
+                # total_progress is only updated once all the tasks have been retrieved in a single tasklist.
+                # tasklist_progress is updated every settings.TASK_COUNT_UPDATE_INTERVAL seconds within the retrieval process
+                # for each tasklist. This ensures progress updates happen at least every settings.TASK_COUNT_UPDATE_INTERVAL seconds,
+                # which wouldn't happen if it takes a long time to retrieve a large number of tasks in a single tasklist.
+                # So, the current progress = total_progress + tasklist_progress
+                status = tasks_backup_job.status
+                error_message = tasks_backup_job.error_message
+                progress = tasks_backup_job.total_progress + tasks_backup_job.tasklist_progress
+                job_start_timestamp = tasks_backup_job.job_start_timestamp
+                job_execution_time = datetime.datetime.now() - job_start_timestamp
+                include_completed = tasks_backup_job.include_completed
+                include_deleted = tasks_backup_job.include_deleted
+                include_hidden = tasks_backup_job.include_hidden
+                
+                if status != 'completed' and status != 'error':
+                    # Check if the job has exceeded either progress or total times
+                    if job_execution_time.seconds > settings.MAX_JOB_TIME:
+                        logging.error(fn_name + "Job created " + str(job_execution_time.seconds) + " seconds ago. Exceeded max allowed " +
+                            str(settings.MAX_JOB_TIME))
+                        error_message = "Job taking too long. Status was " + tasks_backup_job.status
+                        if tasks_backup_job.error_message:
+                            error_message = error_message + ", previous error was " + tasks_backup_job.error_message
+                        status = 'job_exceeded_max_time'
+                
+                    time_since_last_update = datetime.datetime.now() - tasks_backup_job.job_progress_timestamp
+                    if time_since_last_update.seconds > settings.MAX_JOB_PROGRESS_INTERVAL:
+                        logging.error(fn_name + "Last job progress update was " + str(time_since_last_update.seconds) +
+                            " seconds ago. Job appears to have stalled. Job was started " + str(job_execution_time.seconds) + 
+                            " seconds ago at " + str(job_start_timestamp) + " UTC")
+                        error_message = "Job appears to have stalled. Status was " + tasks_backup_job.status
+                        if tasks_backup_job.error_message:
+                            error_message = error_message + ", previous error was " + tasks_backup_job.error_message
+                        status = 'job_stalled'
+            
+            if status == 'completed':
+                logging.info(fn_name + "Retrieved " + str(progress) + " tasks for " + str(user_email))
+            else:
+                logging.debug(fn_name + "Status = " + str(status) + ", progress = " + str(progress) + 
+                    " for " + str(user_email) + ", started at " + str(job_start_timestamp) + " UTC")
+            
+            if error_message:
+                logging.error(fn_name + "Error message: " + str(error_message))
+            
+            # Log and flush before starting operation which may cause memory limit exceeded error
+            # logging.debug(fn_name + "building template")
+            # logservice.flush() 
+            
+            path = os.path.join(os.path.dirname(__file__), "progress.html")
+            
+            #refresh_url = self.request.host + '/' + settings.PROGRESS_URL
+            
+            template_values = {'app_title' : app_title,
+                               'host_msg' : host_msg,
+                               'home_page_url' : settings.HOME_PAGE_URL,
+                               'product_name' : product_name,
+                               'status' : status,
+                               'progress' : progress,
+                               'include_completed' : include_completed,
+                               'include_deleted' : include_deleted,
+                               'include_hidden' : include_hidden,
+                               'error_message' : error_message,
+                               'job_start_timestamp' : job_start_timestamp,
+                               'refresh_interval' : settings.PROGRESS_PAGE_REFRESH_INTERVAL,
+                               'large_list_html_warning_limit' : settings.LARGE_LIST_HTML_WARNING_LIMIT,
+                               'user_email' : user_email,
+                               'display_technical_options' : shared.isTestUser(user_email),
+                               'results_url' : settings.RESULTS_URL,
+                               #'start_backup_url' : settings.START_BACKUP_URL,
+                               #'refresh_url' : settings.PROGRESS_URL,
+                               'msg': self.request.get('msg'),
+                               'logout_url': users.create_logout_url('/'),
+                               'url_discussion_group' : settings.url_discussion_group,
+                               'email_discussion_group' : settings.email_discussion_group,
+                               'url_issues_page' : settings.url_issues_page,
+                               'url_source_code' : settings.url_source_code,
+                               'app_version' : appversion.version,
+                               'upload_timestamp' : appversion.upload_timestamp}
+            self.response.out.write(template.render(path, template_values))
+            # logging.debug(fn_name + "Calling garbage collection")
+            # gc.collect()
+            logging.debug(fn_name + "<End>")
+            logservice.flush()
+        except Exception, e:
+            logging.exception(fn_name + "Caught top-level exception")
+            self.response.out.write("""Sorry, something went terribly wrong.<br />%s<br />Please report this error to <a href="http://code.google.com/p/tasks-backup/issues/list">code.google.com/p/tasks-backup/issues/list</a>""" % str(e))
+            logging.debug(fn_name + "<End> due to exception" )
+            logservice.flush()
         
           
 class ReturnResultsHandler(webapp.RequestHandler):
@@ -630,15 +893,21 @@ class ReturnResultsHandler(webapp.RequestHandler):
         logging.debug(fn_name + "<Start>")
         logservice.flush()
         
-        logging.info(fn_name + "Expected POST for " + str(settings.RESULTS_URL) + 
-                        ", so redirecting to " + str(settings.PROGRESS_URL))
-        logservice.flush()
-        # Display the progress page to allow user to choose format for results
-        self.redirect(settings.PROGRESS_URL)
-        # logging.debug(fn_name + "Calling garbage collection")
-        # gc.collect()
-        logging.debug(fn_name + "<End>")
-        logservice.flush()
+        try:
+            logging.info(fn_name + "Expected POST for " + str(settings.RESULTS_URL) + 
+                            ", so redirecting to " + str(settings.PROGRESS_URL))
+            logservice.flush()
+            # Display the progress page to allow user to choose format for results
+            self.redirect(settings.PROGRESS_URL)
+            # logging.debug(fn_name + "Calling garbage collection")
+            # gc.collect()
+            logging.debug(fn_name + "<End>")
+            logservice.flush()
+        except Exception, e:
+            logging.exception(fn_name + "Caught top-level exception")
+            self.response.out.write("""Sorry, something went terribly wrong.<br />%s<br />Please report this error to <a href="http://code.google.com/p/tasks-backup/issues/list">code.google.com/p/tasks-backup/issues/list</a>""" % str(e))
+            logging.debug(fn_name + "<End> due to exception" )
+            logservice.flush()
         
     def post(self):
         """ Return results to the user, in format chosen by user """
@@ -647,296 +916,330 @@ class ReturnResultsHandler(webapp.RequestHandler):
         logging.debug(fn_name + "<Start>")
         logservice.flush()
 
-        # DEBUG
-        if self.request.cookies.has_key('auth_count'):
-            logging.debug(fn_name + "Cookie: auth_count = " + str(self.request.cookies['auth_count']))
-        else:
-            logging.debug(fn_name + "No auth_count cookie found")
-        logservice.flush()            
-        
-        client_id, client_secret, user_agent, app_title, product_name, host_msg = shared.GetSettings(self.request.host)
-        
-        user, credentials = _GetCredentials()
-        if user is None:
-            logging.warning(fn_name + "user is None, redirecting to " +
-                settings.INVALID_CREDENTIALS_URL)
-            logservice.flush()
-            self.redirect(settings.INVALID_CREDENTIALS_URL + "?rc=NU")
-            return
+        try:
+            # DEBUG
+            if self.request.cookies.has_key('auth_count'):
+                logging.debug(fn_name + "Cookie: auth_count = " + str(self.request.cookies['auth_count']))
+            else:
+                logging.debug(fn_name + "No auth_count cookie found")
+            logservice.flush()            
             
-        if credentials is None or credentials.invalid:
-            logging.warning(fn_name + "credentials is None or invalid, redirecting to " + 
-                settings.INVALID_CREDENTIALS_URL)
-            logservice.flush()
-            self.redirect(settings.INVALID_CREDENTIALS_URL + "?rc=XC")
-            return
-        
-        logging.debug(fn_name + "Resetting auth_count cookie to zero")
-        logservice.flush()
-        _set_cookie(self.response, 'auth_count', '0', max_age=120)
-        user_email = user.email()
-        is_test_user = shared.isTestUser(user_email)
-        if self.request.host in settings.LIMITED_ACCESS_SERVERS:
-            logging.debug(fn_name + "Running on limited-access server")
-            if not is_test_user:
-                logging.info(fn_name + "Rejecting non-test user on limited access server")
-                self.response.out.write("<h2>This is a test server. Access is limited to test users.</h2>")
-                logging.debug(fn_name + "<End> (restricted access)" )
+            client_id, client_secret, user_agent, app_title, product_name, host_msg = shared.GetSettings(self.request.host)
+            
+            user, credentials = _GetCredentials()
+            if user is None:
+                logging.warning(fn_name + "user is None, redirecting to " +
+                    settings.INVALID_CREDENTIALS_URL)
                 logservice.flush()
+                self.redirect(settings.INVALID_CREDENTIALS_URL + "?rc=NU")
                 return
-        
-        # Retrieve the DB record for this user
-        tasks_backup_job = model.TasksBackupJob.get_by_key_name(user_email)
-            
-        if tasks_backup_job is None:
-            logging.error(fn_name + "No tasks_backup_job record for " + user_email)
-            job_start_timestamp = None
-        else:            
-            include_completed = tasks_backup_job.include_completed
-            include_deleted = tasks_backup_job.include_deleted
-            include_hidden = tasks_backup_job.include_hidden
-            total_progress = tasks_backup_job.total_progress
-            
-        # Retrieve the data DB record for this user
-        logging.debug(fn_name + "Retrieving details for " + str(user_email))
-        
-        tasklists_records = db.GqlQuery("SELECT * "
-                                        "FROM TasklistsData "
-                                        "WHERE ANCESTOR IS :1 "
-                                        "ORDER BY idx ASC",
-                                        db.Key.from_path(settings.DB_KEY_TASKS_DATA, user_email))
-
-        num_records = tasklists_records.count()
-        
-        if num_records is None:
-            # There should be at least one record, since we will only execute this function if TasksBackupJob.status == completed
-            # Possibly user got here by doing a POST without starting a backup request first 
-            # (e.g. page refresh from an old job)
-            logging.error(fn_name + "No data records found for " + str(user_email))
-            # TODO: Display better error to user &/or redirect to allow user to start a backup job
-            self.response.set_status(412, "No data for this user. Please retry backup request.")
-            return
-        
-        logging.debug(fn_name + "Reassembling tasks data from " + str(num_records) + " blobs")
-        rebuilt_pkl = ""
-        for tasklists_record in tasklists_records:
-            #logging.debug("Reassembling blob number " + str(tasklists_record.idx))
-            rebuilt_pkl = rebuilt_pkl + tasklists_record.pickled_tasks_data
-            
-        logging.debug(fn_name + "Reassembled " + str(len(rebuilt_pkl)) + " bytes")
-        
-        tasklists = pickle.loads(rebuilt_pkl)
-        rebuilt_pkl = None # Not needed, so release it
-        
-
-
-        """
-          structure of tasklist
-          { 
-            "title" : tasklist.title,        # Name of this tasklist
-            "tasks"  : [ task ]              # List of task items in this tasklist
-          }
-          
-          structure of task
-          {
-            "title" : title, # Free text
-            "status" : status, # "completed" | "needsAction"
-            "id" : id, # Used when determining parent-child relationships
-            "parent" : parent, # OPT: ID of the parent of this task (only if this is a sub-task)
-            "notes" : notes, # OPT: Free text
-            "due" : due, # OPT: Date due, e.g. 2012-01-30T00:00:00.000Z NOTE time = 0
-            "updated" : updated, # Timestamp, e.g., 2012-01-26T07:47:18.000Z
-            "completed" : completed # Timestamp, e.g., 2012-01-27T10:38:56.000Z
-          }
-        """
-          
-        # User chose which format to export as
-        export_format = self.request.get("format")
-        
-        # We pass the job_start_timestamp from the Progress page so that we can display it on the HTML page
-        job_start_timestamp = self.request.get('job_start_timestamp')
-        
-        # User selected HTML display options (used when format == html)
-        dim_completed_tasks = (self.request.get('dim_completed_tasks') == 'True')
-        display_completed_date_field = (self.request.get('display_completed_date_field') == 'True')
-        display_due_date_field = (self.request.get('display_due_date_field') == 'True')
-        display_updated_date_field = (self.request.get('display_updated_date_field') == 'True')
-        display_invalid_tasks = (self.request.get('display_invalid_tasks') == 'True')
-        only_display_due_tasks = (self.request.get('only_display_due_tasks') == 'True')
-        
-        logging.debug(fn_name + "Selected format = " + str(export_format))
-
-        # Filename format is "tasks_FORMAT_EMAILADDR_YYYY-MM-DD.EXT"
-        # CAUTION: Do not include characters that may not be valid on some filesystems (e.g., colon is not valid on Windows)
-        output_filename_base = "tasks_%s_%s_%s" % (export_format, user_email, datetime.datetime.now().strftime("%Y-%m-%d"))
- 
-        if only_display_due_tasks:
-            # If only_display_due_tasks is true, use this value to determine which tasks are due on or before the specified due date.
-            # Using value from user's browser, since that will be in user's current timezone. Server doesn't know user's current timesone.
-            logging.debug(fn_name + "User chose to only display tasks due, where due_year = " + str(self.request.get('due_year')) +
-                            ", due_month = " + str(self.request.get('due_month')) +
-                            ", due_day = " + str(self.request.get('due_day')))
-            try:
-                due_date_limit = datetime.date(int(self.request.get('due_year')),
-                                            int(self.request.get('due_month')), 
-                                            int(self.request.get('due_day'))) 
-            except Exception, e:
-                due_date_limit = datetime.date(datetime.MINYEAR,1,1)
-                logging.exception(fn_name + "Error intepretting date from browser. Using " + str(due_date_limit))
-            
-        # Calculate and add 'depth' property
-        for tasklist in tasklists:
-            tasks = tasklist[u'tasks']
-            tasklist_has_due_tasks = False
-            
-            num_tasks = len(tasks)
-            if num_tasks > 0: # Non-empty tasklist
-                task_idx = 0
-                possible_parent_ids = []
-                possible_parent_is_active = []
                 
-                while task_idx < num_tasks:
-                    task = tasks[task_idx]
-                    # By default, assume parent is valid
-                    task[u'parent_is_active'] = True
+            if credentials is None or credentials.invalid:
+                logging.warning(fn_name + "credentials is None or invalid, redirecting to " + 
+                    settings.INVALID_CREDENTIALS_URL)
+                logservice.flush()
+                self.redirect(settings.INVALID_CREDENTIALS_URL + "?rc=XC")
+                return
+            
+            logging.debug(fn_name + "Resetting auth_count cookie to zero")
+            logservice.flush()
+            _set_cookie(self.response, 'auth_count', '0', max_age=120)
+            user_email = user.email()
+            is_test_user = shared.isTestUser(user_email)
+            if self.request.host in settings.LIMITED_ACCESS_SERVERS:
+                logging.debug(fn_name + "Running on limited-access server")
+                if not is_test_user:
+                    logging.info(fn_name + "Rejecting non-test user on limited access server")
+                    self.response.out.write("<h2>This is a test server. Access is limited to test users.</h2>")
+                    logging.debug(fn_name + "<End> (restricted access)" )
+                    logservice.flush()
+                    return
+            
+            # Retrieve the DB record for this user
+            tasks_backup_job = model.TasksBackupJob.get_by_key_name(user_email)
+                
+            if tasks_backup_job is None:
+                logging.error(fn_name + "No tasks_backup_job record for " + user_email)
+                job_start_timestamp = None
+            else:            
+                include_completed = tasks_backup_job.include_completed
+                include_deleted = tasks_backup_job.include_deleted
+                include_hidden = tasks_backup_job.include_hidden
+                total_progress = tasks_backup_job.total_progress
+                
+            # Retrieve the data DB record for this user
+            logging.debug(fn_name + "Retrieving details for " + str(user_email))
+            
+            tasklists_records = db.GqlQuery("SELECT * "
+                                            "FROM TasklistsData "
+                                            "WHERE ANCESTOR IS :1 "
+                                            "ORDER BY idx ASC",
+                                            db.Key.from_path(settings.DB_KEY_TASKS_BACKUP_DATA, user_email))
 
-                    if task.has_key(u'parent'):
-                        if task[u'parent'] in possible_parent_ids:
-                            idx = possible_parent_ids.index(task[u'parent'])
-                            try:
-                                task[u'parent_is_active'] = possible_parent_is_active[idx]
-                            except Exception, e:
-                                logging.exception("idx = " + str(idx) + ", id = " + task[u'id'] + ", parent = " + task[u'parent'] + ", [" + task[u'title'] + "]")
-                                logging(possible_parent_ids)
-                                logging(possible_parent_is_active)
-                            depth = idx + 1
-                            task[u'depth'] = depth
-                            
-                            # Remove parent tasks which are deeper than current parent
-                            del(possible_parent_ids[depth:])
-                            del(possible_parent_is_active[depth:])
-                                
-                            if task[u'id'] not in possible_parent_ids:
-                                # This task may have sub-tasks, so add to list of possible  parents
-                                possible_parent_ids.append(task[u'id'])
-                                task_is_active = not (task.has_key(u'deleted') or task.has_key(u'hidden'))
-                                possible_parent_is_active.append(task_is_active)
-                        else:
-                            task[u'parent_is_active'] = False
-                            if task.has_key(u'deleted') or task.has_key(u'hidden'):
-                                # Don't try to calculate depth of hidden and deleted tasks, 
-                                # as the parent value for those tasks is often invalid (see below)
-                                task[u'depth'] = -1
-                            else:
-                                # Non-deleted/hidden task with invalid parent.
-                                # This task has an unknown depth, since it's parent no longer exists. 
-                                # The parent task may have been deleted or moved.
-                                # One way this can happen:
-                                #       Start with A/B/C/D
-                                #       Delete D
-                                #       Delete C
-                                #       Restore D from Trash
-                                # This task is NOT displayed in any view by Google!
-                                if display_invalid_tasks:
-                                    task[u'depth'] = -99
-                                else:
-                                    # Remove the invalid task
-                                    tasks.pop(task_idx)
-                                    # Adjust indexes to compensate for removed item
-                                    task_idx = task_idx - 1
-                                    num_tasks = num_tasks - 1
-                                
-                    else:
-                        # This is a parentless (root) task;
-                        #   It is therefore the end of any potential sub-task tree
-                        #   It could be the parent of a future task
-                        possible_parent_ids = [task[u'id']]
-                        task_is_active = not (task.has_key(u'deleted') or task.has_key(u'hidden'))
-                        possible_parent_is_active = [task_is_active]
-                        task[u'depth'] = 0
+            num_records = tasklists_records.count()
+            
+            if num_records is None:
+                # There should be at least one record, since we will only execute this function if TasksBackupJob.status == completed
+                # Possibly user got here by doing a POST without starting a backup request first 
+                # (e.g. page refresh from an old job)
+                logging.error(fn_name + "No data records found for " + str(user_email))
+                # TODO: Display better error to user &/or redirect to allow user to start a backup job
+                self.response.set_status(412, "No data for this user. Please retry backup request.")
+                return
+            
+            logging.debug(fn_name + "Reassembling tasks data from " + str(num_records) + " blobs")
+            rebuilt_pkl = ""
+            for tasklists_record in tasklists_records:
+                #logging.debug("Reassembling blob number " + str(tasklists_record.idx))
+                rebuilt_pkl = rebuilt_pkl + tasklists_record.pickled_tasks_data
+                
+            logging.debug(fn_name + "Reassembled " + str(len(rebuilt_pkl)) + " bytes")
+            
+            tasklists = pickle.loads(rebuilt_pkl)
+            rebuilt_pkl = None # Not needed, so release it
+            
+
+
+            """
+              structure of tasklist
+              { 
+                "title" : tasklist.title,        # Name of this tasklist
+                "tasks"  : [ task ]              # List of task items in this tasklist
+              }
+              
+              structure of task
+              {
+                "title" : title, # Free text
+                "status" : status, # "completed" | "needsAction"
+                "id" : id, # Used when determining parent-child relationships
+                "parent" : parent, # OPT: ID of the parent of this task (only if this is a sub-task)
+                "notes" : notes, # OPT: Free text
+                "due" : due, # OPT: Date due, e.g. 2012-01-30T00:00:00.000Z NOTE time = 0
+                "updated" : updated, # Timestamp, e.g., 2012-01-26T07:47:18.000Z
+                "completed" : completed # Timestamp, e.g., 2012-01-27T10:38:56.000Z
+              }
+            """
+              
+            # User chose which format to export as
+            export_format = self.request.get("format")
+            
+            # We pass the job_start_timestamp from the Progress page so that we can display it on the HTML page
+            job_start_timestamp = self.request.get('job_start_timestamp')
+            
+            # User selected HTML display options (used when format == html)
+            display_completed_tasks = (self.request.get('dim_completed_tasks') == 'True')
+            dim_completed_tasks = (self.request.get('dim_completed_tasks') == 'True')
+            display_completed_date_field = (self.request.get('display_completed_date_field') == 'True')
+            display_due_date_field = (self.request.get('display_due_date_field') == 'True')
+            display_updated_date_field = (self.request.get('display_updated_date_field') == 'True')
+            display_invalid_tasks = (self.request.get('display_invalid_tasks') == 'True')
+            due_selection = self.request.get('due_selection')
+            
+            logging.debug(fn_name + "Selected format = " + str(export_format))
+
+            # Filename format is "tasks_FORMAT_EMAILADDR_YYYY-MM-DD.EXT"
+            # CAUTION: Do not include characters that may not be valid on some filesystems (e.g., colon is not valid on Windows)
+            output_filename_base = "tasks_%s_%s_%s" % (export_format, user_email, datetime.datetime.now().strftime("%Y-%m-%d"))
+     
+            if due_selection in ['due_now', 'overdue']:
+                # If user selected to display due or iverdue tasks, use this value to determine which tasks to display.
+                # Using value from user's browser, since that will be in user's current timezone. Server doesn't know user's current timesone.
+                logging.debug(fn_name + "User chose to only display tasks due, where due_year = " + str(self.request.get('due_year')) +
+                                ", due_month = " + str(self.request.get('due_month')) +
+                                ", due_day = " + str(self.request.get('due_day')))
+                try:
+                    due_date_limit = datetime.date(int(self.request.get('due_year')),
+                                                int(self.request.get('due_month')), 
+                                                int(self.request.get('due_day'))) 
+                except Exception, e:
+                    due_date_limit = datetime.date(datetime.MINYEAR,1,1)
+                    logging.exception(fn_name + "Error intepretting date from browser. Using " + str(due_date_limit))
+            else:
+                due_date_limit = None
+            logging.debug(fn_name + "due_selection = " + str(due_selection) + "due_date_limit = " + str(due_date_limit) )
+                
+            # Calculate and add 'depth' property
+            for tasklist in tasklists:
+                tasks = tasklist[u'tasks']
+                
+                num_tasks = len(tasks)
+                if num_tasks > 0: # Non-empty tasklist
+                    task_idx = 0
+                    possible_parent_ids = []
+                    possible_parent_is_active = []
                     
-                    task_idx = task_idx + 1   
+                    while task_idx < num_tasks:
+                        task = tasks[task_idx]
+                        # By default, assume parent is valid
+                        task[u'parent_is_active'] = True
 
-                # Add extra properties for HTML view;
-                #    Add 'indent' property for HTML pages so that tasks can be correctly indented
-                #    If only_display_due_tasks is true, add 'is_due' property if task is due on or before due_date_limit
-                if export_format == 'html_raw':
-                    #logging.debug(fn_name + "Setting indent metadata for " + export_format + " format")
-                    for task in tasks:
-                        if only_display_due_tasks:
-                            try:
-                                if task[u'status'] == 'needsAction' and task.has_key(u'due'):
-                                    if task[u'due'] <= due_date_limit:
-                                        task[u'is_due'] = True
-                                        tasklist_has_due_tasks = True
-                            except Exception, e:
-                                logging.exception(fn_name + "Exception determining if task is due")
-                                logging.debug(fn_name + "Task ==>")
-                                logging.debug(task)
-                        try:
-                            depth = task[u'depth']
-                        except KeyError, e:
-                            logging.exception(fn_name + "Missing depth for " + task[u'id'] + ", " + task[u'title'])
-                            task[u'depth'] = -2
-                            depth = 0
-                        if depth < 0:
-                            depth = 0
-                        # Set number of pixels to indent task by, as a string,
-                        # to use in style="padding-left:nnn" in HTML pages
-                        task[u'indent'] = str(depth * settings.TASK_INDENT).strip()
+                        if task.has_key(u'parent'):
+                            if task[u'parent'] in possible_parent_ids:
+                                idx = possible_parent_ids.index(task[u'parent'])
+                                try:
+                                    task[u'parent_is_active'] = possible_parent_is_active[idx]
+                                except Exception, e:
+                                    logging.exception("idx = " + str(idx) + ", id = " + task[u'id'] + ", parent = " + task[u'parent'] + ", [" + task[u'title'] + "]")
+                                    logging(possible_parent_ids)
+                                    logging(possible_parent_is_active)
+                                depth = idx + 1
+                                task[u'depth'] = depth
+                                
+                                # Remove parent tasks which are deeper than current parent
+                                del(possible_parent_ids[depth:])
+                                del(possible_parent_is_active[depth:])
+                                    
+                                if task[u'id'] not in possible_parent_ids:
+                                    # This task may have sub-tasks, so add to list of possible  parents
+                                    possible_parent_ids.append(task[u'id'])
+                                    task_is_active = not (task.has_key(u'deleted') or task.has_key(u'hidden'))
+                                    possible_parent_is_active.append(task_is_active)
+                            else:
+                                task[u'parent_is_active'] = False
+                                if task.has_key(u'deleted') or task.has_key(u'hidden'):
+                                    # Can't calculate depth of hidden and deleted tasks, if parent doesn't exist.
+                                    # This usually happens if parent is deleted whilst child is hidden or deleted (see below)
+                                    task[u'depth'] = -1
+                                else:
+                                    # Non-deleted/hidden task with invalid parent.
+                                    # This "orphan" non-hidden/deleted task has an unknown depth, since it's parent no longer exists. 
+                                    # The parent task may have been deleted or moved.
+                                    # One way this can happen:
+                                    #       Start with A/B/C/D
+                                    #       Delete D
+                                    #       Delete C
+                                    #       Restore D from Trash
+                                    # This task is NOT displayed in any view by Google!
+                                    if display_invalid_tasks:
+                                        task[u'depth'] = -99
+                                    else:
+                                        # Remove the invalid task
+                                        tasks.pop(task_idx)
+                                        # Adjust indexes to compensate for removed item
+                                        task_idx = task_idx - 1
+                                        num_tasks = num_tasks - 1
+                                    
+                        else:
+                            # This is a parentless (root) task;
+                            #   It is therefore the end of any potential sub-task tree
+                            #   It could be the parent of a future task
+                            possible_parent_ids = [task[u'id']]
+                            task_is_active = not (task.has_key(u'deleted') or task.has_key(u'hidden'))
+                            possible_parent_is_active = [task_is_active]
+                            task[u'depth'] = 0
+                        
+                        task_idx = task_idx + 1   
+
+                    # Add extra properties for HTML view;
+                    #    Add 'indent' property for HTML pages so that tasks can be correctly indented
+                    #    Determine if task should be displayed, based on user selections
+                    if export_format == 'html_raw':
+                        #logging.debug(fn_name + "Setting metadata for " + export_format + " format")
+                        tasklist_has_tasks_to_display = False
+                        for task in tasks:
+                            display = True # Display by default
                             
-            if tasklist_has_due_tasks:
-                tasklist[u'tasklist_has_due_tasks'] = True
-                
-        template_values = {'app_title' : app_title,
-                           'host_msg' : host_msg,
-                           'home_page_url' : settings.HOME_PAGE_URL,
-                           'product_name' : product_name,
-                           'tasklists': tasklists,
-                           'total_progress' : total_progress,
-                           'dim_completed_tasks' : dim_completed_tasks,
-                           'only_display_due_tasks' : only_display_due_tasks,
-                           'due_date_limit' : str(due_date_limit),
-                           'display_invalid_tasks' : display_invalid_tasks,
-                           'include_completed' : include_completed,
-                           'include_deleted' : include_deleted,
-                           'include_hidden' : include_hidden,
-                           'display_completed_date_field' : display_completed_date_field,
-                           'display_due_date_field' : display_due_date_field,
-                           'display_updated_date_field' : display_updated_date_field,
-                           'user_email' : user_email, 
-                           'now' : datetime.datetime.now(),
-                           'job_start_timestamp' : job_start_timestamp,
-                           'exportformat' : export_format,
-                           'url_discussion_group' : settings.url_discussion_group,
-                           'email_discussion_group' : settings.email_discussion_group,
-                           'url_issues_page' : settings.url_issues_page,
-                           'url_source_code' : settings.url_source_code,
-                           'app_version' : appversion.version,
-                           'upload_timestamp' : appversion.upload_timestamp}
-        
-        # template file name format "tasks_template_FORMAT.EXT",
-        #   where FORMAT = export_format (e.g., 'outlook')
-        #     and EXT = the file type extension (e.g., 'csv')
-        if export_format == 'ics':
-            self.WriteIcsUsingTemplate(template_values, export_format, output_filename_base)
-        elif export_format in ['outlook', 'raw', 'raw1']:
-            self.WriteCsvUsingTemplate(template_values, export_format, output_filename_base)
-        elif export_format == 'html_raw':
-            self.WriteHtmlRaw(template_values)
-        elif export_format == 'RTM':
-            self.SendEmailUsingTemplate(template_values, export_format, user_email, output_filename_base)
-        elif export_format == 'py':
-            self.WriteTextUsingTemplate(template_values, export_format, output_filename_base, 'py')
-        else:
-            logging.warning(fn_name + "Unsupported export format: %s" % export_format)
-            # TODO: Handle invalid export_format nicely - display message to user & go back to main page
-            self.response.out.write("<br /><h2>Unsupported export format: %s</h2>" % export_format)
-        tasklists = None
-        logging.debug(fn_name + "Calling garbage collection")
-        gc.collect()
-        logging.debug(fn_name + "<End>")
-        logservice.flush()
+                            # TODO: Determine if task should be displayed
+                            if not display_completed_tasks and task[u'status'] == 'completed':
+                                # User chose not to display completed tasks
+                                display = False
+                            else:
+                                if due_selection == "all":
+                                    # Ignore 'due' property
+                                    display = True
+                                    tasklist_has_tasks_to_display = True
+                                else:
+                                    display = False
+                                    try:
+                                        if task.has_key(u'due'):
+                                            if due_selection == "any_due":
+                                                # Display task if it has a 'due' property (ignore value)
+                                                display = True
+                                                tasklist_has_tasks_to_display = True
+                                            elif due_selection == "due_now" and task[u'due'] <= due_date_limit:
+                                                # Display task if it is due on or before selected due date (e.g. today)
+                                                display = True
+                                                tasklist_has_tasks_to_display = True
+                                            elif due_selection == "overdue" and task[u'due'] < due_date_limit:
+                                                # Display only if task is due before selected due date (e.g. today)
+                                                display = True
+                                                tasklist_has_tasks_to_display = True
+                                    except Exception, e:
+                                        logging.exception(fn_name + "Exception determining if task is due")
+                                        logging.debug(fn_name + "Task ==>")
+                                        logging.debug(task)
+                            
+                            task['display'] = display
+                                
+                            try:
+                                depth = task[u'depth']
+                            except KeyError, e:
+                                logging.exception(fn_name + "Missing depth for " + task[u'id'] + ", " + task[u'title'])
+                                task[u'depth'] = -2
+                                depth = 0
+                            if depth < 0:
+                                depth = 0
+                            # Set number of pixels to indent task by, as a string,
+                            # to use in style="padding-left:nnn" in HTML pages
+                            task[u'indent'] = str(depth * settings.TASK_INDENT).strip()
+                                
+                        if tasklist_has_tasks_to_display:
+                            tasklist[u'tasklist_has_tasks_to_display'] = True
+                    
+            template_values = {'app_title' : app_title,
+                               'host_msg' : host_msg,
+                               'home_page_url' : settings.HOME_PAGE_URL,
+                               'product_name' : product_name,
+                               'tasklists': tasklists,
+                               'total_progress' : total_progress,
+                               'dim_completed_tasks' : dim_completed_tasks,
+                               'due_selection' : due_selection,
+                               'due_date_limit' : str(due_date_limit),
+                               'display_invalid_tasks' : display_invalid_tasks,
+                               'include_completed' : include_completed,
+                               'include_deleted' : include_deleted,
+                               'include_hidden' : include_hidden,
+                               'display_completed_date_field' : display_completed_date_field,
+                               'display_due_date_field' : display_due_date_field,
+                               'display_updated_date_field' : display_updated_date_field,
+                               'user_email' : user_email, 
+                               'now' : datetime.datetime.now(),
+                               'job_start_timestamp' : job_start_timestamp,
+                               'exportformat' : export_format,
+                               'url_discussion_group' : settings.url_discussion_group,
+                               'email_discussion_group' : settings.email_discussion_group,
+                               'url_issues_page' : settings.url_issues_page,
+                               'url_source_code' : settings.url_source_code,
+                               'app_version' : appversion.version,
+                               'upload_timestamp' : appversion.upload_timestamp}
+            
+            # template file name format "tasks_template_FORMAT.EXT",
+            #   where FORMAT = export_format (e.g., 'outlook')
+            #     and EXT = the file type extension (e.g., 'csv')
+            if export_format == 'ics':
+                self.WriteIcsUsingTemplate(template_values, export_format, output_filename_base)
+            elif export_format in ['outlook', 'raw', 'raw1', 'import_export']:
+                self.WriteCsvUsingTemplate(template_values, export_format, output_filename_base)
+            elif export_format == 'html_raw':
+                self.WriteHtmlRaw(template_values)
+            elif export_format == 'RTM':
+                self.SendEmailUsingTemplate(template_values, export_format, user_email, output_filename_base)
+            elif export_format == 'py':
+                self.WriteTextUsingTemplate(template_values, export_format, output_filename_base, 'py')
+            else:
+                logging.warning(fn_name + "Unsupported export format: %s" % export_format)
+                # TODO: Handle invalid export_format nicely - display message to user & go back to main page
+                self.response.out.write("<br /><h2>Unsupported export format: %s</h2>" % export_format)
+            tasklists = None
+            logging.debug(fn_name + "Calling garbage collection")
+            gc.collect()
+            logging.debug(fn_name + "<End>")
+            logservice.flush()
+        except Exception, e:
+            logging.exception(fn_name + "Caught top-level exception")
+            self.response.out.write("""Sorry, something went terribly wrong.<br />%s<br />Please report this error to <a href="http://code.google.com/p/tasks-backup/issues/list">code.google.com/p/tasks-backup/issues/list</a>""" % str(e))
+            logging.debug(fn_name + "<End> due to exception" )
+            logservice.flush()
 
         
     def SendEmailUsingTemplate(self, template_values, export_format, user_email, output_filename_base):
@@ -1043,7 +1346,7 @@ class ReturnResultsHandler(webapp.RequestHandler):
 
     def WriteCsvUsingTemplate(self, template_values, export_format, output_filename_base):
         """ Write a CSV file according to the specified .csv template file
-            Currently supports export_format = 'outlook', 'raw' and 'raw1'
+            Currently supports export_format = 'outlook', 'raw', 'raw1' and 'import_export'
         """
         fn_name = "WriteCsvUsingTemplate(): "
 
@@ -1127,7 +1430,7 @@ class ReturnResultsHandler(webapp.RequestHandler):
         display_invalid_tasks = template_values.get('display_invalid_tasks')
         job_start_timestamp = template_values.get('job_start_timestamp')
         dim_completed_tasks = template_values.get('dim_completed_tasks')
-        only_display_due_tasks = template_values.get('only_display_due_tasks')
+        due_selection = template_values.get('due_selection')
         due_date_limit = template_values.get('due_date_limit')
         display_completed_date_field = template_values.get('display_completed_date_field')
         display_updated_date_field = template_values.get('display_updated_date_field')
@@ -1183,15 +1486,19 @@ class ReturnResultsHandler(webapp.RequestHandler):
             self.response.out.write(num_tasklists)
             self.response.out.write(""" task lists.""")
             
-            if only_display_due_tasks:
+            if due_selection in ['any_due', 'due_now', 'overdue']:
                 self.response.out.write("""<br />
-                    <span class="comment">Displaying only tasks due on or before """)
-                self.response.out.write(due_date_limit)
+                    <span class="comment">Displaying """)
+                if due_selection == 'any_due':
+                    self.response.out.write("""tasks with any due date""")
+                elif due_selection == 'due_now':
+                    self.response.out.write("""current tasks (due on or before """ + str(due_date_limit) + """)""")
+                elif due_selection == 'overdue':
+                    self.response.out.write("""overdue tasks (due before """ + str(due_date_limit) + """)""")
                 self.response.out.write("""</span>""")
-            else:
-                if include_completed:
-                    self.response.out.write("""<br />
-                        <span class="comment">Displaying completed tasks</span>""")
+            if include_completed:
+                self.response.out.write("""<br />
+                    <span class="comment">Displaying completed tasks</span>""")
             if include_hidden:
                 self.response.out.write("""<br />
                     <span class="comment">Displaying hidden tasks</span>""")
@@ -1204,8 +1511,8 @@ class ReturnResultsHandler(webapp.RequestHandler):
             self.response.out.write("""</div>""")
                     
             for tasklist in tasklists:
-                if only_display_due_tasks and not tasklist.has_key(u'tasklist_has_due_tasks'):
-                    # If user chooses only_display_due_tasks, skip tasklists that don't have any due tasks
+                if not tasklist.get('tasklist_has_tasks_to_display', False):
+                    # Skip tasklists that don't have any due tasks
                     continue
                     
                 num_tasks = len(tasklist)
@@ -1232,8 +1539,8 @@ class ReturnResultsHandler(webapp.RequestHandler):
                         <div class="tasks">""")
                         
                     for task in tasks:
-                        if only_display_due_tasks and not task.has_key(u'is_due'):
-                            # If user chooses only_display_due_tasks, skip non-due tasks
+                        if not task.get(u'display', True):
+                            # Skip tasks that don't match user's selection
                             continue
                     
                         task_title = task.get(u'title', "<No Task Title>")
@@ -1272,11 +1579,6 @@ class ReturnResultsHandler(webapp.RequestHandler):
                             dim_class = "dim"
                         
                         self.response.out.write("""
-                            <!-- Task will be dim if; 
-                                  task is deleted OR 
-                                  task is hidden OR 
-                                  task is completed AND user checked dim_completed_tasks
-                            -->
                             <div 
                                 style="padding-left:""")
                         self.response.out.write(task_indent)
@@ -1305,7 +1607,7 @@ class ReturnResultsHandler(webapp.RequestHandler):
                                     
                         if task_notes:
                             self.response.out.write("""<div class="task-notes">""")
-                            self.response.out.write(task_notes.replace('\n','<br />'))
+                            self.response.out.write(task_notes)
                             self.response.out.write("""</div>""")
                                     
                         if task_due and display_due_date_field:
@@ -1329,15 +1631,10 @@ class ReturnResultsHandler(webapp.RequestHandler):
                             self.response.out.write("""
                                 <div class="task-attribute-hidden-or-deleted">- Hidden -</div>
                                 """)
-                                
-                        self.response.out.write("""
-                                </div>  <!-- End of task details div -->
-                            </div> <!-- End of task div -->
-                            """)
-                            
-                    self.response.out.write("""
-                            </div> <!-- End of tasks div -->
-                        """)
+                        # End of task details div
+                        # End of task div
+                        # End of tasks div
+                        self.response.out.write("""</div></div></div""")
                                            
                 else:
                     self.response.out.write("""
@@ -1397,71 +1694,77 @@ class OAuthHandler(webapp.RequestHandler):
         """Handles GET requests for /oauth2callback."""
         fn_name = "OAuthHandler.get() "
         
-        if not self.request.get("code"):
-            logging.debug(fn_name + "No 'code', so redirecting to /")
-            logservice.flush()
-            self.redirect("/")
-            return
-        user = users.get_current_user()
-        logging.debug(fn_name + "Retrieving flow for " + str(user.user_id()))
-        flow = pickle.loads(memcache.get(user.user_id()))
-        if flow:
-            logging.debug(fn_name + "Got flow. Retrieving credentials")
-            error = False
-            retry_count = 3
-            while retry_count > 0:
-                try:
-                    credentials = flow.step2_exchange(self.request.params)
-                    break
-                except client.FlowExchangeError, e:
-                    logging.warning(fn_name + "FlowExchangeError " + str(e))
-                    credentials = None
-                    error = True
-                except Exception, e:
-                    if retry_count > 0:
-                        logging.exception(fn_name + "Error retrieving credentials. " + 
-                                str(retry_count) + " retries remaining")
-                        logservice.flush()
-                    else:
-                        logging.exception(fn_name + "Unable to retrieve credentials after 3 retries. Redirecting to " + settings.INVALID_CREDENTIALS_URL)
-                        logservice.flush()
-                        self.redirect(settings.INVALID_CREDENTIALS_URL + "?rc=EX&err=" + str(type(e)))
-                        return
-                retry_count = retry_count - 1
-                
-            appengine.StorageByKeyName(
-                model.Credentials, user.user_id(), "credentials").put(credentials)
-            if error:
-                logging.warning(fn_name + "FlowExchangeError, redirecting to '/?msg=ACCOUNT_ERROR'")
+        try:
+            if not self.request.get("code"):
+                logging.debug(fn_name + "No 'code', so redirecting to /")
                 logservice.flush()
-                self.redirect("/?msg=ACCOUNT_ERROR")
-            else:
-                # logging.debug(fn_name + "Retrieved credentials ==>")
-                # shared.DumpObj(credentials)
-                # logservice.flush()
-                
-                if not credentials:
-                    logging.debug(fn_name + "No credentials. Redirecting to " + settings.INVALID_CREDENTIALS_URL)
-                    # logging.debug(fn_name + "user ==>")
-                    # shared.DumpObj(user)
-                    logservice.flush()
-                    self.redirect(settings.INVALID_CREDENTIALS_URL + "?rc=NC")
-                elif credentials.invalid:
-                    logging.warning(fn_name + "Invalid credentials. Redirecting to " + settings.INVALID_CREDENTIALS_URL)
-                    # logging.debug(fn_name + "user ==>")
-                    # shared.DumpObj(user)
-                    # logging.debug(fn_name + "credentials ==>")
-                    # shared.DumpObj(credentials)
-                    logservice.flush()
-                    self.redirect(settings.INVALID_CREDENTIALS_URL + "?rc=IC")
-                else:
-                    logging.debug(fn_name + "Credentials valid. Redirecting to " + str(self.request.get("state")))
-                    logservice.flush()
-                    # logging.debug(fn_name + "Resetting auth_count cookie to zero")
-                    # logservice.flush()
-                    # _set_cookie(self.response, 'auth_count', '0', max_age=120)
+                self.redirect("/")
+                return
+            user = users.get_current_user()
+            logging.debug(fn_name + "Retrieving flow for " + str(user.user_id()))
+            flow = pickle.loads(memcache.get(user.user_id()))
+            if flow:
+                logging.debug(fn_name + "Got flow. Retrieving credentials")
+                error = False
+                retry_count = 3
+                while retry_count > 0:
+                    try:
+                        credentials = flow.step2_exchange(self.request.params)
+                        break
+                    except client.FlowExchangeError, e:
+                        logging.warning(fn_name + "FlowExchangeError " + str(e))
+                        credentials = None
+                        error = True
+                    except Exception, e:
+                        if retry_count > 0:
+                            logging.exception(fn_name + "Error retrieving credentials. " + 
+                                    str(retry_count) + " retries remaining")
+                            logservice.flush()
+                        else:
+                            logging.exception(fn_name + "Unable to retrieve credentials after 3 retries. Redirecting to " + settings.INVALID_CREDENTIALS_URL)
+                            logservice.flush()
+                            self.redirect(settings.INVALID_CREDENTIALS_URL + "?rc=EX&err=" + str(type(e)))
+                            return
+                    retry_count = retry_count - 1
                     
-                    self.redirect(self.request.get("state"))
+                appengine.StorageByKeyName(
+                    model.Credentials, user.user_id(), "credentials").put(credentials)
+                if error:
+                    logging.warning(fn_name + "FlowExchangeError, redirecting to '/?msg=ACCOUNT_ERROR'")
+                    logservice.flush()
+                    self.redirect("/?msg=ACCOUNT_ERROR")
+                else:
+                    # logging.debug(fn_name + "Retrieved credentials ==>")
+                    # shared.DumpObj(credentials)
+                    # logservice.flush()
+                    
+                    if not credentials:
+                        logging.debug(fn_name + "No credentials. Redirecting to " + settings.INVALID_CREDENTIALS_URL)
+                        # logging.debug(fn_name + "user ==>")
+                        # shared.DumpObj(user)
+                        logservice.flush()
+                        self.redirect(settings.INVALID_CREDENTIALS_URL + "?rc=NC")
+                    elif credentials.invalid:
+                        logging.warning(fn_name + "Invalid credentials. Redirecting to " + settings.INVALID_CREDENTIALS_URL)
+                        # logging.debug(fn_name + "user ==>")
+                        # shared.DumpObj(user)
+                        # logging.debug(fn_name + "credentials ==>")
+                        # shared.DumpObj(credentials)
+                        logservice.flush()
+                        self.redirect(settings.INVALID_CREDENTIALS_URL + "?rc=IC")
+                    else:
+                        logging.debug(fn_name + "Credentials valid. Redirecting to " + str(self.request.get("state")))
+                        logservice.flush()
+                        # logging.debug(fn_name + "Resetting auth_count cookie to zero")
+                        # logservice.flush()
+                        # _set_cookie(self.response, 'auth_count', '0', max_age=120)
+                        
+                        self.redirect(self.request.get("state"))
+        except Exception, e:
+            logging.exception(fn_name + "Caught top-level exception")
+            self.response.out.write("""Sorry, something went terribly wrong.<br />%s<br />Please report this error to <a href="http://code.google.com/p/tasks-backup/issues/list">code.google.com/p/tasks-backup/issues/list</a>""" % str(e))
+            logging.debug(fn_name + "<End> due to exception" )
+            logservice.flush()
 
         
 def real_main():
@@ -1471,12 +1774,14 @@ def real_main():
     application = webapp.WSGIApplication(
         [
             (settings.HOME_PAGE_URL,            MainHandler),
-            ("/completed",                      CompletedHandler),
-            ("/auth",                           AuthRedirectHandler),
             (settings.RESULTS_URL,              ReturnResultsHandler),
             (settings.START_BACKUP_URL,         StartBackupHandler),
             (settings.PROGRESS_URL,             ShowProgressHandler),
             (settings.INVALID_CREDENTIALS_URL,  InvalidCredentialsHandler),
+            (settings.GET_NEW_BLOBSTORE_URL,    GetNewBlobstoreUrlHandler),
+            (settings.BLOBSTORE_UPLOAD_URL,     BlobstoreUploadHandler),
+            ("/completed",                      CompletedHandler),
+            ("/auth",                           AuthRedirectHandler),
             ("/oauth2callback",                 OAuthHandler),
         ], debug=False)
     util.run_wsgi_app(application)

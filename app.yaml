@@ -24,7 +24,7 @@
 
 # ===== Private Alpha Test host and version ======
 application: js-tasks-test
-version: 1
+version: 2
 
 
 
@@ -69,6 +69,21 @@ handlers:
 - url: /info
   static_files: info.html
   upload: info.html
+  secure: always
+
+- url: /datetimepicker.js
+  static_files: datetimepicker.js
+  upload: datetimepicker.js
+  secure: always
+  
+- url: /cal.gif
+  static_files: cal.gif
+  upload: cal.gif
+  secure: always
+  
+- url: /Example-Tasks-My_order.JPG
+  static_files: Example-Tasks-My_order.JPG
+  upload: Example-Tasks-My_order.JPG
   secure: always
   
 - url: /worker

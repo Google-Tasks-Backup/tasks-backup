@@ -2,7 +2,7 @@
 # queue name must match name in settings.BACKUP_REQUEST_QUEUE_NAME
 
 queue:
-- name: tasks-backup-request
+- name: process-tasks-request
   rate: 5/s
   retry_parameters:
     min_backoff_seconds: 2

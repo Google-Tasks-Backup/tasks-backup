@@ -21,6 +21,7 @@ This is the Django template for the landing page.
     <head>
         <title>{{ app_title }}</title>
         <link rel="stylesheet" type="text/css" href="tasks_backup.css"></link>
+        <script type="text/javascript" src="jquery.js"></script>
         <script type="text/javascript">
 
             function authorise() {
@@ -31,22 +32,20 @@ This is the Django template for the landing page.
             }
 
             function disableButton() {
-                document.getElementById("start_backup").value = "Starting backup (this may take many minutes) ...";
-                document.getElementById("start_backup").innerHTML = "Starting backup (this may take many minutes) ...";
+                document.getElementById("start_backup").value = "Starting backup (this may take several minutes) ...";
+                document.getElementById("start_backup").innerHTML = "Starting backup (this may take several minutes) ...";
                 document.getElementById("start_backup").disabled = true;
             }
             
-            /* From http://www.developerfusion.com/code/5200/how-to-disable-all-elements-on-a-form/ */
-            function disableForm(theform) {
-            if (document.all || document.getElementById) {
-                for (i = 0; i < theform.length; i++) {
-                var formElement = theform.elements[i];
-                    if (true) {
-                        formElement.disabled = true;
-                    }
-                }
+            // From http://stackoverflow.com/questions/6203089/stop-blob-url-from-expiring
+            function setBlobstoreUrl() {
+                $.get({{ new_blobstore_url }}, function(data){
+                    $("#selectFileForm").attr('action', data);
+                    $("#selectFileForm").submit();
+                    $("#select_file").attr('disabled', 'true');
+                    $("#actionMsg").html('<span  style="font-weight: bold; font-size: larger;">Please wait, uploading file to server ...</span><br />This may take several minutes, depending on the size of your file and the speed of your connection. ');
+                }); 
             }
-        }
         </script>
         <script type="text/javascript">
 
@@ -75,7 +74,7 @@ This is the Django template for the landing page.
   
     <noscript>
         <br />
-        <h3>Javascript should be enabled for maximum application functionality</h3>
+        <h3>Javascript must be enabled to use this site</h3>
         <br />
     </noscript>
     
@@ -156,6 +155,21 @@ This is the Django template for the landing page.
 			At a rough estimate, the system processes 50-150 tasks per second. 
 			This means that a task list with 5,000 tasks could take around 2 minutes.
         </div>
+        
+        <form 
+            id="selectFileForm" 
+            action="/dummy" 
+            method="POST"
+            enctype="multipart/form-data">
+			<fieldset>
+				<legend>Import tasks from <span class="fixed-font smaller-font">tasks_import_export_XXXXXX.csv</span> file</legend>
+                <span>Select CSV file to upload:</span> <input type="file" id="select_file" name="file" onchange="setBlobstoreUrl();">
+                <div id="actionMsg">Selected file must be in the format produced by the {{ app_title }} "Import/Export CSV" format
+                    <span class="smaller-font">(Refer to the <a href="info.html#import_export_description">information page</a> for details)</span>
+                </div>
+            </fieldset>
+        </form>
+                    <br />
     {% else %}
         <div class="break">
             This application uses Google authentication to access your Tasks data. The permission for this application will be displayed as "{{ product_name }} - Tasks" in your list of 
