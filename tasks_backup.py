@@ -62,6 +62,9 @@ from datetime import timedelta
 import appversion # appversion.version is set before the upload process to keep the version number consistent
 import shared # Code whis is common between tasks-backup.py and worker.py
 
+# Name of folder containg templates. Do not include path separator characters, as they are inserted by os.path.join()
+_path_to_templates = "templates"
+
 def _set_cookie(res, key, value='', max_age=None,
                    path='/', domain=None, secure=None, httponly=False,
                    version=None, comment=None):
@@ -165,7 +168,7 @@ def _serveRetryPage(self, msg):
             user_email = user.email()
         
         
-        path = os.path.join(os.path.dirname(__file__), "retry.html")
+        path = os.path.join(os.path.dirname(__file__), _path_to_templates, "retry.html")
         if not credentials or credentials.invalid:
             is_authorized = False
         else:
@@ -238,7 +241,7 @@ class BlobstoreUploadHandler(blobstore_handlers.BlobstoreUploadHandler):
                 # Create a Taskqueue entry to start the import
                 
                 # Create a DB record, using the user's email address as the key
-                tasks_backup_job = model.TasksBackupJob(key_name=user_email)
+                tasks_backup_job = model.ProcessTasksJob(key_name=user_email)
                 tasks_backup_job.job_type = 'import'
                 tasks_backup_job.blobstore_key = str(blob_info.key())
                 tasks_backup_job.user = user
@@ -248,7 +251,7 @@ class BlobstoreUploadHandler(blobstore_handlers.BlobstoreUploadHandler):
                 # Add the request to the tasks queue, passing in the user's email so that the task can access the
                 # database record
                 q = taskqueue.Queue(settings.PROCESS_TASKS_REQUEST_QUEUE_NAME)
-                t = taskqueue.Task(url=settings.BACKUP_WORKER_URL, params={settings.TASKS_QUEUE_KEY_NAME : user_email}, method='POST')
+                t = taskqueue.Task(url=settings.WORKER_URL, params={settings.TASKS_QUEUE_KEY_NAME : user_email}, method='POST')
                 logging.debug(fn_name + "Adding task to " + str(settings.PROCESS_TASKS_REQUEST_QUEUE_NAME) + 
                     " queue, for " + str(user_email))
                 logservice.flush()
@@ -278,88 +281,6 @@ class BlobstoreUploadHandler(blobstore_handlers.BlobstoreUploadHandler):
             logservice.flush()
 
             
-class StartImportHandler(webapp.RequestHandler):
-    """ Handler for importing tasks """
-    
-  
-    def post(self):
-        """ Handles request which starts the import process. """
-        
-        fn_name = "StartImportHandler.post(): "
-       
-        logging.debug(fn_name + "<Start>")
-        logservice.flush()
-
-        try:
-            # TODO: Read data from supplied CSV file
-            # For a way of handling files >1MB,
-            #   check https://developers.google.com/appengine/docs/python/blobstore/overview
-            #   "Applications can use the Blobstore to accept large files as uploads from users and to serve those files. 
-            #    Files are called blobs once they're uploaded. Applications don't access blobs directly. 
-            #    Instead, applications work with blobs through blob info entities (represented by the BlobInfo class) in the datastore."
-            #
-            #   "Blobstore values can be served to the user, or accessed by the application in a file-like stream, using the Blobstore API."
-            #   "Note: Blobs as defined by the Blobstore service are not related to blob property values used by the datastore."
-            #   "... rewrites the request to contain the blob key, and passes it to a path in your application."
-            #       Probably can't be the URL of a worker, since worker must be started via taskqueue
-            #   "An application can read a Blobstore value a portion at a time using an API call. 
-            #    The size of the portion can be up to the maximum size of an API return value. 
-            #    This size is a little less than 32 megabytes, represented in Python by the constant google.appengine.ext.blobstore.MAX_BLOB_FETCH_SIZE 
-            #    An application cannot create or modify Blobstore values except through files uploaded by the user."
-            
-            # For each row in CSV file:
-            #   If tasklist_title != prev_tasklist.title:
-            #       Add prev_tasklist to tasklists
-            #       prev_tasklist = tasklist
-            #       Create new tasklist
-            #   Add task to tasklist
-            # Pickle tasklists
-            # Sore pickle in DB record(s)
-            # Use taskqueue to start import worker
-            # Display import progress to user
-            
-            # **** OR ****
-            
-            # Use Blobstore to get file from user to server
-            # % Assume that CSV file is ordered
-            # %  * Grouped by tasklist
-            # %  * Subtasks immediately following tasks
-            # Retrieve list of tasklists
-            #   % Handling non-unique tasklist names:
-            #   %   Rename non-unique tasklist on server? {Check that rename doesn't clash}
-            #   %   Only store ID of 1st tasklist
-            # Store in tasklist_title_dict as {'title' : 'id'}
-            # For each row in CSV file:
-            #   If tasklist_title not in tasklist_title_dict: 
-            #       Create tasklist
-            #       Add new tasklist title & ID (from tasklists.insert method) to tasklist_title_dict
-            #   Insert task into tasklist using;
-            #     tasklist_id
-            #     previous_id (id of previous sibling at same depth)
-            #     parent_id (if depth > 0)
-            #     prev_tasklist = tasklist
-            
-            # Option: Ignore duplicates
-            # Read all tasks in tasklist
-            # Sort existing tasks (in memory) by title O(n log n)
-            # Sort new tasks (in memory) by title O(n log n)
-            # Compare side-by-side O(n)
-            # Problem: Requires a lot of memory - size of existing PLUS size of new PLUS sorting overhead
-            
-            # OPTIONS:
-            #   Allow user to specify new tasklist, into which ALL tasks are inserted
-            #   Allow user to specify prefix/suffix for import tasklist names, and import tasks into new tasklists
-            #     Need to check for name clashes. Could just append YYYY-MM-DD_HH-MM-SS 
-            #       (similar to the auto-added group when inserting contacts into Google
-            
-            # CAUTIONS:
-            #   How handle multi-line notes in CSV?
-        except Exception, e:
-            logging.exception(fn_name + "Caught top-level exception")
-            self.response.out.write("""Sorry, something went terribly wrong.<br />%s<br />Please report this error to <a href="http://code.google.com/p/tasks-backup/issues/list">code.google.com/p/tasks-backup/issues/list</a>""" % str(e))
-            logging.debug(fn_name + "<End> due to exception" )
-            logservice.flush()
-    
     
     
 class InvalidCredentialsHandler(webapp.RequestHandler):
@@ -383,7 +304,7 @@ class InvalidCredentialsHandler(webapp.RequestHandler):
                 
             client_id, client_secret, user_agent, app_title, product_name, host_msg = shared.GetSettings(self.request.host)
             
-            path = os.path.join(os.path.dirname(__file__), "invalid_credentials.html")
+            path = os.path.join(os.path.dirname(__file__), _path_to_templates, "invalid_credentials.html")
 
             template_values = {  'app_title' : app_title,
                                  'app_version' : appversion.version,
@@ -450,11 +371,7 @@ class MainHandler(webapp.RequestHandler):
                 except Exception, e:
                     logging.exception(fn_name + "Exception retrieving request headers")
                     
-            # # Log and flush before starting operation which may cause memory limit exceeded error
-            # logging.debug(fn_name + "building template")
-            # logservice.flush() 
-            
-            path = os.path.join(os.path.dirname(__file__), "index.html")
+            path = os.path.join(os.path.dirname(__file__), _path_to_templates, "index.html")
             if not credentials or credentials.invalid:
                 is_authorized = False
             else:
@@ -597,12 +514,7 @@ class CompletedHandler(webapp.RequestHandler):
 
             client_id, client_secret, user_agent, app_title, product_name, host_msg = shared.GetSettings(self.request.host)
 
-            
-            # Log and flush before starting operation which may cause memory limit exceeded error
-            logging.debug(fn_name + "building template")
-            logservice.flush() 
-            
-            path = os.path.join(os.path.dirname(__file__), "completed.html")
+            path = os.path.join(os.path.dirname(__file__), _path_to_templates, "completed.html")
             if not credentials or credentials.invalid:
                 is_authorized = False
             else:
@@ -692,7 +604,7 @@ class StartBackupHandler(webapp.RequestHandler):
             
       
             # Create a DB record, using the user's email address as the key
-            tasks_backup_job = model.TasksBackupJob(key_name=user_email)
+            tasks_backup_job = model.ProcessTasksJob(key_name=user_email)
             tasks_backup_job.job_type = 'export'
             tasks_backup_job.include_completed = (self.request.get('include_completed') == 'True')
             tasks_backup_job.include_deleted = (self.request.get('include_deleted') == 'True')
@@ -709,7 +621,7 @@ class StartBackupHandler(webapp.RequestHandler):
             # Add the request to the tasks queue, passing in the user's email so that the task can access the
             # databse record
             q = taskqueue.Queue(settings.PROCESS_TASKS_REQUEST_QUEUE_NAME)
-            t = taskqueue.Task(url=settings.BACKUP_WORKER_URL, params={settings.TASKS_QUEUE_KEY_NAME : user_email}, method='POST')
+            t = taskqueue.Task(url=settings.WORKER_URL, params={settings.TASKS_QUEUE_KEY_NAME : user_email}, method='POST')
             logging.debug(fn_name + "Adding task to " + str(settings.PROCESS_TASKS_REQUEST_QUEUE_NAME) + 
                 " queue, for " + str(user_email))
             logservice.flush()
@@ -787,7 +699,7 @@ class ShowProgressHandler(webapp.RequestHandler):
             
             
             # Retrieve the DB record for this user
-            tasks_backup_job = model.TasksBackupJob.get_by_key_name(user_email)
+            tasks_backup_job = model.ProcessTasksJob.get_by_key_name(user_email)
                 
             if tasks_backup_job is None:
                 logging.error(fn_name + "No DB record for " + user_email)
@@ -809,7 +721,7 @@ class ShowProgressHandler(webapp.RequestHandler):
                 include_deleted = tasks_backup_job.include_deleted
                 include_hidden = tasks_backup_job.include_hidden
                 
-                if status != 'completed' and status != 'error':
+                if status != 'completed' and status != 'import_completed' and status != 'error':
                     # Check if the job has exceeded either progress or total times
                     if job_execution_time.seconds > settings.MAX_JOB_TIME:
                         logging.error(fn_name + "Job created " + str(job_execution_time.seconds) + " seconds ago. Exceeded max allowed " +
@@ -831,6 +743,8 @@ class ShowProgressHandler(webapp.RequestHandler):
             
             if status == 'completed':
                 logging.info(fn_name + "Retrieved " + str(progress) + " tasks for " + str(user_email))
+            elif status == 'import_completed':
+                logging.info(fn_name + "Imported " + str(progress) + " tasks for " + str(user_email))
             else:
                 logging.debug(fn_name + "Status = " + str(status) + ", progress = " + str(progress) + 
                     " for " + str(user_email) + ", started at " + str(job_start_timestamp) + " UTC")
@@ -838,11 +752,7 @@ class ShowProgressHandler(webapp.RequestHandler):
             if error_message:
                 logging.error(fn_name + "Error message: " + str(error_message))
             
-            # Log and flush before starting operation which may cause memory limit exceeded error
-            # logging.debug(fn_name + "building template")
-            # logservice.flush() 
-            
-            path = os.path.join(os.path.dirname(__file__), "progress.html")
+            path = os.path.join(os.path.dirname(__file__), _path_to_templates, "progress.html")
             
             #refresh_url = self.request.host + '/' + settings.PROGRESS_URL
             
@@ -956,7 +866,7 @@ class ReturnResultsHandler(webapp.RequestHandler):
                     return
             
             # Retrieve the DB record for this user
-            tasks_backup_job = model.TasksBackupJob.get_by_key_name(user_email)
+            tasks_backup_job = model.ProcessTasksJob.get_by_key_name(user_email)
                 
             if tasks_backup_job is None:
                 logging.error(fn_name + "No tasks_backup_job record for " + user_email)
@@ -979,7 +889,7 @@ class ReturnResultsHandler(webapp.RequestHandler):
             num_records = tasklists_records.count()
             
             if num_records is None:
-                # There should be at least one record, since we will only execute this function if TasksBackupJob.status == completed
+                # There should be at least one record, since we will only execute this function if ProcessTasksJob.status == completed
                 # Possibly user got here by doing a POST without starting a backup request first 
                 # (e.g. page refresh from an old job)
                 logging.error(fn_name + "No data records found for " + str(user_email))
@@ -1260,11 +1170,7 @@ class ReturnResultsHandler(webapp.RequestHandler):
         # Use a template to convert all the tasks to the desired format 
         template_filename = "tasks_template_%s.txt" % export_format
         
-        # Log and flush before starting operation which may cause memory limit exceeded error
-        logging.debug(fn_name + "building template")
-        logservice.flush() 
-        
-        path = os.path.join(os.path.dirname(__file__), template_filename)
+        path = os.path.join(os.path.dirname(__file__), _path_to_templates, template_filename)
         email_body = template.render(path, template_values)
 
         # if shared.isTestUser(user_email):
@@ -1327,12 +1233,7 @@ class ReturnResultsHandler(webapp.RequestHandler):
         self.response.headers.add_header(
             "Content-Disposition", "attachment; filename=%s" % output_filename)
 
-        
-        # Log and flush before starting operation which may cause memory limit exceeded error
-        logging.debug(fn_name + "building template")
-        logservice.flush() 
-        
-        path = os.path.join(os.path.dirname(__file__), template_filename)
+        path = os.path.join(os.path.dirname(__file__), _path_to_templates, template_filename)
         if shared.isTestUser(template_values['user_email']):
           logging.debug(fn_name + "Writing %s format to %s" % (export_format, output_filename))
         else:
@@ -1360,11 +1261,7 @@ class ReturnResultsHandler(webapp.RequestHandler):
             "Content-Disposition", "attachment; filename=%s" % output_filename)
 
         
-        # Log and flush before starting operation which may cause memory limit exceeded error
-        logging.debug(fn_name + "building template")
-        logservice.flush() 
-        
-        path = os.path.join(os.path.dirname(__file__), template_filename)
+        path = os.path.join(os.path.dirname(__file__), _path_to_templates, template_filename)
         if shared.isTestUser(template_values['user_email']):
           logging.debug(fn_name + "Writing %s format to %s" % (export_format, output_filename))
         else:
@@ -1392,11 +1289,7 @@ class ReturnResultsHandler(webapp.RequestHandler):
             "Content-Disposition", "attachment;filename=%s" % output_filename)
 
         
-        # Log and flush before starting operation which may cause memory limit exceeded error
-        logging.debug(fn_name + "building template")
-        logservice.flush() 
-        
-        path = os.path.join(os.path.dirname(__file__), template_filename)
+        path = os.path.join(os.path.dirname(__file__), _path_to_templates, template_filename)
         if shared.isTestUser(template_values['user_email']):
           logging.debug(fn_name + "Writing %s format to %s" % (export_format, output_filename))
         else:
@@ -1447,7 +1340,7 @@ class ReturnResultsHandler(webapp.RequestHandler):
                 <title>""")
         self.response.out.write(app_title)
         self.response.out.write("""- List of tasks</title>
-                <link rel="stylesheet" type="text/css" href="tasks_backup.css"></link>
+                <link rel="stylesheet" type="text/css" href="static/tasks_backup.css"></link>
                 <script type="text/javascript">
 
                   var _gaq = _gaq || [];
@@ -1633,8 +1526,10 @@ class ReturnResultsHandler(webapp.RequestHandler):
                                 """)
                         # End of task details div
                         # End of task div
-                        # End of tasks div
-                        self.response.out.write("""</div></div></div""")
+                        self.response.out.write("""</div></div>""")
+                        
+                    # End of tasks div
+                    self.response.out.write("""</div>""")
                                            
                 else:
                     self.response.out.write("""

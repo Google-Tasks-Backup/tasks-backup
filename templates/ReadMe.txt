@@ -1,0 +1,1 @@
+This folder must NOT be within a static_dir, because the application cannot access files (e.g., templates) in a static directory.

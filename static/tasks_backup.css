@@ -49,6 +49,13 @@ label.choose_display_format {
   display: block;
 } 
 
+.instructions {
+    margin-left: 45px;
+    margin-right: 45px;
+    margin-top: 12px;
+    margin-bottom: 20px;
+}
+
 .sample-image {
     margin-left: 30px;
     margin-bottom:10px;
@@ -81,6 +88,10 @@ legend
     font-family: "Courier New", Courier, monospace;
 }
 
+.italic{
+    font-style: italic;
+}
+
 .property-name {
   font-weight: bold;
   font-family: "Courier New", Courier, monospace;
@@ -104,13 +115,22 @@ legend
 }
   
 .take-note-larger {
-  font-weight: bold;
-  font-size: larger;
+    font-weight: bold;
+    font-size: larger;
 }
-  
+
+.nice-gap-top {
+    margin-top:6px;
+}
+
+.import-completed-message {
+    margin-top:60px;
+    margin-left:30px;
+}
+
 .take-note-smaller {
-  font-weight: bold;
-  font-size: smaller;
+    font-weight: bold;
+    font-size: smaller;
 }
 
 .take-note-para {
@@ -292,6 +312,13 @@ td.not-valid {
 .big-button {
     cursor: pointer;
     width: 100%;
+    font-size: 16pt;
+    font-weight: bold;
+}
+
+.file-button {
+    //cursor: pointer;
+    width: 50%;
     font-size: 16pt;
     font-weight: bold;
 }

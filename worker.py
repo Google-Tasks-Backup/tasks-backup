@@ -24,6 +24,8 @@ from google.appengine.api import urlfetch_errors
 from google.appengine.api import mail
 from google.appengine.api.app_identity import get_application_id
 from google.appengine.api import logservice # To flush logs
+from google.appengine.ext import blobstore
+from google.appengine.ext.webapp import blobstore_handlers
 
 logservice.AUTOFLUSH_EVERY_SECONDS = 5
 logservice.AUTOFLUSH_EVERY_BYTES = None
@@ -32,12 +34,13 @@ logservice.AUTOFLUSH_ENABLED = True
 
 import httplib2
 
-import model
 import datetime
 from datetime import timedelta
 import time
 import math
+import csv
 
+import model
 import settings
 import appversion # appversion.version is set before the upload process to keep the version number consistent
 import shared # Code whis is common between tasks-backup.py and worker.py
@@ -48,90 +51,90 @@ __author__ = "julie.smith.1999@gmail.com (Julie Smith)"
 
 
 
-class CreateImportWorker(webapp.RequestHandler):
+# class CreateImportWorker(webapp.RequestHandler):
     
-    def post(self):
-        fn_name = "CreateImportWorker.post(): "
+    # def post(self):
+        # fn_name = "CreateImportWorker.post(): "
         
-        start_time = datetime.datetime.now()
+        # start_time = datetime.datetime.now()
        
-        logging.debug(fn_name + "<start> (app version %s)" %appversion.version)
-        logservice.flush()
+        # logging.debug(fn_name + "<start> (app version %s)" %appversion.version)
+        # logservice.flush()
 
-        client_id, client_secret, user_agent, app_title, project_name, host_msg = shared.GetSettings(self.request.host)
+        # client_id, client_secret, user_agent, app_title, project_name, host_msg = shared.GetSettings(self.request.host)
         
         
-        user_email = self.request.get(settings.TASKS_QUEUE_KEY_NAME)
+        # user_email = self.request.get(settings.TASKS_QUEUE_KEY_NAME)
         
-        is_test_user = shared.isTestUser(user_email)
+        # is_test_user = shared.isTestUser(user_email)
         
         
         
-        #logging.debug(fn_name + "User email = " + str(user_email))
+        # #logging.debug(fn_name + "User email = " + str(user_email))
         
-        if user_email:
+        # if user_email:
             
-            # Retrieve the DB record for this user
-            task_import_job = model.TasksBackupJob.get_by_key_name(user_email)
+            # # Retrieve the DB record for this user
+            # task_import_job = model.ProcessTasksJob.get_by_key_name(user_email)
             
-            if task_import_job is None:
-                logging.error(fn_name + "No DB record for " + user_email)
-                logservice.flush()
-                # TODO: Find some way of notifying the user?????
-            else:
-                logging.info(fn_name + "Retrieved tasks import job for " + str(user_email))
-                logservice.flush()
-                task_import_job.status = 'building'
-                task_import_job.job_progress_timestamp = datetime.datetime.now()
-                task_import_job.put()
+            # if task_import_job is None:
+                # logging.error(fn_name + "No DB record for " + user_email)
+                # logservice.flush()
+                # # TODO: Find some way of notifying the user?????
+            # else:
+                # logging.info(fn_name + "Retrieved tasks import job for " + str(user_email))
+                # logservice.flush()
+                # task_import_job.status = 'building'
+                # task_import_job.job_progress_timestamp = datetime.datetime.now()
+                # task_import_job.put()
                 
-                user = task_import_job.user
-                if not user:
-                    logging.error(fn_name + "No user object in DB record for " + str(user_email))
-                    logservice.flush()
-                    task_import_job.status = 'error'
-                    task_import_job.error_message = "Problem with user details. Please restart."
-                    task_import_job.job_progress_timestamp = datetime.datetime.now()
-                    task_import_job.put()
-                    self.response.set_status(401, "No user object")
-                    return
+                # user = task_import_job.user
+                # if not user:
+                    # logging.error(fn_name + "No user object in DB record for " + str(user_email))
+                    # logservice.flush()
+                    # task_import_job.status = 'error'
+                    # task_import_job.error_message = "Problem with user details. Please restart."
+                    # task_import_job.job_progress_timestamp = datetime.datetime.now()
+                    # task_import_job.put()
+                    # self.response.set_status(401, "No user object")
+                    # return
                       
-                credentials = task_import_job.credentials
-                if not credentials:
-                    logging.error(fn_name + "No credentials in DB record for " + str(user_email))
-                    logservice.flush()
-                    task_import_job.status = 'error'
-                    task_import_job.error_message = "Problem with user credentials. Please restart."
-                    task_import_job.job_progress_timestamp = datetime.datetime.now()
-                    task_import_job.put()
-                    self.response.set_status(401, "No credentials")
-                    return
+                # credentials = task_import_job.credentials
+                # if not credentials:
+                    # logging.error(fn_name + "No credentials in DB record for " + str(user_email))
+                    # logservice.flush()
+                    # task_import_job.status = 'error'
+                    # task_import_job.error_message = "Problem with user credentials. Please restart."
+                    # task_import_job.job_progress_timestamp = datetime.datetime.now()
+                    # task_import_job.put()
+                    # self.response.set_status(401, "No credentials")
+                    # return
               
-                if credentials.invalid:
-                    logging.error(fn_name + "Invalid credentials in DB record for " + str(user_email))
-                    logservice.flush()
-                    task_import_job.status = 'error'
-                    task_import_job.error_message = "Invalid credentials. Please restart and re-authenticate."
-                    task_import_job.job_progress_timestamp = datetime.datetime.now()
-                    task_import_job.put()
-                    self.response.set_status(401, "Invalid credentials")
-                    return
+                # if credentials.invalid:
+                    # logging.error(fn_name + "Invalid credentials in DB record for " + str(user_email))
+                    # logservice.flush()
+                    # task_import_job.status = 'error'
+                    # task_import_job.error_message = "Invalid credentials. Please restart and re-authenticate."
+                    # task_import_job.job_progress_timestamp = datetime.datetime.now()
+                    # task_import_job.put()
+                    # self.response.set_status(401, "Invalid credentials")
+                    # return
               
-                # TODO: Build tasks data structure from DB records
+                # # TODO: Build tasks data structure from DB records
                 
-                # TODO: Import tasks
-                #   For each tasklist in tasklists data
-                #       If tasklist doesn't exist:
-                #           create it
-                #       For each task in tasklist
-                #           If check_for_duplicates:
-                #               % X X X X X   CAUTION: This could require O(n^2)   X X X X X
-                #               % Task exists if :
-                #               %   Task has same; title, due date, hidden/deleted flags
-                #               %   {Possibly compare notes? Might need to ignore white space (space, tabs, CRLF)
-                #               If task exists: 
-                #                   continue (skip task)
-                #           create task
+                # # TODO: Import tasks
+                # #   For each tasklist in tasklists data
+                # #       If tasklist doesn't exist:
+                # #           create it
+                # #       For each task in tasklist
+                # #           If check_for_duplicates:
+                # #               % X X X X X   CAUTION: This could require O(n^2)   X X X X X
+                # #               % Task exists if :
+                # #               %   Task has same; title, due date, hidden/deleted flags
+                # #               %   {Possibly compare notes? Might need to ignore white space (space, tabs, CRLF)
+                # #               If task exists: 
+                # #                   continue (skip task)
+                # #           create task
     
         
 
@@ -139,12 +142,11 @@ class CreateImportWorker(webapp.RequestHandler):
         
 
 class ProcessTasksWorker(webapp.RequestHandler):
+    """ Process tasks according to data in the ProcessTasksJob entity """
     
     def post(self):
         fn_name = "ProcessTasksWorker.post(): "
         
-        start_time = datetime.datetime.now()
-       
         logging.debug(fn_name + "<start> (app version %s)" %appversion.version)
         logservice.flush()
 
@@ -159,48 +161,45 @@ class ProcessTasksWorker(webapp.RequestHandler):
         if user_email:
             
             # Retrieve the DB record for this user
-            tasks_backup_job = model.TasksBackupJob.get_by_key_name(user_email)
+            process_tasks_job = model.ProcessTasksJob.get_by_key_name(user_email)
             
-            if tasks_backup_job is None:
+            if process_tasks_job is None:
                 logging.error(fn_name + "No DB record for " + user_email)
                 logservice.flush()
                 # TODO: Find some way of notifying the user?????
             else:
-                logging.info(fn_name + "Retrieved tasks backup job for " + str(user_email))
+                logging.info(fn_name + "Retrieved process tasks job for " + str(user_email))
                 logservice.flush()
-                tasks_backup_job.status = 'building'
-                tasks_backup_job.job_progress_timestamp = datetime.datetime.now()
-                tasks_backup_job.put()
                 
-                user = tasks_backup_job.user
+                user = process_tasks_job.user
                 if not user:
                     logging.error(fn_name + "No user object in DB record for " + str(user_email))
                     logservice.flush()
-                    tasks_backup_job.status = 'error'
-                    tasks_backup_job.error_message = "Problem with user details. Please restart."
-                    tasks_backup_job.job_progress_timestamp = datetime.datetime.now()
-                    tasks_backup_job.put()
+                    process_tasks_job.status = 'error'
+                    process_tasks_job.error_message = "Problem with user details. Please restart."
+                    process_tasks_job.job_progress_timestamp = datetime.datetime.now()
+                    process_tasks_job.put()
                     self.response.set_status(401, "No user object")
                     return
                       
-                credentials = tasks_backup_job.credentials
+                credentials = process_tasks_job.credentials
                 if not credentials:
                     logging.error(fn_name + "No credentials in DB record for " + str(user_email))
                     logservice.flush()
-                    tasks_backup_job.status = 'error'
-                    tasks_backup_job.error_message = "Problem with user credentials. Please restart."
-                    tasks_backup_job.job_progress_timestamp = datetime.datetime.now()
-                    tasks_backup_job.put()
+                    process_tasks_job.status = 'error'
+                    process_tasks_job.error_message = "Problem with user credentials. Please restart."
+                    process_tasks_job.job_progress_timestamp = datetime.datetime.now()
+                    process_tasks_job.put()
                     self.response.set_status(401, "No credentials")
                     return
               
                 if credentials.invalid:
                     logging.error(fn_name + "Invalid credentials in DB record for " + str(user_email))
                     logservice.flush()
-                    tasks_backup_job.status = 'error'
-                    tasks_backup_job.error_message = "Invalid credentials. Please restart and re-authenticate."
-                    tasks_backup_job.job_progress_timestamp = datetime.datetime.now()
-                    tasks_backup_job.put()
+                    process_tasks_job.status = 'error'
+                    process_tasks_job.error_message = "Invalid credentials. Please restart and re-authenticate."
+                    process_tasks_job.job_progress_timestamp = datetime.datetime.now()
+                    process_tasks_job.put()
                     self.response.set_status(401, "Invalid credentials")
                     return
               
@@ -208,12 +207,12 @@ class ProcessTasksWorker(webapp.RequestHandler):
                     logging.debug(fn_name + "User is test user %s" % user_email)
                     logservice.flush()
                     
-                if tasks_backup_job == 'import':
-                    self.import_tasks(credentials, is_test_user, tasks_backup_job)
+                if process_tasks_job.job_type == 'import':
+                    self.import_tasks(credentials, user_email, is_test_user, process_tasks_job)
                 else:
-                    self.export_tasks(credentials, is_test_user, tasks_backup_job)
+                    self.export_tasks(credentials, user_email, is_test_user, process_tasks_job)
                 # logging.info(fn_name + "Finished processing. Total progress = " + 
-                    # str(tasks_backup_job.total_progress) + " for " + str(user_email))
+                    # str(process_tasks_job.total_progress) + " for " + str(user_email))
         else:
             logging.error(fn_name + "No processing, as there was no user_email key")
             logservice.flush()
@@ -221,27 +220,172 @@ class ProcessTasksWorker(webapp.RequestHandler):
         logging.debug(fn_name + "<End>, user = " + str(user_email))
         logservice.flush()
 
-    def export_tasks(credentials, is_test_user, tasks_backup_job):
-        fn_name = "export_tasks: "
+        
+    def import_tasks(self, credentials, user_email, is_test_user, process_tasks_job):
+        fn_name = "import_tasks: "
         logging.debug(fn_name + "<Start>")
         logservice.flush()
+        prev_progress_timestamp = datetime.datetime.now()
+        start_time = datetime.datetime.now()
+       
+
         
-        # TODO: Import tasks
-        logging.error(fn_name + "TODO: Import tasks")
-        logservice.flush()
         
+        try:
+            # TODO: Read data from supplied CSV file
+            
+            # Check the format of each row of the file;
+            #   "tasklist_name","title","notes","status","due","completed","deleted","hidden",depth
+            #   every row must have 9 columns
+            
+            # CHECK: Does csv throw an exception if file format is invalid?
+            
+            # For a way of handling files >1MB,
+            #   check https://developers.google.com/appengine/docs/python/blobstore/overview
+            #   "Applications can use the Blobstore to accept large files as uploads from users and to serve those files. 
+            #    Files are called blobs once they're uploaded. Applications don't access blobs directly. 
+            #    Instead, applications work with blobs through blob info entities (represented by the BlobInfo class) in the datastore."
+            #
+            #   "Blobstore values can be served to the user, or accessed by the application in a file-like stream, using the Blobstore API."
+            #   "Note: Blobs as defined by the Blobstore service are not related to blob property values used by the datastore."
+            #   "... rewrites the request to contain the blob key, and passes it to a path in your application."
+            #       Probably can't be the URL of a worker, since worker must be started via taskqueue
+            #   "An application can read a Blobstore value a portion at a time using an API call. 
+            #    The size of the portion can be up to the maximum size of an API return value. 
+            #    This size is a little less than 32 megabytes, represented in Python by the constant google.appengine.ext.blobstore.MAX_BLOB_FETCH_SIZE 
+            #    An application cannot create or modify Blobstore values except through files uploaded by the user."
+            
+            # For each row in CSV file:
+            #   If tasklist_title != prev_tasklist.title:
+            #       Add prev_tasklist to tasklists
+            #       prev_tasklist = tasklist
+            #       Create new tasklist
+            #   Add task to tasklist
+            # Pickle tasklists
+            # Sore pickle in DB record(s)
+            # Use taskqueue to start import worker
+            # Display import progress to user
+            
+            # **** OR ****
+            
+            # Use Blobstore to get file from user to server
+            # % Assume that CSV file is ordered
+            # %  * Grouped by tasklist
+            # %  * Subtasks immediately following tasks
+            # Retrieve list of tasklists
+            #   % Handling non-unique tasklist names:
+            #   %   Rename non-unique tasklist on server? {Check that rename doesn't clash}
+            #   %   Only store ID of 1st tasklist
+            # Store in tasklist_title_dict as {'title' : 'id'}
+            # For each row in CSV file:
+            #   If tasklist_title not in tasklist_title_dict: 
+            #       Create tasklist
+            #       Add new tasklist title & ID (from tasklists.insert method) to tasklist_title_dict
+            #   Insert task into tasklist using;
+            #     tasklist_id
+            #     previous_id (id of previous sibling at same depth)
+            #     parent_id (if depth > 0)
+            #     prev_tasklist = tasklist
+            
+            # Option: Ignore duplicates
+            # Read all tasks in tasklist
+            # Sort existing tasks (in memory) by title O(n log n)
+            # Sort new tasks (in memory) by title O(n log n)
+            # Compare side-by-side O(n)
+            # Problem: Requires a lot of memory - size of existing PLUS size of new PLUS sorting overhead
+            
+            # OPTIONS:
+            #   Allow user to specify new tasklist, into which ALL tasks are inserted
+            #   Allow user to specify prefix/suffix for import tasklist names, and import tasks into new tasklists
+            #     Need to check for name clashes. Could just append YYYY-MM-DD_HH-MM-SS 
+            #       (similar to the auto-added group when inserting contacts into Google
+            
+
+            process_tasks_job.status = 'importing'
+            process_tasks_job.job_progress_timestamp = datetime.datetime.now()
+            process_tasks_job.put()
+
+            logging.debug(fn_name + "Retrieving data from Blobstore")
+            logservice.flush()
+            blob_key = process_tasks_job.blobstore_key
+            blobdata = blobstore.BlobReader(blob_key)
+            blob_info = blobstore.BlobInfo.get(blob_key)
+            file_name = str(blob_info.filename)
+            logging.debug(fn_name + "Filename = " + file_name + ", key = " + blob_key)
+            f=csv.DictReader(blobdata,dialect='excel')
+            
+            num_completed_tasks=0
+            num_tasks = 0
+            for row in f:
+                num_tasks = num_tasks + 1
+                
+                # TODO: Insert task from imported row into Google Tasks
+                
+                # TODO: If date/timestamp format is incorrect, use "sensible" default, or "0001-01-01 00:00:00" ???
+                
+                # TODO: Handling tasks where tasklist already exists. See notes in todo.txt 
+                
+                logging.debug(str(row))
+                if file_name == 'tasks_import_export_My-Tasklist.csv':
+                    time.sleep(7)
+                if row['status'] == 'completed':
+                    num_completed_tasks = num_completed_tasks + 1
+                if (datetime.datetime.now() - prev_progress_timestamp).seconds > settings.TASK_COUNT_UPDATE_INTERVAL:
+                    process_tasks_job.total_progress = num_tasks
+                    process_tasks_job.job_progress_timestamp = datetime.datetime.now()
+                    process_tasks_job.put()
+                    prev_progress_timestamp = datetime.datetime.now()
+ 
+            process_tasks_job.total_progress = num_tasks
+            logging.info(fn_name + "Processed " + str(num_tasks) + " rows, found " + str(num_completed_tasks) + " completed tasks")
+            
+            try:
+                # We've imported all the data, so now delete the Blobstore
+                blob_info.delete()
+                logging.debug(fn_name + "Blobstore deleted")
+            except Exception, e:
+                logging.exception(fn_name + "Exception deleting " + file_name + ", key = " + blob_key)
+                logservice.flush()
+                process_tasks_job.status = 'error'
+                process_tasks_job.error_message = "Exception: " + str(e)
+                process_tasks_job.job_progress_timestamp = datetime.datetime.now()
+                process_tasks_job.put()
+                
+            # Mark import job complete
+            process_tasks_job.status = 'import_completed'
+            process_tasks_job.job_progress_timestamp = datetime.datetime.now()
+            process_tasks_job.put()
+            logging.info(fn_name + "Marked import job complete for " + str(user_email) + ", with progress = " + 
+                str(process_tasks_job.total_progress))
+            logservice.flush()
+        
+        except Exception, e:
+            logging.exception(fn_name + "Exception:") 
+            logservice.flush()
+            process_tasks_job.status = 'error'
+            process_tasks_job.error_message = "Exception: " + str(e)
+            process_tasks_job.job_progress_timestamp = datetime.datetime.now()
+            process_tasks_job.put()
+        
+            
         logging.debug(fn_name + "<End>")
         logservice.flush()
         
         
-    def export_tasks(credentials, is_test_user, tasks_backup_job):
+        
+    def export_tasks(self, credentials, user_email, is_test_user, process_tasks_job):
         fn_name = "export_tasks: "
         logging.debug(fn_name + "<Start>")
         logservice.flush()
+        start_time = datetime.datetime.now()
         
-        include_hidden = tasks_backup_job.include_hidden
-        include_completed = tasks_backup_job.include_completed
-        include_deleted = tasks_backup_job.include_deleted
+        process_tasks_job.status = 'building'
+        process_tasks_job.job_progress_timestamp = datetime.datetime.now()
+        process_tasks_job.put()
+        
+        include_hidden = process_tasks_job.include_hidden
+        include_completed = process_tasks_job.include_completed
+        include_deleted = process_tasks_job.include_deleted
         
         
         # Retrieve all tasks for the user
@@ -367,15 +511,15 @@ class ProcessTasksWorker(webapp.RequestHandler):
                             
                     # Process all the tasks in this task list
                     tasklist_dict, num_tasks = self.get_tasks_in_tasklist(tasks_svc, tasklist_title, tasklist_id, is_test_user,
-                        tasks_backup_job, include_hidden, include_completed, include_deleted)
+                        process_tasks_job, include_hidden, include_completed, include_deleted)
                     # Track number of tasks per tasklist
                     tasks_per_list.append(num_tasks)
                     
                     total_num_tasks = total_num_tasks + num_tasks
-                    tasks_backup_job.total_progress = total_num_tasks
-                    tasks_backup_job.tasklist_progress = 0 # Because total_progress now includes num_tasks for current tasklist
-                    tasks_backup_job.job_progress_timestamp = datetime.datetime.now()
-                    tasks_backup_job.put()
+                    process_tasks_job.total_progress = total_num_tasks
+                    process_tasks_job.tasklist_progress = 0 # Because total_progress now includes num_tasks for current tasklist
+                    process_tasks_job.job_progress_timestamp = datetime.datetime.now()
+                    process_tasks_job.put()
                     
                     # if is_test_user:
                         # logging.debug(fn_name + "Adding %d tasks to tasklist" % len(tasklist_dict[u'tasks']))
@@ -481,27 +625,27 @@ class ProcessTasksWorker(webapp.RequestHandler):
                 # logging.debug(fn_name + "Marking backup job complete")
                 
                 # Mark backup completed
-                tasks_backup_job.status = 'completed'
-                tasks_backup_job.job_progress_timestamp = datetime.datetime.now()
-                tasks_backup_job.put()
+                process_tasks_job.status = 'completed'
+                process_tasks_job.job_progress_timestamp = datetime.datetime.now()
+                process_tasks_job.put()
                 logging.info(fn_name + "Marked job complete for " + str(user_email) + ", with progress = " + 
-                    str(tasks_backup_job.total_progress))
+                    str(process_tasks_job.total_progress))
                 logservice.flush()
             except apiproxy_errors.RequestTooLargeError, e:
                 logging.exception(fn_name + "Error putting results in DB")
                 logservice.flush()
-                tasks_backup_job.status = 'error'
-                tasks_backup_job.error_message = "Tasklists data is too large - Unable to store tasklists in DB: " + str(e)
-                tasks_backup_job.job_progress_timestamp = datetime.datetime.now()
-                tasks_backup_job.put()
+                process_tasks_job.status = 'error'
+                process_tasks_job.error_message = "Tasklists data is too large - Unable to store tasklists in DB: " + str(e)
+                process_tasks_job.job_progress_timestamp = datetime.datetime.now()
+                process_tasks_job.put()
             
             except Exception, e:
                 logging.exception(fn_name + "Error putting results in DB")
                 logservice.flush()
-                tasks_backup_job.status = 'error'
-                tasks_backup_job.error_message = "Unable to store tasklists in DB: " + str(e)
-                tasks_backup_job.job_progress_timestamp = datetime.datetime.now()
-                tasks_backup_job.put()
+                process_tasks_job.status = 'error'
+                process_tasks_job.error_message = "Unable to store tasklists in DB: " + str(e)
+                process_tasks_job.job_progress_timestamp = datetime.datetime.now()
+                process_tasks_job.put()
 
 
               
@@ -510,34 +654,34 @@ class ProcessTasksWorker(webapp.RequestHandler):
         except urlfetch_errors.DeadlineExceededError, e:
             logging.exception(fn_name + "urlfetch_errors.DeadlineExceededError:")
             logservice.flush()
-            tasks_backup_job.status = 'error'
-            tasks_backup_job.error_message = "urlfetch_errors.DeadlineExceededError: " + str(e)
-            tasks_backup_job.job_progress_timestamp = datetime.datetime.now()
-            tasks_backup_job.put()
+            process_tasks_job.status = 'error'
+            process_tasks_job.error_message = "urlfetch_errors.DeadlineExceededError: " + str(e)
+            process_tasks_job.job_progress_timestamp = datetime.datetime.now()
+            process_tasks_job.put()
       
         except apiproxy_errors.DeadlineExceededError, e:
             logging.exception(fn_name + "apiproxy_errors.DeadlineExceededError:")
             logservice.flush()
-            tasks_backup_job.status = 'error'
-            tasks_backup_job.error_message = "apiproxy_errors.DeadlineExceededError: " + str(e)
-            tasks_backup_job.job_progress_timestamp = datetime.datetime.now()
-            tasks_backup_job.put()
+            process_tasks_job.status = 'error'
+            process_tasks_job.error_message = "apiproxy_errors.DeadlineExceededError: " + str(e)
+            process_tasks_job.job_progress_timestamp = datetime.datetime.now()
+            process_tasks_job.put()
         
         except DeadlineExceededError, e:
             logging.exception(fn_name + "DeadlineExceededError:")
             logservice.flush()
-            tasks_backup_job.status = 'error'
-            tasks_backup_job.error_message = "DeadlineExceededError: " + str(e)
-            tasks_backup_job.job_progress_timestamp = datetime.datetime.now()
-            tasks_backup_job.put()
+            process_tasks_job.status = 'error'
+            process_tasks_job.error_message = "DeadlineExceededError: " + str(e)
+            process_tasks_job.job_progress_timestamp = datetime.datetime.now()
+            process_tasks_job.put()
         
         except Exception, e:
             logging.exception(fn_name + "Exception:") 
             logservice.flush()
-            tasks_backup_job.status = 'error'
-            tasks_backup_job.error_message = "Exception: " + str(e)
-            tasks_backup_job.job_progress_timestamp = datetime.datetime.now()
-            tasks_backup_job.put()
+            process_tasks_job.status = 'error'
+            process_tasks_job.error_message = "Exception: " + str(e)
+            process_tasks_job.job_progress_timestamp = datetime.datetime.now()
+            process_tasks_job.put()
         
         end_time = datetime.datetime.now()
         process_time = end_time - start_time
@@ -562,7 +706,7 @@ class ProcessTasksWorker(webapp.RequestHandler):
         logservice.flush()
             
     
-    def get_tasks_in_tasklist(self, tasks_svc, tasklist_title, tasklist_id, is_test_user, tasks_backup_job, 
+    def get_tasks_in_tasklist(self, tasks_svc, tasklist_title, tasklist_id, is_test_user, process_tasks_job, 
                            include_hidden, include_completed, include_deleted):
         """ Returns all the tasks in the tasklist 
         
@@ -572,7 +716,7 @@ class ProcessTasksWorker(webapp.RequestHandler):
               tasklist_id              -- ID used to retrieve tasks from this tasklist
                                           MUST match the ID returned in the tasklist data
               is_test_user             -- True if the user is a test user, to enable more detailed logging
-              tasks_backup_job         -- DB entity for this backup job. Passed in so this method can updated timestamp and progress
+              process_tasks_job         -- DB entity for this backup job. Passed in so this method can updated timestamp and progress
               include_hidden           -- If true, include hidden tasks in the backup
               include_completed        -- If true, include completed tasks in the backup
               include_deleted          -- If true, include deleted tasks in the backup
@@ -732,14 +876,14 @@ class ProcessTasksWorker(webapp.RequestHandler):
               # logging.debug(fn_name + "There is (at least) one more page of data to be retrieved")
               
             # More than one page, so update progress
-            # Don't need to update here if no more pages, because calling method updates
             if (datetime.datetime.now() - prev_progress_timestamp).seconds > settings.TASK_COUNT_UPDATE_INTERVAL:
-              tasks_backup_job.tasklist_progress = num_tasks
-              tasks_backup_job.job_progress_timestamp = datetime.datetime.now()
-              tasks_backup_job.put()
+              process_tasks_job.tasklist_progress = num_tasks
+              process_tasks_job.job_progress_timestamp = datetime.datetime.now()
+              process_tasks_job.put()
               prev_progress_timestamp = datetime.datetime.now()
           else:
             # This is the last (or only) page of results (list of tasks) for this task lists
+            # Don't need to update here if no more pages, because calling method updates
             more_tasks_data_to_retrieve = False
             next_tasks_page_token = None
             

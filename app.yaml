@@ -16,74 +16,53 @@
 
 # ===== Production host and version ======
 #application: tasks-backup
-#version: 5
+#version: 2
 
 # ===== Limited Public Test host and version ======
-#application: js-tasks
-#version: 1
+application: js-tasks
+version: 2
 
 # ===== Private Alpha Test host and version ======
-application: js-tasks-test
-version: 2
+#application: js-tasks-test
+#version: 2
 
 
 
 # ===== Local host ==========
-#application: tasks-backup-q1
+#application: tasks-backup-local
 #version: 1
 
 runtime: python
 api_version: 1
 
 error_handlers:
-  - file: error_default.html
+  - file: error_handlers/error_default.html
 
   - error_code: over_quota
-    file: error_over_quota.html
+    file: error_handlers/error_over_quota.html
     
   - error_code: dos_api_denial
-    file: error_dos.html
+    file: error_handlers/error_dos.html
   
   - error_code: timeout
-    file: error_timeout.html
+    file: error_handlers/error_timeout.html
   
   
   
 handlers:
-- url: /tasks_backup.css
-  static_files: tasks_backup.css
-  upload: tasks_backup.css
-  mime_type: text/css
+- url: /static
+  static_dir: static
   secure: always
+  
 
 - url: /favicon.ico
-  static_files: favicon.ico
+  static_files: static/favicon.ico
   upload: favicon.ico
   secure: always
   
-- url: /info.html
-  static_files: info.html
-  upload: info.html
-  secure: always
-  
 - url: /info
-  static_files: info.html
+  static_files: static/info.html
   upload: info.html
-  secure: always
-
-- url: /datetimepicker.js
-  static_files: datetimepicker.js
-  upload: datetimepicker.js
-  secure: always
-  
-- url: /cal.gif
-  static_files: cal.gif
-  upload: cal.gif
-  secure: always
-  
-- url: /Example-Tasks-My_order.JPG
-  static_files: Example-Tasks-My_order.JPG
-  upload: Example-Tasks-My_order.JPG
   secure: always
   
 - url: /worker

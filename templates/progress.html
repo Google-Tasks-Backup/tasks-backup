@@ -5,14 +5,14 @@ This is the Django template used by test-taskqueue.py
 <!doctype html>
 <html>
     <head>
-        {% if status == "starting" or status == "building" %}
+        {% if status == "starting" or status == "building" or status == "importing" %}
             <meta http-equiv="refresh" content="{{ refresh_interval }}">
         {% endif %}
         
         <title>{{ app_title }}</title>
-        <link rel="stylesheet" type="text/css" href="tasks_backup.css"></link>
+        <link rel="stylesheet" type="text/css" href="static/tasks_backup.css"></link>
         
-        <script language="javascript" type="text/javascript" src="datetimepicker.js">
+        <script language="javascript" type="text/javascript" src="static/datetimepicker.js">
             //Date Time Picker script- by TengYong Ng of http://www.rainforestnet.com
             //Script featured on JavaScript Kit (http://www.javascriptkit.com)
             //For this script, visit http://www.javascriptkit.com 
@@ -151,7 +151,7 @@ This is the Django template used by test-taskqueue.py
     {% endif %}
     
     
-    {% if status == "starting" or status == "building" %}
+    {% if status == "starting" or status == "building"  or status == "importing" %}
         <div class="break">
             This page will auto-refresh every {{ refresh_interval }} seconds to indicate how many tasks have been retrieved so far.
 		</div>
@@ -177,13 +177,28 @@ This is the Django template used by test-taskqueue.py
             {% endif %}
 		</div>
     {% else %}
-        <div class="break">
-            Status = {{ status }}
-		</div>
-        <div class="break">
-            Progress = {{ progress }}
-		</div>
+        {% if status == "import_completed" %}
+            <div class="import-completed-message">
+                <div class="take-note-larger">
+                    Import completed.
+                </div>
+                <div class="break">
+                    Imported {{ progress }} tasks.
+                </div>
+            </div>
+            <form action="/" method="get">
+                <button type="submit" class="big-button" value="Return to home page">Return to home page</button>
+            </form>
+        {% else %}
+            <div class="break">
+                Status = {{ status }}
+            </div>
+            <div class="break">
+                Progress = {{ progress }}
+            </div>
+        {% endif %}
     {% endif %}
+    
     
     {% if status == "completed" %}
         <div class="break">
@@ -233,7 +248,7 @@ This is the Django template used by test-taskqueue.py
 							<input type="radio" name="format" value="raw" /> Raw CSV<br />
 						</td>
 						<td>
-							CSV file containing almost all available properties for each task. See the <a href="info.html">information page</a> for details.
+							CSV file containing almost all available properties for each task. See the <a href="static/info.html">information page</a> for details.
 						</td>
 					</tr>
 					<tr>
@@ -249,7 +264,7 @@ This is the Django template used by test-taskqueue.py
                             <input type="radio" name="format" value="py" /> Python<br />
                         </td>
                         <td>
-                            Python data structure. Contains all the properties stored by Google for each task. See the <a href="info.html">information page</a> for details.
+                            Python data structure. Contains all the properties stored by Google for each task. See the <a href="static/info.html">information page</a> for details.
                         </td>
                     </tr>
 					<tr>
@@ -264,7 +279,7 @@ This is the Django template used by test-taskqueue.py
 					</table>
 					<br />
 
-				<button type="submit" id="retrieve-tasks-button" class="big-button" >Retrieve tasks data</button>
+				<button type="submit" id="retrieve-tasks-button" class="big-button" value="Retrieve tasks data">Retrieve tasks data</button>
 			</fieldset>
         </form>
         
@@ -292,7 +307,7 @@ This is the Django template used by test-taskqueue.py
                 <div class="format-selection">
                     <div class="left-column">
                         <div class="selection-column-header">
-                            Filter by due date <span id="due_date" class="due_date" onclick="javascript:NewCal('due_date')" >0001-01-01</span>&nbsp;<button type="button" onclick="javascript:NewCal('due_date')" >Choose date <img src="cal.gif" width="16" height="16" border="0" alt="Set due date filter"></button>&nbsp;or&nbsp;<button type="button" onclick="setCurrentDueDate()" >Use today</button>
+                            Filter by due date <span id="due_date" class="due_date" onclick="javascript:NewCal('due_date')" >0001-01-01</span>&nbsp;<button type="button" onclick="javascript:NewCal('due_date')" >Choose date <img src="static/cal.gif" width="16" height="16" border="0" alt="Set due date filter"></button>&nbsp;or&nbsp;<button type="button" onclick="setCurrentDueDate()" >Use today</button>
 	  		
                             </div>
                         <noscript>
@@ -443,12 +458,12 @@ This is the Django template used by test-taskqueue.py
                 <td>
                     If checked, the application tries to identify and label potentially invalid tasks.
                     <br />
-                    Refer to <a href="info.html#notes">note 4 on the information page</a> for more details.
+                    Refer to <a href="static/info.html#notes">note 4 on the information page</a> for more details.
                 </td>
             </tr>
             <tr>
                 <td colspan="2">
-                    Refer to the <a href="info.html">information page</a> for more information on the exported properties.
+                    Refer to the <a href="static/info.html">information page</a> for more information on the exported properties.
                 </td>
             </tr>
         </table>

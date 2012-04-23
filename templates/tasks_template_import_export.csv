@@ -1,0 +1,6 @@
+{% comment %}
+
+This Django template creates a CSV containing all the data required to import using GTB.
+
+{% endcomment %}{% autoescape off %}"tasklist_name","title","notes","status","due","completed","deleted","hidden",depth{% for tasklist in tasklists %}{% for task in tasklist.tasks %}
+{% if tasklist.title %}"{{ tasklist.title|replacenewline|replacecsv }}"{% endif %},{% if task.title %}"{{ task.title|replacenewline|replacecsv }}"{% endif %},{% if task.notes %}"{{ task.notes|replacenewline|replacecsv }}"{% endif %},{% if task.status %}"{{ task.status }}"{% endif %},{% if task.due %}"UTC {{ task.due|date:"Y-m-d" }}"{% endif %},{% if task.completed %}"UTC {{ task.completed|date:"Y-m-d H:i:s" }}"{% endif %},{% if task.deleted %}"{{ task.deleted }}"{% endif %},{% if task.hidden %}"{{ task.hidden }}"{% endif %},{{ task.depth }}{% endfor %}{% endfor %}{% endautoescape %}

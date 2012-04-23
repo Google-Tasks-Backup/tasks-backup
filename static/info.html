@@ -5,7 +5,7 @@
 <html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en">
     <head>
         <title>Information about Google Tasks</title>
-        <link rel="stylesheet" type="text/css" href="tasks_backup.css"></link>
+        <link rel="stylesheet" type="text/css" href="static/tasks_backup.css"></link>
         <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
         <script type="text/javascript">
             // Copyright 2001 Idocs.com      
@@ -184,7 +184,10 @@
     <a name="import_export_description"></a>
     <h2>Description of the {{ app_title }} "Import/Export CSV" file format</h2>
     <div class="break">
-        The file is a standard Windows-format CSV (comma-separated-values) file, and contains all the data that is needed to re-create the tasklists and tasks in a Google account. . 
+        Files exported from {{ app_title }} in this format have a filename format of <span class="fixed-font">tasks_import_export_XXXXXX.csv</span>, where <span class="fixed-font">XXXXXX</span> identifies the account name and export date. 
+    </div>
+    <div class="break">
+        The file is a standard Windows-format CSV (comma-separated-values) file, and contains all the data that is needed to re-create the tasklists and tasks in a Google account. The import file must observe the following rules;
         <ul>
             <li>The first row is a header row, and contains the column names.</li>
             <li>Tasks must be grouped by tasklist.</li>
@@ -194,10 +197,16 @@
             <li>There must be no spaces between fields and the comma separators.</li>
             <li>Multi-line text is allowed in the notes field, by using <span class="fixed-font">\n</span> as the line break.</li>
             <li>A blank field may be indicated by <span class="fixed-font">""</span> (empty string) or by having no space between consecutive commas.</li>
-            <li>Dates and times are UTC.</li>
-            <li>Task state must be consistent. Refer to <a href="#Table1">Table 1</a> for valid states.
+            <li>Dates and times are UTC, and must be formatted as indicated in <a href="#Table2">Table 2</a><br />
+                <span class="italic">Note that the "UTC " prefix on date fields serves two purposes. It reminds the user that the fields are UTC, and it prevents spreadsheet programs such as Excel and OpenOffice Calc from rewriting date and time formatting.</span></li>
+            <li>Task state must be consistent. Refer to <a href="#Table1">Table 1</a> for valid states.</li>
+            <li>If editing the import/export file in OpenOffice Calc, choose "Separated by Comma" and "Quoted field as text"</li>
         </ul>
     </div>
+    <div class="break">
+        When importing tasks into an existing tasklist, {{ app_title }} is not able to check for duplicate tasks. If you 
+    </div>
+    <a name="Table1"></a>
     <table border="1" cellpadding="5">
         <caption class="heading" >Table 2: Import file format</caption>
         <tr>
@@ -236,7 +245,7 @@
         <tr>
             <td>due</td>
             <td>
-                If the task has a due date, the date that the task is due, in the format <span class="fixed-font">"YYYY-mm-dd"</span>
+                If the task has a due date, the date that the task is due, in the format <span class="fixed-font">"UTC YYYY-mm-dd"</span>
                 <br />
                 If the task does not have a due date, leave this field blank
             </td>
@@ -244,7 +253,7 @@
         <tr>
             <td>completed</td>
             <td>
-                If the task has been completed, the date and time that the task was completed, in the format <span class="fixed-font">"YYYY-mm-dd HH:MM:SS"</span>
+                If the task has been completed, the date and time that the task was completed, in the format <span class="fixed-font">"UTC YYYY-mm-dd HH:MM:SS"</span>
                 <br />
                 If the task has not been completed, leave this field blank
             </td>
@@ -278,7 +287,7 @@
     </table>
     
     <a name="import_example"></a>
-    <div class="minor-heading">Example import/export file</div>
+    <div class="minor-heading">Example import/export file;</div>
     <p class="comment">Note the <span class="fixed-font">\n</span> in the multi-line notes in "Second subtask", and the escaped double-quotes in the notes for "Second task"
     <div class="break fixed-font smaller-font">
         "tasklist_name","title","notes","status","due","completed","deleted","hidden",depth
@@ -298,7 +307,7 @@
     
     <div class="minor-heading">This is displayed in Google Tasks as;</div>
     <div>
-        <img class="sample-image" src="Example-Tasks-My_order.PNG">
+        <img class="sample-image" src="static/Example-Tasks-My_order.PNG">
     </div>
     
     <div class="minor-heading">{{ app_title }} displays this as;</div>

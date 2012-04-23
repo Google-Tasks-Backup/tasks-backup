@@ -28,7 +28,7 @@ class Credentials(db.Model):
 
 
 
-class TasksBackupJob(db.Model):
+class ProcessTasksJob(db.Model):
     """ Container used to pass User info (including credentials) to taskqueue task, and return tasks progress
         back to foreground process to be returned to the user.
     
@@ -60,7 +60,7 @@ class TasksBackupJob(db.Model):
     job_start_timestamp = db.DateTimeProperty(auto_now_add=True, indexed=False)
     
     # Job status, to display to user and control web page and foreground app behaviour
-    status = db.StringProperty(indexed=False, choices=("starting", "building", "importing", "completed", "error"), default="starting")
+    status = db.StringProperty(indexed=False, choices=('starting', 'building', 'completed', 'importing', 'import_completed', 'error'), default='starting')
     
     # Total number of tasks backed up. Used to display progress to user. Updated when an entire tasklist has been backed up
     total_progress = db.IntegerProperty(indexed=False, default=0) 

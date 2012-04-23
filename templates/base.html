@@ -13,18 +13,15 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 
-The 2nd digit of the version number (line 66 below) should match the version number in app.yaml
-This version number should only increment when making major changes, such as going from alpha to beta,
-or beta to production.
-
-8 Feb 2012, Julie Smith
-This is the Django template for displaying error messages to the user.
+This is the Django master template for snapshots.html and import.html.
 {% endcomment %}
 <!doctype html>
 <html>
     <head>
-        <title>{{ app_title }} - Error</title>
-        <link rel="stylesheet" type="text/css" href="tasks_backup.css"></link>
+        <title>{{ app_title }} - {% block title %}{% endblock %}</title>
+        <link rel="stylesheet" type="text/css" href="static/tasks_backup.css"></link>
+        {% block head %}
+        {% endblock %}
         <script type="text/javascript">
 
           var _gaq = _gaq || [];
@@ -39,55 +36,37 @@ This is the Django template for displaying error messages to the user.
 
         </script>
     </head>
-
 <body>
-
     {% if is_authorized %}
         <div class="usertitle">
             Authorised user: {{ user_email }} <span class="logout-link">[ <a href="{{ logout_url }}">Log out</a> ]</span>
         </div>
     {% endif %}
-
-  <h2>{{ app_title }} - Error</h2>
-  
-  <div class="break">
-    Please report this error at <a href="http://{{ url_issues_page }}">{{ url_issues_page }}</a>
-    <br/>
-    Please include as much information as possible, especially the time of the error and details of error messages.
-  </div>
- 
-  <div class="break">
-    <h4>ERROR: {{ exc_type }} occurred at {{ err_datetimestamp }}</h4>
-  </div>
-  
-  {% if err_desc %}
-    <div class="break">
-    {{ err_desc }}
-    </div>
-  {% endif %}
-
-  {% if err_details %}
-    <div class="break">
-    {{ err_details }}
-    </div>
-  {% endif %}
-
-  {% if err_msg %}
-    <div class="break">
-    {{ err_msg }}
-    </div>
-  {% endif %}
-
-
-  <div class="break">
-  </div>
+    <noscript>
+        <br />
+        <h3>Javascript should be enabled for maximum application functionality</h3>
+        <br />
+    </noscript>
     
-  <div class="break">
-    Version {{ app_version }} ({{ app_upload_timestamp }})
-    <br/>
-    
-  </div>
-    
+
+
+<div class="logo break">
+  <table>
+    <tr>
+    <!--
+      <td valign="top" style="padding-top: 5px;">
+        <a href="/"><img src="/logo.png" width="120" height="120" /></a>
+      </td>
+    -->
+      <td>
+        <span class="heading">{% block heading %}{% endblock %}</span>
+        {% block body %}
+        {% endblock %}
+      </td>
+    </tr>
+  </table>
+</div>
+
 	<div class="project-footer">
 		<div class="break">
 			Questions or comments? Go to <a href="http://{{ url_discussion_group }}">{{ url_discussion_group }}</a>
@@ -100,7 +79,6 @@ This is the Django template for displaying error messages to the user.
 			Source code for this project is at <a href="http://{{ url_source_code }}">{{ url_source_code }}</a>
 		</div>
 	</div>
-
 
 </body>
 </html>
