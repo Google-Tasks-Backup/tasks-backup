@@ -1,8 +1,12 @@
 import cgi
-
-import settings
+import sys
+import traceback
 import logging
 from google.appengine.api import logservice # To flush logs
+
+# Project-specific settings, used by get_settings
+import settings
+
 
 logservice.AUTOFLUSH_EVERY_SECONDS = 5
 logservice.AUTOFLUSH_EVERY_BYTES = None
@@ -13,7 +17,30 @@ logservice.AUTOFLUSH_ENABLED = True
 # Can't use the name common, because there is already a module named common
 
 
-def GetSettings(hostname):
+def format_exception_info(maxTBlevel=5):
+    cla, exc, trbk = sys.exc_info()
+    excName = cla.__name__
+    try:
+        excArgs = exc.__dict__["args"]
+    except KeyError:
+        excArgs = "<no args>"
+    excTb = traceback.format_tb(trbk, maxTBlevel)
+    return (excName, excArgs, excTb)
+         
+
+def get_exception_name(maxTBlevel=5):
+    cla, exc, trbk = sys.exc_info()
+    excName = cla.__name__
+    return str(excName)
+         
+
+def get_exception_msg(e, maxTBlevel=5):
+    cla, exc, trbk = sys.exc_info()
+    excName = cla.__name__
+    return str(excName) + ": " + str(e)
+         
+
+def get_settings(hostname):
     """ Returns a tuple with hostname-specific settings
     args
         hostname         -- Name of the host on which this particular app instance is running,
@@ -71,13 +98,13 @@ def isTestUser(user_email):
     return (user_email.lower() in (email.lower() for email in settings.TEST_ACCOUNTS))
   
 
-def DumpObj(obj):
+def dump_obj(obj):
     for attr in dir(obj):
         logging.debug("    obj.%s = %s" % (attr, getattr(obj, attr)))
     logservice.flush()
 
     
-def EscapeHtml(text):
+def escape_html(text):
     """Ensure that text is properly escaped as valid HTML"""
     if text is None:
         return None

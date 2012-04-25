@@ -51,96 +51,6 @@ __author__ = "julie.smith.1999@gmail.com (Julie Smith)"
 
 
 
-# class CreateImportWorker(webapp.RequestHandler):
-    
-    # def post(self):
-        # fn_name = "CreateImportWorker.post(): "
-        
-        # start_time = datetime.datetime.now()
-       
-        # logging.debug(fn_name + "<start> (app version %s)" %appversion.version)
-        # logservice.flush()
-
-        # client_id, client_secret, user_agent, app_title, project_name, host_msg = shared.GetSettings(self.request.host)
-        
-        
-        # user_email = self.request.get(settings.TASKS_QUEUE_KEY_NAME)
-        
-        # is_test_user = shared.isTestUser(user_email)
-        
-        
-        
-        # #logging.debug(fn_name + "User email = " + str(user_email))
-        
-        # if user_email:
-            
-            # # Retrieve the DB record for this user
-            # task_import_job = model.ProcessTasksJob.get_by_key_name(user_email)
-            
-            # if task_import_job is None:
-                # logging.error(fn_name + "No DB record for " + user_email)
-                # logservice.flush()
-                # # TODO: Find some way of notifying the user?????
-            # else:
-                # logging.info(fn_name + "Retrieved tasks import job for " + str(user_email))
-                # logservice.flush()
-                # task_import_job.status = 'building'
-                # task_import_job.job_progress_timestamp = datetime.datetime.now()
-                # task_import_job.put()
-                
-                # user = task_import_job.user
-                # if not user:
-                    # logging.error(fn_name + "No user object in DB record for " + str(user_email))
-                    # logservice.flush()
-                    # task_import_job.status = 'error'
-                    # task_import_job.error_message = "Problem with user details. Please restart."
-                    # task_import_job.job_progress_timestamp = datetime.datetime.now()
-                    # task_import_job.put()
-                    # self.response.set_status(401, "No user object")
-                    # return
-                      
-                # credentials = task_import_job.credentials
-                # if not credentials:
-                    # logging.error(fn_name + "No credentials in DB record for " + str(user_email))
-                    # logservice.flush()
-                    # task_import_job.status = 'error'
-                    # task_import_job.error_message = "Problem with user credentials. Please restart."
-                    # task_import_job.job_progress_timestamp = datetime.datetime.now()
-                    # task_import_job.put()
-                    # self.response.set_status(401, "No credentials")
-                    # return
-              
-                # if credentials.invalid:
-                    # logging.error(fn_name + "Invalid credentials in DB record for " + str(user_email))
-                    # logservice.flush()
-                    # task_import_job.status = 'error'
-                    # task_import_job.error_message = "Invalid credentials. Please restart and re-authenticate."
-                    # task_import_job.job_progress_timestamp = datetime.datetime.now()
-                    # task_import_job.put()
-                    # self.response.set_status(401, "Invalid credentials")
-                    # return
-              
-                # # TODO: Build tasks data structure from DB records
-                
-                # # TODO: Import tasks
-                # #   For each tasklist in tasklists data
-                # #       If tasklist doesn't exist:
-                # #           create it
-                # #       For each task in tasklist
-                # #           If check_for_duplicates:
-                # #               % X X X X X   CAUTION: This could require O(n^2)   X X X X X
-                # #               % Task exists if :
-                # #               %   Task has same; title, due date, hidden/deleted flags
-                # #               %   {Possibly compare notes? Might need to ignore white space (space, tabs, CRLF)
-                # #               If task exists: 
-                # #                   continue (skip task)
-                # #           create task
-    
-        
-
-        
-        
-
 class ProcessTasksWorker(webapp.RequestHandler):
     """ Process tasks according to data in the ProcessTasksJob entity """
     
@@ -150,7 +60,7 @@ class ProcessTasksWorker(webapp.RequestHandler):
         logging.debug(fn_name + "<start> (app version %s)" %appversion.version)
         logservice.flush()
 
-        client_id, client_secret, user_agent, app_title, project_name, host_msg = shared.GetSettings(self.request.host)
+        client_id, client_secret, user_agent, app_title, project_name, host_msg = shared.get_settings(self.request.host)
         
         
         user_email = self.request.get(settings.TASKS_QUEUE_KEY_NAME)
@@ -222,85 +132,89 @@ class ProcessTasksWorker(webapp.RequestHandler):
 
         
     def import_tasks(self, credentials, user_email, is_test_user, process_tasks_job):
+        """ Read data from supplied CSV file, and create a task for each row.
+        
+            The process_tasks_job entity contains the key to the Blobstore which holds a CSV file containing tasks to be imported.
+            
+            Format of CSV file:
+                "tasklist_name","title","notes","status","due","completed","deleted","hidden",depth
+                every row must have 9 columns
+                CSV file is ordered;
+                    Grouped by tasklist
+                    Subtasks immediately follow tasks parent tasks
+                        A
+                        B
+                            C
+                            D
+                                E
+                                    F
+                            G
+                                H
+                        I
+
+        """
+        
         fn_name = "import_tasks: "
         logging.debug(fn_name + "<Start>")
         logservice.flush()
+        
         prev_progress_timestamp = datetime.datetime.now()
         start_time = datetime.datetime.now()
-       
-
-        
         
         try:
-            # TODO: Read data from supplied CSV file
-            
-            # Check the format of each row of the file;
-            #   "tasklist_name","title","notes","status","due","completed","deleted","hidden",depth
-            #   every row must have 9 columns
-            
-            # CHECK: Does csv throw an exception if file format is invalid?
-            
-            # For a way of handling files >1MB,
-            #   check https://developers.google.com/appengine/docs/python/blobstore/overview
-            #   "Applications can use the Blobstore to accept large files as uploads from users and to serve those files. 
-            #    Files are called blobs once they're uploaded. Applications don't access blobs directly. 
-            #    Instead, applications work with blobs through blob info entities (represented by the BlobInfo class) in the datastore."
-            #
-            #   "Blobstore values can be served to the user, or accessed by the application in a file-like stream, using the Blobstore API."
-            #   "Note: Blobs as defined by the Blobstore service are not related to blob property values used by the datastore."
-            #   "... rewrites the request to contain the blob key, and passes it to a path in your application."
-            #       Probably can't be the URL of a worker, since worker must be started via taskqueue
-            #   "An application can read a Blobstore value a portion at a time using an API call. 
-            #    The size of the portion can be up to the maximum size of an API return value. 
-            #    This size is a little less than 32 megabytes, represented in Python by the constant google.appengine.ext.blobstore.MAX_BLOB_FETCH_SIZE 
-            #    An application cannot create or modify Blobstore values except through files uploaded by the user."
-            
+            # tasklist_suffix = "yyyy-mm-d hh:mm:ss"
+            # Store in tasklist_title_dict as {'title' : 'id'}
             # For each row in CSV file:
-            #   If tasklist_title != prev_tasklist.title:
-            #       Add prev_tasklist to tasklists
-            #       prev_tasklist = tasklist
-            #       Create new tasklist
-            #   Add task to tasklist
-            # Pickle tasklists
-            # Sore pickle in DB record(s)
-            # Use taskqueue to start import worker
-            # Display import progress to user
-            
-            # **** OR ****
-            
-            # Use Blobstore to get file from user to server
-            # % Assume that CSV file is ordered
-            # %  * Grouped by tasklist
-            # %  * Subtasks immediately following tasks
+            #   If tasklist_title in tasklist_title_dict: 
+            #       tasklist_id = ID from tasklist_title_dict
+            #   else: 
+            #       Create tasklist (title = tasklist_title + tasklist_suffix
+            #       tasklist_id = ID of new tasklist
+            #       Add tasklist_title {excluding suffix) & tasklist_id to tasklist_title_dict
+            #   Insert task into tasklist using;
+            #       tasklist_id
+            #       previous_id (id of previous sibling at same depth, else '')
+            #           "From https://developers.google.com/google-apps/tasks/v1/reference/tasks/insert
+            #               OPTIONAL: Previous sibling task identifier. 
+            #               If the task is created at the first position among its siblings, this parameter is omitted."
+            #       parent_id (if depth > 0, else '')
+            #   prev_tasklist = tasklist
             # Retrieve list of tasklists
             #   % Handling non-unique tasklist names:
             #   %   Rename non-unique tasklist on server? {Check that rename doesn't clash}
             #   %   Only store ID of 1st tasklist
             # Store in tasklist_title_dict as {'title' : 'id'}
             # For each row in CSV file:
-            #   If tasklist_title not in tasklist_title_dict: 
-            #       Create tasklist
-            #       Add new tasklist title & ID (from tasklists.insert method) to tasklist_title_dict
+            #   If tasklist_title != prev_tasklist_title
+            #       If tasklist_title in tasklist_title_dict: 
+            #           tasklist_id = ID from tasklist_title_dict
+            #       else: 
+            #           Create tasklist (title = tasklist_title + suffix)
+            #           tasklist_id = ID of new tasklist
+            #           Add tasklist_title {excluding suffix) & tasklist_id to tasklist_title_dict
+            #       prev_tasklist_title = tasklist
             #   Insert task into tasklist using;
-            #     tasklist_id
-            #     previous_id (id of previous sibling at same depth)
-            #     parent_id (if depth > 0)
-            #     prev_tasklist = tasklist
+            #       tasklist_id
+            #       previous_id (id of previous sibling at same depth)
+            #       parent_id (if depth > 0)
+            #   
+            #   previous_id = task_id
             
             # Option: Ignore duplicates
-            # Read all tasks in tasklist
-            # Sort existing tasks (in memory) by title O(n log n)
-            # Sort new tasks (in memory) by title O(n log n)
-            # Compare side-by-side O(n)
+            #   Read all tasks in tasklist
+            #   Sort existing tasks (in memory) by title O(n log n)
+            #   Sort new tasks (in memory) by title O(n log n)
+            #   Compare side-by-side O(n)
             # Problem: Requires a lot of memory - size of existing PLUS size of new PLUS sorting overhead
             
             # OPTIONS:
             #   Allow user to specify new tasklist, into which ALL tasks are inserted
             #   Allow user to specify prefix/suffix for import tasklist names, and import tasks into new tasklists
-            #     Need to check for name clashes. Could just append YYYY-MM-DD_HH-MM-SS 
+            #     Need to check for name clashes. 
+            # Could just append YYYY-MM-DD_HH-MM-SS for each import job
             #       (similar to the auto-added group when inserting contacts into Google
             
-
+                
             process_tasks_job.status = 'importing'
             process_tasks_job.job_progress_timestamp = datetime.datetime.now()
             process_tasks_job.put()
@@ -312,58 +226,354 @@ class ProcessTasksWorker(webapp.RequestHandler):
             blob_info = blobstore.BlobInfo.get(blob_key)
             file_name = str(blob_info.filename)
             logging.debug(fn_name + "Filename = " + file_name + ", key = " + blob_key)
+            logservice.flush()
             f=csv.DictReader(blobdata,dialect='excel')
             
-            num_completed_tasks=0
-            num_tasks = 0
-            for row in f:
-                num_tasks = num_tasks + 1
+            http = httplib2.Http()
+            http = credentials.authorize(http)
+            service = discovery.build("tasks", "v1", http)
+            
+            # Set suffix once, so that all tasklists created in this session have the same suffix (timestamp)
+            tasklist_suffix = datetime.datetime.now().strftime(" %Y-%m-%d %H:%M:%S")
+            
+            prev_tasklists = {} # "Tasklist name" : "Tasklist ID"
+            prev_tasklist_name = None
+            parents_ids = [''] # Level 0 tasks don't have a parent, so level zero parent ID is always an empty string
+            sibling_ids = []
+            prev_depth = 0
+            sibling_id = ''
+            tasklist_id = ''
+
+            task_num = 0
+            
+            for task in f:
+                task_num = task_num + 1
                 
-                # TODO: Insert task from imported row into Google Tasks
+                if len(task) != 9 or task.get('restkey'):
+                    # Invalid number of columns
+                    msg = "Task " + str(task_num) + " has " + str(len(task)) + " columns, expected 9"
+                    logging.warning(fn_name + msg)
+                    logservice.flush()
+                    process_tasks_job.status = 'error'
+                    process_tasks_job.error_message = msg
+                    process_tasks_job.job_progress_timestamp = datetime.datetime.now()
+                    process_tasks_job.put()
+                    logging.debug(fn_name + "<End> due to invalid number of columns")
+                    logservice.flush()
+                    return 
+
+                # ---------------------------------------------------
+                #            Process tasklist for this task
+                # ---------------------------------------------------
+                if task.has_key('tasklist_name'):
+                    tasklist_name = task['tasklist_name']
+                    if not tasklist_name:
+                        tasklist_name = "<Unnamed list>"
+                        logging.debug(fn_name + "No tasklist name for imported task number " + str(task_num) + ", using " + tasklist_name)
+                        logservice.flush()
+                    # 'tasklist_name' is not part of the Tasks resource, so delete it from the dictionary
+                    del(task['tasklist_name'])
+                else:
+                    msg = "Missing required 'tasklist_name' column in task number " + str(task_num)
+                    logging.warning(fn_name + msg)
+                    logservice.flush()
+                    process_tasks_job.status = 'error'
+                    process_tasks_job.error_message = msg
+                    process_tasks_job.job_progress_timestamp = datetime.datetime.now()
+                    process_tasks_job.put()
+                    logging.debug(fn_name + "<End> due to missing 'tasklist_name' column")
+                    logservice.flush()
+                    return 
                 
-                # TODO: If date/timestamp format is incorrect, use "sensible" default, or "0001-01-01 00:00:00" ???
+                if tasklist_name != prev_tasklist_name:
+                    existing_tasklist_id = prev_tasklists.get(tasklist_name)
+                    if existing_tasklist_id:
+                        # The tasklist name for this task was used in a previous task (but not immediately previous task)
+                        # This indicates that tasks are out of order, OR user has duplicate tasklist names
+                        # OPTION1: Add task to existing tasklist
+                        # OPTION2: Create new tasklist
+                        #   - duplicate name OR
+                        #   - add another suffix; would need to check that suffix doesn' clash if user has > 2 taskklists with same name
+                        msg = "The tasklist name [" + str(tasklist_name) + "] for task " + str(task_num) + " has already been used. It appears that tasks are not in order, or the original account had duplicate tasklist names"
+                        logging.warning(fn_name + msg)
+                        logservice.flush()
+                        process_tasks_job.status = 'error'
+                        process_tasks_job.error_message = msg
+                        process_tasks_job.job_progress_timestamp = datetime.datetime.now()
+                        process_tasks_job.put()
+                        logging.debug(fn_name + "<End> due to invalid task order")
+                        logservice.flush()
+                        return 
+                        # OPTION1: Add task to existing tasklist
+                        #tasklist_id = existing_tasklist_id
+                    else:
+                        # ----------------------------------
+                        #       Create new tasklist
+                        # ----------------------------------
+                        tasklist = { 'title': tasklist_name + tasklist_suffix }
+                        result = service.tasklists().insert(body=tasklist).execute()
+                        tasklist_id = result['id']
+                        logging.debug(fn_name + "Created new Tasklist [" + (tasklist_name + tasklist_suffix) + "], ID = " + tasklist_id)
+                        logservice.flush()
+                        prev_tasklist_name = None
+                        parents_ids = [''] # New list, so start with no parents
+                        sibling_ids = [] # New list, so start with no siblings
+                        prev_depth = 0
+                        prev_tasklist_name = tasklist_name
                 
-                # TODO: Handling tasks where tasklist already exists. See notes in todo.txt 
                 
-                logging.debug(str(row))
-                if file_name == 'tasks_import_export_My-Tasklist.csv':
-                    time.sleep(7)
-                if row['status'] == 'completed':
-                    num_completed_tasks = num_completed_tasks + 1
+                # ---------------------------------------------------
+                #               Adjust date/time formats
+                # ---------------------------------------------------
+                # Calculate due date
+                date_due_str = task.get(u'due')
+                if date_due_str:
+                    try:
+                        # Due date value is stored in CSV file as "UTC %Y-%m-%d"
+                        new_due_date = datetime.datetime.strptime(date_due_str, "UTC %Y-%m-%d").date()
+                    except ValueError, e:
+                        new_due_date = datetime.date(1900, 1, 1)
+                        logging.exception(fn_name + "Invalid 'due' timestamp format, so using " + str(new_due_date))
+                        logging.debug(fn_name + "Invalid value was " + str(date_due_str))
+                        logservice.flush()
+                    # Store due date as  "%Y-%m-%dT00:00:00.000Z"
+                    task[u'due'] = new_due_date.strftime("%Y-%m-%dT00:00:00.000Z")
+                
+                
+                # Calculate completed date
+                datetime_completed_str = task.get(u'completed')
+                if datetime_completed_str:
+                    try:
+                        # Completed datetime value is stored in CSV file as "UTC %Y-%m-%d %H:%M:%S"
+                        new_datetime_completed = datetime.datetime.strptime(datetime_completed_str, "UTC %Y-%m-%d %H:%M:%S")
+                    except ValueError, e:
+                        new_datetime_completed = datetime.datetime(1900, 1, 1, 0, 0, 0)
+                        logging.exception(fn_name + "Invalid 'completed' timestamp format, so using " + str(new_datetime_completed))
+                        logging.debug(fn_name + "Invalid value was " + str(datetime_completed_str))
+                        logservice.flush()
+                    # Store completed timestamp as "%Y-%m-%dT%H:%M:%S.000Z"
+                    task[u'completed'] = new_datetime_completed.strftime("%Y-%m-%dT%H:%M:%S.000Z")
+                
+                # -----------------------------------------------
+                #        Check depth value for this task
+                # -----------------------------------------------
+                err_msg = None
+                if task.has_key('depth'):
+                    try:
+                        depth = int(task['depth'])
+                    except Exception, e:
+                        err_msg = "Invalid depth value [" + str(task['depth']) + "] for task " + str(task_num) + ", Exception: " + str(e)
+                    # 'depth' is not part of the Tasks resource, so delete it from the dictionary
+                    del(task['depth'])
+                else:
+                    err_msg = "No 'depth' property for imported task number " + str(task_num)
+                if err_msg:
+                    logging.warning(fn_name + err_msg)
+                    logservice.flush()
+                    process_tasks_job.status = 'error'
+                    process_tasks_job.error_message = err_msg
+                    process_tasks_job.job_progress_timestamp = datetime.datetime.now()
+                    process_tasks_job.put()
+                    logging.debug(fn_name + "<End> due to missing/invalid depth column")
+                    logservice.flush()
+                    return 
+                if depth < 0:
+                    logging.debug(fn_name + "Depth of task " + str(task_num) + " [" + str(depth) + "] is less than zero. Setting depth = 0") 
+                    depth = 0
+                
+                # -----------------------------------------------------------
+                #       Check depth and find current task's parent ID
+                # -----------------------------------------------------------
+                if task_num == 0 and depth != 0:
+                    # First task imported must have depth of zero; it must be a root task
+                    err_msg = "Invalid depth [" + str(depth) + "] of first task; First task must have depth = 0"
+                    logging.warning(fn_name + err_msg)
+                    logservice.flush()
+                    process_tasks_job.status = 'error'
+                    process_tasks_job.error_message = err_msg
+                    process_tasks_job.job_progress_timestamp = datetime.datetime.now()
+                    process_tasks_job.put()
+                    logging.debug(fn_name + "<End> due to invalid depth value")
+                    logservice.flush()
+                    return 
+                    
+                # Check for valid depth value
+                # Valid depth values:
+                #   depth = 0                   Root task
+                #   depth < prev_depth          Task moved back up the task tree
+                #   depth == prev_depth         Sibling task (same parent as previous task)
+                #   depth == prev_depth + 1     New child task
+                # Task depth must not be more than prev_depth + 1
+                # List of parents_ids is updated after task has been added, because the current task may be the parent of the next task
+                if depth > prev_depth+1:
+                    # Child can only be immediate child of previous task (i.e., previous depth + 1)
+                    err_msg = "Depth [" + str(depth) + "] of task " + str(task_num) + " is more than 1 below greater than previous task's depth [" + str(prev_depth) + "]"
+                    logging.warning(fn_name + err_msg)
+                    logservice.flush()
+                    process_tasks_job.status = 'error'
+                    process_tasks_job.error_message = err_msg
+                    process_tasks_job.job_progress_timestamp = datetime.datetime.now()
+                    process_tasks_job.put()
+                    logging.debug(fn_name + "<End> due to invalid depth value")
+                    logservice.flush()
+                    return 
+                    
+                # Find parent task ID
+                # Will be empty string for root tasks (depth = 0)
+                try:
+                    parent_id = parents_ids[depth]
+                except:
+                    logging.warning(fn_name + "Invalid depth [" + str(depth) + "] for task " + str(task_num) + "; Unable to determine parent. Previous task's depth was " + str(prev_depth) + " Exception: " + shared.get_exception_msg())
+                    logservice.flush()
+                    process_tasks_job.status = 'error'
+                    process_tasks_job.error_message = "Invalid depth [" + str(depth) + "] for task " + str(task_num)
+                    process_tasks_job.job_progress_timestamp = datetime.datetime.now()
+                    process_tasks_job.put()
+                    logging.debug(fn_name + "<End> due to invalid depth value")
+                    logservice.flush()
+                    return 
+                
+                # # Find sibling (previous) ID
+                # if depth != prev_depth:
+                    # # Depth change indicates that this is the "first position among its siblings"
+                    # #      "From https://developers.google.com/google-apps/tasks/v1/reference/tasks/insert
+                    # #          OPTIONAL: Previous sibling task identifier. 
+                    # #          If the task is created at the first position among its siblings, this parameter is omitted."
+                    # sibling_id = ''
+                    
+                # # Find ID of most recent sibling at this depth
+                # if len(sibling_ids) < depth+1:
+                    # # First task at this depth
+                    # sibling_id = ''
+                # else:
+                    # # Previous task at this depth
+                    # sibling_id = sibling_ids[depth]
+                    
+                if depth == prev_depth+1:
+                    # Going deeper, so this is the first child at the new depth, within this branch of the tree.
+                    # There is nowhere else that this task can go, so use a blank sibling ID (otherwise insert() throws an error)
+                    sibling_id = ''
+                elif depth+1 > len(sibling_ids):
+                    # First task at this depth
+                    sibling_id = ''
+                else:
+                    # Previous task at this depth
+                    sibling_id = sibling_ids[depth]
+                
+                # -------------------------------------------------------------------------------------
+                #           Delete any empty properties, to prevent server throwing an error
+                # -------------------------------------------------------------------------------------
+                empty_keys = []
+                for k,v in task.iteritems():
+                    if len(v) == 0:
+                        #logging.debug(fn_name + "'" + k + "' property is empty. Deleting")
+                        empty_keys.append(k)
+                        
+                for k in empty_keys:
+                    #logging.debug(fn_name + "Deleting empty '" + k + "' property")
+                    del(task[k])
+                
+                # ================================================================
+                #               Insert the task into the tasklist
+                # ================================================================
+                logging.debug(fn_name + "Inserting task " + str(task_num) + " with depth " + str(depth) + " ==>")
+                logging.debug(task)
+                
+                # TODO: Put insert within a retry loop for timeouts
+                try:
+                    result = service.tasks().insert(tasklist=tasklist_id, body=task, parent=parent_id, previous=sibling_id).execute()
+                except Exception, e:
+                    logging.exception(fn_name + "Exception inserting task:")
+                    logging.debug(fn_name + "Task num = " + str(task_num))
+                    logging.debug(fn_name + "Depth = " + str(depth))
+                    logging.debug(fn_name + "tasklist = " + str(tasklist_id))
+                    logging.debug(fn_name + "parent = " + str(parent_id))
+                    logging.debug(fn_name + "previous = " + str(sibling_id))
+                    logging.debug(fn_name + "body = " + str(task))
+                    logservice.flush()
+                    
+                    process_tasks_job.status = 'error'
+                    process_tasks_job.error_message = "Error creating task number " + str(task_num) + ": " + shared.get_exception_msg(e)
+                    process_tasks_job.job_progress_timestamp = datetime.datetime.now()
+                    process_tasks_job.put()
+                    logging.debug(fn_name + "<End> due to exception inserting tasks")
+                    logservice.flush()
+                    return
+                
+                task_id = result['id']
+                logging.debug(fn_name + "Created new Task ID = " + task_id)
+                logservice.flush()
+                
+                # --------------------------------------------
+                #           Update list of parent IDs
+                # --------------------------------------------
+                # List of parents_ids is updated after task has been added, because the current task may be the parent of the next task
+                if depth < prev_depth:
+                    # Child of an earlier task, so we've moved back up the task tree
+                    # Delete ID of 'deeper' tasks, because those tasks cannot be parents anymore
+                    del(parents_ids[depth+1:])
+                # Store ID of current task in at this depth, as it could be the parent of a future task
+                if len(parents_ids) == depth+2:
+                    parents_ids[depth+1] = task_id
+                else:
+                    parents_ids.append(task_id)
+                
+                # Store ID of this task (for this depth)
+                if len(sibling_ids) < depth+1:
+                    # First task at this depth
+                    sibling_ids.append(task_id)
+                else:
+                    # There was a previous task at this depth
+                    sibling_ids[depth] = task_id
+
+                    
+                # ---------------------------------------
+                #       Provide feedback to user
+                # ---------------------------------------
                 if (datetime.datetime.now() - prev_progress_timestamp).seconds > settings.TASK_COUNT_UPDATE_INTERVAL:
-                    process_tasks_job.total_progress = num_tasks
+                    # DEBUG
+                    logging.info(fn_name + "Updating progress = " + str(task_num))
+                    logservice.flush()
+                    process_tasks_job.total_progress = task_num
                     process_tasks_job.job_progress_timestamp = datetime.datetime.now()
                     process_tasks_job.put()
                     prev_progress_timestamp = datetime.datetime.now()
- 
-            process_tasks_job.total_progress = num_tasks
-            logging.info(fn_name + "Processed " + str(num_tasks) + " rows, found " + str(num_completed_tasks) + " completed tasks")
-            
-            try:
-                # We've imported all the data, so now delete the Blobstore
-                blob_info.delete()
-                logging.debug(fn_name + "Blobstore deleted")
-            except Exception, e:
-                logging.exception(fn_name + "Exception deleting " + file_name + ", key = " + blob_key)
-                logservice.flush()
-                process_tasks_job.status = 'error'
-                process_tasks_job.error_message = "Exception: " + str(e)
-                process_tasks_job.job_progress_timestamp = datetime.datetime.now()
-                process_tasks_job.put()
+                    
+                prev_depth = depth
                 
-            # Mark import job complete
+            # ---------------------------------------
+            #       Mark import job complete
+            # ---------------------------------------
             process_tasks_job.status = 'import_completed'
+            process_tasks_job.total_progress = task_num
             process_tasks_job.job_progress_timestamp = datetime.datetime.now()
             process_tasks_job.put()
             logging.info(fn_name + "Marked import job complete for " + str(user_email) + ", with progress = " + 
                 str(process_tasks_job.total_progress))
             logservice.flush()
         
+            # -------------------------------------
+            #       Delete the Blobstore item
+            # -------------------------------------
+            try:
+                # We've imported all the data, so now delete the Blobstore
+                blob_info.delete()
+                logging.debug(fn_name + "Blobstore deleted")
+                logservice.flush()
+            except Exception, e:
+                logging.exception(fn_name + "Exception deleting " + file_name + ", key = " + blob_key)
+                logservice.flush()
+                process_tasks_job.status = 'error'
+                process_tasks_job.error_message = "Exception: " + shared.get_exception_msg(e)
+                process_tasks_job.job_progress_timestamp = datetime.datetime.now()
+                process_tasks_job.put()
+                
         except Exception, e:
             logging.exception(fn_name + "Exception:") 
             logservice.flush()
+            
             process_tasks_job.status = 'error'
-            process_tasks_job.error_message = "Exception: " + str(e)
+            process_tasks_job.error_message = shared.get_exception_msg(e)
             process_tasks_job.job_progress_timestamp = datetime.datetime.now()
             process_tasks_job.put()
         
@@ -377,6 +587,7 @@ class ProcessTasksWorker(webapp.RequestHandler):
         fn_name = "export_tasks: "
         logging.debug(fn_name + "<Start>")
         logservice.flush()
+        
         start_time = datetime.datetime.now()
         
         process_tasks_job.status = 'building'
@@ -635,7 +846,7 @@ class ProcessTasksWorker(webapp.RequestHandler):
                 logging.exception(fn_name + "Error putting results in DB")
                 logservice.flush()
                 process_tasks_job.status = 'error'
-                process_tasks_job.error_message = "Tasklists data is too large - Unable to store tasklists in DB: " + str(e)
+                process_tasks_job.error_message = "Tasklists data is too large - Unable to store tasklists in DB: " + shared.get_exception_msg(e)
                 process_tasks_job.job_progress_timestamp = datetime.datetime.now()
                 process_tasks_job.put()
             
@@ -643,7 +854,7 @@ class ProcessTasksWorker(webapp.RequestHandler):
                 logging.exception(fn_name + "Error putting results in DB")
                 logservice.flush()
                 process_tasks_job.status = 'error'
-                process_tasks_job.error_message = "Unable to store tasklists in DB: " + str(e)
+                process_tasks_job.error_message = "Unable to store tasklists in DB: " + shared.get_exception_msg(e)
                 process_tasks_job.job_progress_timestamp = datetime.datetime.now()
                 process_tasks_job.put()
 
@@ -655,7 +866,7 @@ class ProcessTasksWorker(webapp.RequestHandler):
             logging.exception(fn_name + "urlfetch_errors.DeadlineExceededError:")
             logservice.flush()
             process_tasks_job.status = 'error'
-            process_tasks_job.error_message = "urlfetch_errors.DeadlineExceededError: " + str(e)
+            process_tasks_job.error_message = "urlfetch_errors.DeadlineExceededError: " + shared.get_exception_msg(e)
             process_tasks_job.job_progress_timestamp = datetime.datetime.now()
             process_tasks_job.put()
       
@@ -663,7 +874,7 @@ class ProcessTasksWorker(webapp.RequestHandler):
             logging.exception(fn_name + "apiproxy_errors.DeadlineExceededError:")
             logservice.flush()
             process_tasks_job.status = 'error'
-            process_tasks_job.error_message = "apiproxy_errors.DeadlineExceededError: " + str(e)
+            process_tasks_job.error_message = "apiproxy_errors.DeadlineExceededError: " + shared.get_exception_msg(e)
             process_tasks_job.job_progress_timestamp = datetime.datetime.now()
             process_tasks_job.put()
         
@@ -671,7 +882,7 @@ class ProcessTasksWorker(webapp.RequestHandler):
             logging.exception(fn_name + "DeadlineExceededError:")
             logservice.flush()
             process_tasks_job.status = 'error'
-            process_tasks_job.error_message = "DeadlineExceededError: " + str(e)
+            process_tasks_job.error_message = "DeadlineExceededError: " + shared.get_exception_msg(e)
             process_tasks_job.job_progress_timestamp = datetime.datetime.now()
             process_tasks_job.put()
         
@@ -679,7 +890,7 @@ class ProcessTasksWorker(webapp.RequestHandler):
             logging.exception(fn_name + "Exception:") 
             logservice.flush()
             process_tasks_job.status = 'error'
-            process_tasks_job.error_message = "Exception: " + str(e)
+            process_tasks_job.error_message = shared.get_exception_msg(e)
             process_tasks_job.job_progress_timestamp = datetime.datetime.now()
             process_tasks_job.put()
         
@@ -820,7 +1031,7 @@ class ProcessTasksWorker(webapp.RequestHandler):
                     try:
                         new_due_date = datetime.datetime.strptime(date_due, "%Y-%m-%dT00:00:00.000Z").date()
                     except ValueError, e:
-                        new_due_date = datetime.date(datetime.MINYEAR, 1, 1)
+                        new_due_date = datetime.date(1900, 1, 1)
                         logging.exception(fn_name + "Invalid 'due' timestamp format, so using " + str(new_due_date))
                         logging.debug(fn_name + "Invalid value was " + str(date_due))
                         logservice.flush()
@@ -831,7 +1042,7 @@ class ProcessTasksWorker(webapp.RequestHandler):
                     try:
                         new_datetime_updated = datetime.datetime.strptime(datetime_updated, "%Y-%m-%dT%H:%M:%S.000Z")
                     except ValueError, e:
-                        new_datetime_updated = datetime.datetime(datetime.MINYEAR, 1, 1, 0, 0, 0)
+                        new_datetime_updated = datetime.datetime(1900, 1, 1, 0, 0, 0)
                         logging.exception(fn_name + "Invalid 'updated' timestamp format, so using " + str(new_datetime_updated))
                         logging.debug(fn_name + "Invalid value was " + str(datetime_updated))
                         logservice.flush()
@@ -842,7 +1053,7 @@ class ProcessTasksWorker(webapp.RequestHandler):
                     try:
                         new_datetime_completed = datetime.datetime.strptime(datetime_completed, "%Y-%m-%dT%H:%M:%S.000Z")
                     except ValueError, e:
-                        new_datetime_completed = datetime.datetime(datetime.MINYEAR, 1, 1, 0, 0, 0)
+                        new_datetime_completed = datetime.datetime(1900, 1, 1, 0, 0, 0)
                         logging.exception(fn_name + "Invalid 'completed' timestamp format, so using " + str(new_datetime_completed))
                         logging.debug(fn_name + "Invalid value was " + str(datetime_completed))
                         logservice.flush()

@@ -73,6 +73,7 @@ class ProcessTasksJob(db.Model):
     
     error_message = db.StringProperty(indexed=False, default=None)
 
+    # message = db.StringProperty(indexed=False, default=None)
 
 
 class TasklistsData(db.Model):

@@ -96,7 +96,7 @@ def _RedirectForOAuth(self, user):
     fn_name = "_RedirectForOAuth(): "
     
     try:
-        client_id, client_secret, user_agent, app_title, product_name, host_msg = shared.GetSettings(self.request.host)
+        client_id, client_secret, user_agent, app_title, product_name, host_msg = shared.get_settings(self.request.host)
 
         flow = client.OAuth2WebServerFlow(
             client_id=client_id,
@@ -122,7 +122,7 @@ def _RedirectForOAuth(self, user):
         self.redirect(authorize_url)
     except Exception, e:
         logging.exception(fn_name + "Caught top-level exception")
-        self.response.out.write("""Sorry, something went terribly wrong.<br />%s<br />Please report this error to <a href="http://code.google.com/p/tasks-backup/issues/list">code.google.com/p/tasks-backup/issues/list</a>""" % str(e))
+        self.response.out.write("""Sorry, something went terribly wrong.<br />%s<br />Please report this error to <a href="http://code.google.com/p/tasks-backup/issues/list">code.google.com/p/tasks-backup/issues/list</a>""" % shared.get_exception_msg(e))
         logging.debug(fn_name + "<End> due to exception" )
         logservice.flush()
 
@@ -159,7 +159,7 @@ def _serveRetryPage(self, msg):
     logservice.flush()
     
     try:
-        client_id, client_secret, user_agent, app_title, product_name, host_msg = shared.GetSettings(self.request.host)
+        client_id, client_secret, user_agent, app_title, product_name, host_msg = shared.get_settings(self.request.host)
 
         logging.debug(fn_name + "Calling _GetCredentials()")
         user, credentials = _GetCredentials()
@@ -195,7 +195,7 @@ def _serveRetryPage(self, msg):
         logservice.flush()
     except Exception, e:
         logging.exception(fn_name + "Caught top-level exception")
-        self.response.out.write("""Sorry, something went terribly wrong.<br />%s<br />Please report this error to <a href="http://code.google.com/p/tasks-backup/issues/list">code.google.com/p/tasks-backup/issues/list</a>""" % str(e))
+        self.response.out.write("""Sorry, something went terribly wrong.<br />%s<br />Please report this error to <a href="http://code.google.com/p/tasks-backup/issues/list">code.google.com/p/tasks-backup/issues/list</a>""" % shared.get_exception_msg(e))
         logging.debug(fn_name + "<End> due to exception" )
         logservice.flush()
     
@@ -223,7 +223,7 @@ class BlobstoreUploadHandler(blobstore_handlers.BlobstoreUploadHandler):
         logservice.flush()
         
         try:
-            client_id, client_secret, user_agent, app_title, product_name, host_msg = shared.GetSettings(self.request.host)
+            client_id, client_secret, user_agent, app_title, product_name, host_msg = shared.get_settings(self.request.host)
 
             logging.debug(fn_name + "Calling _GetCredentials()")
             user, credentials = _GetCredentials()
@@ -276,7 +276,7 @@ class BlobstoreUploadHandler(blobstore_handlers.BlobstoreUploadHandler):
             logservice.flush()
         except Exception, e:
             logging.exception(fn_name + "Caught top-level exception")
-            self.response.out.write("""Sorry, something went terribly wrong.<br />%s<br />Please report this error to <a href="http://code.google.com/p/tasks-backup/issues/list">code.google.com/p/tasks-backup/issues/list</a>""" % str(e))
+            self.response.out.write("""Sorry, something went terribly wrong.<br />%s<br />Please report this error to <a href="http://code.google.com/p/tasks-backup/issues/list">code.google.com/p/tasks-backup/issues/list</a>""" % shared.get_exception_msg(e))
             logging.debug(fn_name + "<End> due to exception" )
             logservice.flush()
 
@@ -302,7 +302,7 @@ class InvalidCredentialsHandler(webapp.RequestHandler):
                 logging.debug(fn_name + "No auth_count cookie found")
             logservice.flush()            
                 
-            client_id, client_secret, user_agent, app_title, product_name, host_msg = shared.GetSettings(self.request.host)
+            client_id, client_secret, user_agent, app_title, product_name, host_msg = shared.get_settings(self.request.host)
             
             path = os.path.join(os.path.dirname(__file__), _path_to_templates, "invalid_credentials.html")
 
@@ -328,7 +328,7 @@ class InvalidCredentialsHandler(webapp.RequestHandler):
             logservice.flush()
         except Exception, e:
             logging.exception(fn_name + "Caught top-level exception")
-            self.response.out.write("""Sorry, something went terribly wrong.<br />%s<br />Please report this error to <a href="http://code.google.com/p/tasks-backup/issues/list">code.google.com/p/tasks-backup/issues/list</a>""" % str(e))
+            self.response.out.write("""Sorry, something went terribly wrong.<br />%s<br />Please report this error to <a href="http://code.google.com/p/tasks-backup/issues/list">code.google.com/p/tasks-backup/issues/list</a>""" % shared.get_exception_msg(e))
             logging.debug(fn_name + "<End> due to exception" )
             logservice.flush()
         
@@ -352,7 +352,7 @@ class MainHandler(webapp.RequestHandler):
                 logging.debug(fn_name + "No auth_count cookie found")
             logservice.flush()            
                 
-            client_id, client_secret, user_agent, app_title, product_name, host_msg = shared.GetSettings(self.request.host)
+            client_id, client_secret, user_agent, app_title, product_name, host_msg = shared.get_settings(self.request.host)
 
             logging.debug(fn_name + "Calling _GetCredentials()")
             user, credentials = _GetCredentials()
@@ -412,7 +412,7 @@ class MainHandler(webapp.RequestHandler):
             logservice.flush()
         except Exception, e:
             logging.exception(fn_name + "Caught top-level exception")
-            self.response.out.write("""Sorry, something went terribly wrong.<br />%s<br />Please report this error to <a href="http://code.google.com/p/tasks-backup/issues/list">code.google.com/p/tasks-backup/issues/list</a>""" % str(e))
+            self.response.out.write("""Sorry, something went terribly wrong.<br />%s<br />Please report this error to <a href="http://code.google.com/p/tasks-backup/issues/list">code.google.com/p/tasks-backup/issues/list</a>""" % shared.get_exception_msg(e))
             logging.debug(fn_name + "<End> due to exception" )
             logservice.flush()
     
@@ -472,7 +472,7 @@ class AuthRedirectHandler(webapp.RequestHandler):
             logservice.flush()
         except Exception, e:
             logging.exception(fn_name + "Caught top-level exception")
-            self.response.out.write("""Sorry, something went terribly wrong.<br />%s<br />Please report this error to <a href="http://code.google.com/p/tasks-backup/issues/list">code.google.com/p/tasks-backup/issues/list</a>""" % str(e))
+            self.response.out.write("""Sorry, something went terribly wrong.<br />%s<br />Please report this error to <a href="http://code.google.com/p/tasks-backup/issues/list">code.google.com/p/tasks-backup/issues/list</a>""" % shared.get_exception_msg(e))
             logging.debug(fn_name + "<End> due to exception" )
             logservice.flush()
 
@@ -512,7 +512,7 @@ class CompletedHandler(webapp.RequestHandler):
             if isUserEmail(user_email):
                 logging.debug(fn_name + "user_email = [%s]" % user_email)
 
-            client_id, client_secret, user_agent, app_title, product_name, host_msg = shared.GetSettings(self.request.host)
+            client_id, client_secret, user_agent, app_title, product_name, host_msg = shared.get_settings(self.request.host)
 
             path = os.path.join(os.path.dirname(__file__), _path_to_templates, "completed.html")
             if not credentials or credentials.invalid:
@@ -538,7 +538,7 @@ class CompletedHandler(webapp.RequestHandler):
             self.response.out.write(template.render(path, template_values))
         except Exception, e:
             logging.exception(fn_name + "Caught top-level exception")
-            self.response.out.write("""Sorry, something went terribly wrong.<br />%s<br />Please report this error to <a href="http://code.google.com/p/tasks-backup/issues/list">code.google.com/p/tasks-backup/issues/list</a>""" % str(e))
+            self.response.out.write("""Sorry, something went terribly wrong.<br />%s<br />Please report this error to <a href="http://code.google.com/p/tasks-backup/issues/list">code.google.com/p/tasks-backup/issues/list</a>""" % shared.get_exception_msg(e))
             logging.debug(fn_name + "<End> due to exception" )
             logservice.flush()
 
@@ -562,8 +562,8 @@ class StartBackupHandler(webapp.RequestHandler):
             else:
                 logging.debug(fn_name + "No auth_count cookie found")
             logservice.flush()            
-                
-            # client_id, client_secret, user_agent, app_title, product_name, host_msg = shared.GetSettings(self.request.host)
+            
+            # client_id, client_secret, user_agent, app_title, product_name, host_msg = shared.get_settings(self.request.host)
             
             user, credentials = _GetCredentials()
             if user is None:
@@ -643,7 +643,7 @@ class StartBackupHandler(webapp.RequestHandler):
             logservice.flush()
         except Exception, e:
             logging.exception(fn_name + "Caught top-level exception")
-            self.response.out.write("""Sorry, something went terribly wrong.<br />%s<br />Please report this error to <a href="http://code.google.com/p/tasks-backup/issues/list">code.google.com/p/tasks-backup/issues/list</a>""" % str(e))
+            self.response.out.write("""Sorry, something went terribly wrong.<br />%s<br />Please report this error to <a href="http://code.google.com/p/tasks-backup/issues/list">code.google.com/p/tasks-backup/issues/list</a>""" % shared.get_exception_msg(e))
             logging.debug(fn_name + "<End> due to exception" )
             logservice.flush()
 
@@ -666,7 +666,7 @@ class ShowProgressHandler(webapp.RequestHandler):
                 logging.debug(fn_name + "No auth_count cookie found")
             logservice.flush()            
                 
-            client_id, client_secret, user_agent, app_title, product_name, host_msg = shared.GetSettings(self.request.host)
+            client_id, client_secret, user_agent, app_title, product_name, host_msg = shared.get_settings(self.request.host)
           
               
             user, credentials = _GetCredentials()
@@ -750,7 +750,7 @@ class ShowProgressHandler(webapp.RequestHandler):
                     " for " + str(user_email) + ", started at " + str(job_start_timestamp) + " UTC")
             
             if error_message:
-                logging.error(fn_name + "Error message: " + str(error_message))
+                logging.warning(fn_name + "Error message: " + str(error_message))
             
             path = os.path.join(os.path.dirname(__file__), _path_to_templates, "progress.html")
             
@@ -789,7 +789,7 @@ class ShowProgressHandler(webapp.RequestHandler):
             logservice.flush()
         except Exception, e:
             logging.exception(fn_name + "Caught top-level exception")
-            self.response.out.write("""Sorry, something went terribly wrong.<br />%s<br />Please report this error to <a href="http://code.google.com/p/tasks-backup/issues/list">code.google.com/p/tasks-backup/issues/list</a>""" % str(e))
+            self.response.out.write("""Sorry, something went terribly wrong.<br />%s<br />Please report this error to <a href="http://code.google.com/p/tasks-backup/issues/list">code.google.com/p/tasks-backup/issues/list</a>""" % shared.get_exception_msg(e))
             logging.debug(fn_name + "<End> due to exception" )
             logservice.flush()
         
@@ -815,7 +815,7 @@ class ReturnResultsHandler(webapp.RequestHandler):
             logservice.flush()
         except Exception, e:
             logging.exception(fn_name + "Caught top-level exception")
-            self.response.out.write("""Sorry, something went terribly wrong.<br />%s<br />Please report this error to <a href="http://code.google.com/p/tasks-backup/issues/list">code.google.com/p/tasks-backup/issues/list</a>""" % str(e))
+            self.response.out.write("""Sorry, something went terribly wrong.<br />%s<br />Please report this error to <a href="http://code.google.com/p/tasks-backup/issues/list">code.google.com/p/tasks-backup/issues/list</a>""" % shared.get_exception_msg(e))
             logging.debug(fn_name + "<End> due to exception" )
             logservice.flush()
         
@@ -834,7 +834,7 @@ class ReturnResultsHandler(webapp.RequestHandler):
                 logging.debug(fn_name + "No auth_count cookie found")
             logservice.flush()            
             
-            client_id, client_secret, user_agent, app_title, product_name, host_msg = shared.GetSettings(self.request.host)
+            client_id, client_secret, user_agent, app_title, product_name, host_msg = shared.get_settings(self.request.host)
             
             user, credentials = _GetCredentials()
             if user is None:
@@ -1147,7 +1147,7 @@ class ReturnResultsHandler(webapp.RequestHandler):
             logservice.flush()
         except Exception, e:
             logging.exception(fn_name + "Caught top-level exception")
-            self.response.out.write("""Sorry, something went terribly wrong.<br />%s<br />Please report this error to <a href="http://code.google.com/p/tasks-backup/issues/list">code.google.com/p/tasks-backup/issues/list</a>""" % str(e))
+            self.response.out.write("""Sorry, something went terribly wrong.<br />%s<br />Please report this error to <a href="http://code.google.com/p/tasks-backup/issues/list">code.google.com/p/tasks-backup/issues/list</a>""" % shared.get_exception_msg(e))
             logging.debug(fn_name + "<End> due to exception" )
             logservice.flush()
 
@@ -1414,7 +1414,7 @@ class ReturnResultsHandler(webapp.RequestHandler):
                     tasklist_title = tasklist.get(u'title')
                     if len(tasklist_title.strip()) == 0:
                         tasklist_title = "<Unnamed Tasklist>"
-                    tasklist_title = shared.EscapeHtml(tasklist_title)
+                    tasklist_title = shared.escape_html(tasklist_title)
 
                     tasks = tasklist.get(u'tasks')
                     num_tasks = len(tasks)
@@ -1439,9 +1439,9 @@ class ReturnResultsHandler(webapp.RequestHandler):
                         task_title = task.get(u'title', "<No Task Title>")
                         if len(task_title.strip()) == 0:
                             task_title = "<Unnamed Task>"
-                        task_title = shared.EscapeHtml(task_title)
+                        task_title = shared.escape_html(task_title)
                         
-                        task_notes = shared.EscapeHtml(task.get(u'notes', None))
+                        task_notes = shared.escape_html(task.get(u'notes', None))
                         task_deleted = task.get(u'deleted', None)
                         task_hidden = task.get(u'hidden', None)
                         task_indent = str(task.get('indent', 0))
@@ -1630,21 +1630,21 @@ class OAuthHandler(webapp.RequestHandler):
                     self.redirect("/?msg=ACCOUNT_ERROR")
                 else:
                     # logging.debug(fn_name + "Retrieved credentials ==>")
-                    # shared.DumpObj(credentials)
+                    # shared.dump_obj(credentials)
                     # logservice.flush()
                     
                     if not credentials:
                         logging.debug(fn_name + "No credentials. Redirecting to " + settings.INVALID_CREDENTIALS_URL)
                         # logging.debug(fn_name + "user ==>")
-                        # shared.DumpObj(user)
+                        # shared.dump_obj(user)
                         logservice.flush()
                         self.redirect(settings.INVALID_CREDENTIALS_URL + "?rc=NC")
                     elif credentials.invalid:
                         logging.warning(fn_name + "Invalid credentials. Redirecting to " + settings.INVALID_CREDENTIALS_URL)
                         # logging.debug(fn_name + "user ==>")
-                        # shared.DumpObj(user)
+                        # shared.dump_obj(user)
                         # logging.debug(fn_name + "credentials ==>")
-                        # shared.DumpObj(credentials)
+                        # shared.dump_obj(credentials)
                         logservice.flush()
                         self.redirect(settings.INVALID_CREDENTIALS_URL + "?rc=IC")
                     else:
@@ -1657,7 +1657,7 @@ class OAuthHandler(webapp.RequestHandler):
                         self.redirect(self.request.get("state"))
         except Exception, e:
             logging.exception(fn_name + "Caught top-level exception")
-            self.response.out.write("""Sorry, something went terribly wrong.<br />%s<br />Please report this error to <a href="http://code.google.com/p/tasks-backup/issues/list">code.google.com/p/tasks-backup/issues/list</a>""" % str(e))
+            self.response.out.write("""Sorry, something went terribly wrong.<br />%s<br />Please report this error to <a href="http://code.google.com/p/tasks-backup/issues/list">code.google.com/p/tasks-backup/issues/list</a>""" % shared.get_exception_msg(e))
             logging.debug(fn_name + "<End> due to exception" )
             logservice.flush()
 

@@ -26,14 +26,13 @@ version: 2
 #application: js-tasks-test
 #version: 2
 
-
-
 # ===== Local host ==========
 #application: tasks-backup-local
 #version: 1
 
 runtime: python
 api_version: 1
+
 
 error_handlers:
   - file: error_handlers/error_default.html
@@ -46,9 +45,8 @@ error_handlers:
   
   - error_code: timeout
     file: error_handlers/error_timeout.html
-  
-  
-  
+
+    
 handlers:
 - url: /static
   static_dir: static

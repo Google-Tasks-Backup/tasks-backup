@@ -10,9 +10,9 @@ This is the Django template used by test-taskqueue.py
         {% endif %}
         
         <title>{{ app_title }}</title>
-        <link rel="stylesheet" type="text/css" href="static/tasks_backup.css"></link>
+        <link rel="stylesheet" type="text/css" href="/static/tasks_backup.css"></link>
         
-        <script language="javascript" type="text/javascript" src="static/datetimepicker.js">
+        <script language="javascript" type="text/javascript" src="/static/datetimepicker.js">
             //Date Time Picker script- by TengYong Ng of http://www.rainforestnet.com
             //Script featured on JavaScript Kit (http://www.javascriptkit.com)
             //For this script, visit http://www.javascriptkit.com 
@@ -130,15 +130,6 @@ This is the Django template used by test-taskqueue.py
 		</div>
     {% endif %}
     
-    {% if error_message %}
-        <div class="take-note break">
-        {{ error_message }}
-        </div>
-		<div class="break">
-			Please report this error at <a href="http:/{{ url_issues_page }}">{{ url_issues_page }}</a>
-		</div>
-    {% endif %}
-    
     {% if status == "no-record" %}
         <div class="break">
             No backup found for {{ user_email }}
@@ -200,6 +191,22 @@ This is the Django template used by test-taskqueue.py
     {% endif %}
     
     
+    {% if error_message %}
+        <br />
+        <br />
+        <br />
+        <br />
+        <div class="take-note break">
+        {{ error_message }}
+        </div>
+        <div class="break">
+            Please report this error at <a href="http:/{{ url_issues_page }}">{{ url_issues_page }}</a>
+        </div>
+        <br />
+        <br />
+        <br />
+    {% endif %}
+    
     {% if status == "completed" %}
         <div class="break">
             Note that this backup is a snapshot of tasks as at {{ job_start_timestamp }} UTC 
@@ -248,7 +255,7 @@ This is the Django template used by test-taskqueue.py
 							<input type="radio" name="format" value="raw" /> Raw CSV<br />
 						</td>
 						<td>
-							CSV file containing almost all available properties for each task. See the <a href="static/info.html">information page</a> for details.
+							CSV file containing almost all available properties for each task. See the <a href="/static/info.html">information page</a> for details.
 						</td>
 					</tr>
 					<tr>
@@ -264,7 +271,7 @@ This is the Django template used by test-taskqueue.py
                             <input type="radio" name="format" value="py" /> Python<br />
                         </td>
                         <td>
-                            Python data structure. Contains all the properties stored by Google for each task. See the <a href="static/info.html">information page</a> for details.
+                            Python data structure. Contains all the properties stored by Google for each task. See the <a href="/static/info.html">information page</a> for details.
                         </td>
                     </tr>
 					<tr>
@@ -307,7 +314,7 @@ This is the Django template used by test-taskqueue.py
                 <div class="format-selection">
                     <div class="left-column">
                         <div class="selection-column-header">
-                            Filter by due date <span id="due_date" class="due_date" onclick="javascript:NewCal('due_date')" >0001-01-01</span>&nbsp;<button type="button" onclick="javascript:NewCal('due_date')" >Choose date <img src="static/cal.gif" width="16" height="16" border="0" alt="Set due date filter"></button>&nbsp;or&nbsp;<button type="button" onclick="setCurrentDueDate()" >Use today</button>
+                            Filter by due date <span id="due_date" class="due_date" onclick="javascript:NewCal('due_date')" >0001-01-01</span>&nbsp;<button type="button" onclick="javascript:NewCal('due_date')" >Choose date <img src="/static/cal.gif" width="16" height="16" border="0" alt="Set due date filter"></button>&nbsp;or&nbsp;<button type="button" onclick="setCurrentDueDate()" >Use today</button>
 	  		
                             </div>
                         <noscript>
@@ -458,12 +465,12 @@ This is the Django template used by test-taskqueue.py
                 <td>
                     If checked, the application tries to identify and label potentially invalid tasks.
                     <br />
-                    Refer to <a href="static/info.html#notes">note 4 on the information page</a> for more details.
+                    Refer to <a href="/static/info.html#notes">note 4 on the information page</a> for more details.
                 </td>
             </tr>
             <tr>
                 <td colspan="2">
-                    Refer to the <a href="static/info.html">information page</a> for more information on the exported properties.
+                    Refer to the <a href="/static/info.html">information page</a> for more information on the exported properties.
                 </td>
             </tr>
         </table>

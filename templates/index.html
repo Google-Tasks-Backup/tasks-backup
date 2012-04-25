@@ -20,8 +20,8 @@ This is the Django template for the landing page.
 <html>
     <head>
         <title>{{ app_title }}</title>
-        <link rel="stylesheet" type="text/css" href="static/tasks_backup.css"></link>
-        <script type="text/javascript" src="static/jquery.js"></script>
+        <link rel="stylesheet" type="text/css" href="/static/tasks_backup.css"></link>
+        <script type="text/javascript" src="/static/jquery.js"></script>
         <script type="text/javascript">
 
             function authorise() {
@@ -168,7 +168,7 @@ This is the Django template for the landing page.
                 <div class="instructions">
                     <span class="take-note-larger">Select CSV file to upload:</span> <input type="file" id="select_file" name="file" onchange="setBlobstoreUrl();">
                     <div class="nice-gap-top" id="actionMsg">The file must be in the format produced by the {{ app_title }} "Import/Export CSV" format
-                    <span class="smaller-font">(Refer to the <a href="static/info.html#import_export_description">information page</a> for details)</span>
+                    <span class="smaller-font">(Refer to the <a href="/static/info.html#import_export_description">information page</a> for details)</span>
                     </div>
                 </div>
                 
@@ -272,7 +272,7 @@ This is the Django template for the landing page.
             </tr>
             <tr>
                 <td colspan="2">
-                    Refer to the <a href="static/info.html">information page</a> for more details on the completed, hidden and deleted properties.
+                    Refer to the <a href="/static/info.html">information page</a> for more details on the completed, hidden and deleted properties.
                 </td>
             </tr>
         </table>
