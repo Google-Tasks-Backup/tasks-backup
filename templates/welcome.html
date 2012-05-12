@@ -1,0 +1,143 @@
+{% comment %}
+Copyright 2011 Google Inc.  All Rights Reserved.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+
+
+This is the Django template for the landing page.
+{% endcomment %}
+<!doctype html>
+<html>
+    <head>
+        <title>{{ app_title }}</title>
+        <link rel="stylesheet" type="text/css" href="/static/tasks_backup.css">
+        <link rel="shortcut icon" type="image/x-icon" href="/static/favicon.ico">
+        <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
+        <script type="text/javascript">
+
+            function authorise() {
+                document.getElementById("authorise_button").value = "Authorising, please wait (this may take up to half a minute) ...";
+                document.getElementById("authorise_button").innerHTML = "Authorising, please wait (this may take up to half a minute) ...";
+                document.getElementById("authorise_button").disabled = true;
+                window.location.href = "/auth";
+            }
+
+        </script>
+        <script type="text/javascript">
+
+          var _gaq = _gaq || [];
+          _gaq.push(['_setAccount', 'UA-30118203-1']);
+          _gaq.push(['_trackPageview']);
+
+          (function() {
+            var ga = document.createElement('script'); ga.type = 'text/javascript'; ga.async = true;
+            ga.src = ('https:' == document.location.protocol ? 'https://ssl' : 'http://www') + '.google-analytics.com/ga.js';
+            var s = document.getElementsByTagName('script')[0]; s.parentNode.insertBefore(ga, s);
+          })();
+
+        </script>
+    </head>
+
+<body>
+
+{% if is_authorized %}
+    <div class="usertitle">
+        Authorised user: {{ user_email }} <span class="logout-link">[ <a href="{{ logout_url }}">Log out</a> ]</span>
+    </div>
+{% endif %}
+
+    <h2>{{ app_title }}</h2>
+  
+    <noscript>
+        <br />
+        <h3>Javascript must be enabled to use this site</h3>
+        <br />
+    </noscript>
+    
+    {% if host_msg %}
+        <div class="break">
+        <h3>{{ host_msg }}</h3>
+        </div>
+    {% endif %}
+
+    {% if msg == "ACCOUNT_ERROR" %}
+        <div class="break">
+            <span class="take-note-larger">
+                An error occurred authorizing your account.  
+            </span>
+            <br />
+            This could be because your Google Apps account is not authorised to access this application, or
+            your account is not currently in good standing with Google. If this
+            happens again, please <a href="http:/{{ url_issues_page }}">report the issue</a> so that we can try to fix it.
+        </div>
+    {% endif %}
+    
+    <div class="break">
+        {{ app_title }} can be used to export or display Google Tasks
+        <ul class="info-ul">
+            <li>
+                Export formats;
+                <ul>
+                    <li>{{ app_title }} Import/Export CSV (csv file containing all the data needed to import tasks<!-- using <a href="http://import-tasks.appspot.com">Import Google Tasks</a>-->)</li>
+                    <li>Microsoft Outlook (.csv file)</li>
+                    <li>iCalendar (.ics file)</li>
+                    <li>Raw (.csv file containing all 15 Google Tasks attributes)</li>
+                    <li>Python data structure</li>
+                    <li>Remember The Milk (email)   <span class="comment"> { untested, as I don't have RTM }</span></li>
+                </ul>
+            </li>
+            <li>
+                Display tasks as a single web page (e.g., suitable for printing)
+            </li>
+        </ul>
+    </div>
+    <div class="break">
+        This application uses Google authentication to access your Tasks data. The permission for this application will be displayed as "{{ product_name }} - Tasks" in your list of 
+        <a href="https://www.google.com/accounts/IssuedAuthSubTokens">Authorised Sites, Apps, and Services</a>, and can be revoked there at any time.
+    </div>
+    <button id="authorise_button" class="big-button" type="button" onclick="authorise();">Authorise</button>
+ 
+    <div class="break">
+        This application is currently in beta. 
+		You are welcome to try it, but I cannot give any guarantee that data retrieved will be correct or in a usable format. 
+        It is running from my personal Google Apps account, and so has quota limitations. 
+    </div>
+   
+
+	<div class="project-footer">
+        <div class="break">
+            Version {{ app_version }} ({{ upload_timestamp }})
+        </div>
+		<div class="break">
+			Questions or comments? Go to <a href="http://{{ url_discussion_group }}">{{ url_discussion_group }}</a>
+			or email <a href="mailto:{{ email_discussion_group }}">{{ email_discussion_group }}</a>
+		</div>
+		<div class="break">
+			Please report bugs or suggest improvements at <a href="http:/{{ url_issues_page }}">{{ url_issues_page }}</a>
+		</div>
+		<div class="break">
+			Source code for this project is at <a href="http://{{ url_source_code }}">{{ url_source_code }}</a>
+		</div>
+        <div class="break">
+            {{ app_title }} uses cookies for two purposes;
+            <ul>
+                <li>To track your authorisation credentials between pages. This ensure that you (and only you) can get the results of your backup request.</li>
+                <li><a href="http://www.google.com/analytics/">Google Analytics</a> is used to track usage such as; number of unique visitors, location, browser type, operating system. </li>
+            </ul>
+        </div>
+	</div>
+    
+	<div class="backgroundPopup"></div>
+
+</body>
+</html>

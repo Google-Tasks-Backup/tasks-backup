@@ -20,11 +20,11 @@
 
 # ===== Limited Public Test host and version ======
 application: js-tasks
-version: 2
+version: 7
 
 # ===== Private Alpha Test host and version ======
 #application: js-tasks-test
-#version: 2
+#version: 7
 
 # ===== Local host ==========
 #application: tasks-backup-local
@@ -32,6 +32,9 @@ version: 2
 
 runtime: python
 api_version: 1
+
+# Static files remain cached by the browser for 12 hours
+# default_expiration: "12h"
 
 
 error_handlers:
@@ -68,10 +71,22 @@ handlers:
   login: admin
   secure: always
 
-- url: /.*
+- url: /admin/.*
+  script: tasks_backup.py
+  login: admin
+  secure: always
+
+# Main page does not require login, so that anyone can read main page before authorising
+- url: /
+  script: tasks_backup.py
+  secure: always
+
+# Subsequent pages require user to be logged in
+- url: /.+
   script: tasks_backup.py
   login: required
   secure: always
+
 
 # ============================
 # For debug on localhost

@@ -21,6 +21,8 @@ from apiclient.oauth2client import appengine
 from google.appengine.ext import db
 import datetime
 
+import constants
+
 
 class Credentials(db.Model):
   """Represents the credentials of a particular user."""
@@ -38,18 +40,6 @@ class ProcessTasksJob(db.Model):
     user = db.UserProperty(indexed=False)
     credentials = appengine.CredentialsProperty(indexed=False)
     
-    # A job can either be export (backup) or import
-    job_type = db.StringProperty(indexed=False, choices=('import', 'export'), default='export')
-    
-    # Blobstore key for import job. The key is retrievable in the uploadhandler (i.e., when user uploads file)
-    #       class UploadHandler(blobstore_handlers.BlobstoreUploadHandler):
-    #           def post(self):
-    #               upload_files = self.get_uploads('file') # Assuming form uses <input type="file" name="file">
-    #               blobstore_info = upload_files[0]
-    #               blobstore_key = blobstore_info.key
-    # CAUTION: The Blobstore is global across the app. The only way to tie a Blobstore to a user is through this Model!
-    blobstore_key = db.StringProperty(indexed=False, default=None)
-    
     # Used to include/exclude retrieved tasks which are completed and/or deleted and/or hidden
     include_completed = db.BooleanProperty(indexed=False, default=False)
     include_deleted = db.BooleanProperty(indexed=False, default=False)
@@ -60,7 +50,8 @@ class ProcessTasksJob(db.Model):
     job_start_timestamp = db.DateTimeProperty(auto_now_add=True, indexed=False)
     
     # Job status, to display to user and control web page and foreground app behaviour
-    status = db.StringProperty(indexed=False, choices=('starting', 'building', 'completed', 'importing', 'import_completed', 'error'), default='starting')
+    # status = db.StringProperty(indexed=False, choices=('starting', 'initialising', 'building', 'completed', 'importing', 'import_completed', 'error'), default='starting')
+    status = db.StringProperty(indexed=False, choices=(constants.JobStatus.ALL_VALUES), default=constants.JobStatus.STARTING)
     
     # Total number of tasks backed up. Used to display progress to user. Updated when an entire tasklist has been backed up
     total_progress = db.IntegerProperty(indexed=False, default=0) 
@@ -71,9 +62,9 @@ class ProcessTasksJob(db.Model):
     # When job progress was last updated. Used to ensure that backup job hasn't stalled
     job_progress_timestamp = db.DateTimeProperty(auto_now_add=True, indexed=False) 
     
-    error_message = db.StringProperty(indexed=False, default=None)
+    error_message = db.StringProperty(indexed=False, default='')
 
-    # message = db.StringProperty(indexed=False, default=None)
+    message = db.StringProperty(indexed=False, default='')
 
 
 class TasklistsData(db.Model):

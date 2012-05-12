@@ -5,13 +5,17 @@ This is the Django template used by test-taskqueue.py
 <!doctype html>
 <html>
     <head>
-        {% if status == "starting" or status == "building" or status == "importing" %}
+        {% if status == "Starting" or status = "Initialising" or status == "Building"  or status == "Importing" %}
             <meta http-equiv="refresh" content="{{ refresh_interval }}">
         {% endif %}
         
         <title>{{ app_title }}</title>
-        <link rel="stylesheet" type="text/css" href="/static/tasks_backup.css"></link>
+        <link rel="stylesheet" type="text/css" href="/static/tasks_backup.css">
+        <link rel="shortcut icon" type="image/x-icon" href="/static/favicon.ico">
+        <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
         
+        <script type="text/javascript" src="/static/jquery.js"></script>
+        <script type="text/javascript" src="/static/popup.js"></script>
         <script language="javascript" type="text/javascript" src="/static/datetimepicker.js">
             //Date Time Picker script- by TengYong Ng of http://www.rainforestnet.com
             //Script featured on JavaScript Kit (http://www.javascriptkit.com)
@@ -110,8 +114,6 @@ This is the Django template used by test-taskqueue.py
         Authorised user: {{ user_email }} <span class="logout-link">[ <a href="{{ logout_url }}">Log out</a> ]</span>
     </div>
 
-    <h2>{{ app_title }}</h2>
-
     <noscript>
         <br />
         <h3>Javascript must be enabled for full application functionality</h3>
@@ -135,22 +137,31 @@ This is the Django template used by test-taskqueue.py
             No backup found for {{ user_email }}
             <br />
             Please click button to start a backup
-        <form method="GET" action="{{ home_page_url }}">
+        <form method="GET" action="{{ url_home_page }}">
             <button type="submit">Start backup</button>
         </form>
         </div>
     {% endif %}
     
     
-    {% if status == "starting" or status == "building"  or status == "importing" %}
+    {% if status == "Starting" or status = "Initialising" or status == "Building" %}
         <div class="break">
             This page will auto-refresh every {{ refresh_interval }} seconds to indicate how many tasks have been retrieved so far.
 		</div>
     {% endif %}
     
-    {% if status == "completed" %}
+    {% if status == "Export completed" %}
         <div class="break">
-            Backup completed. Retrieved {{ progress }} tasks.
+            {{ job_msg }} <img class="popupTrigger" id="export-completed" src="/static/help.png" alt="Display help">
+            <div class="popupContent" id="export-completed-content">
+                <img class="popupClose" border="0" src="/static/close.png" alt="Close">
+                <div class="clear medium-break">
+                    Note that this backup is a snapshot of tasks as at {{ job_start_timestamp }} UTC 
+                    and will not reflect changes made after that time. 
+                    You will need to rerun <a href="{{ url_main_page }}" >{{ app_title }}</a>
+                    to create a new backup.
+                </div>
+            </div>
             {% if include_completed %}
                 <br/>
                 <span class="comment">Includes completed tasks</span>
@@ -168,28 +179,28 @@ This is the Django template used by test-taskqueue.py
             {% endif %}
 		</div>
     {% else %}
-        {% if status == "import_completed" %}
-            <div class="import-completed-message">
-                <div class="take-note-larger">
-                    Import completed.
-                </div>
-                <div class="break">
-                    Imported {{ progress }} tasks.
-                </div>
+        {% if status == "Starting" %}
+            <div class="break">
+                Starting new backup job, please wait (this may take up to 2 minutes) ...
             </div>
-            <form action="/" method="get">
-                <button type="submit" class="big-button" value="Return to home page">Return to home page</button>
-            </form>
         {% else %}
             <div class="break">
                 Status = {{ status }}
             </div>
+        {% endif %}
+        {% if progress > 0 %}
             <div class="break">
                 Progress = {{ progress }}
             </div>
         {% endif %}
+        {% if job_msg %}
+            <div class="break">
+                {{ job_msg }}
+            </div>
+        {% endif %}
     {% endif %}
     
+        
     
     {% if error_message %}
         <br />
@@ -207,36 +218,43 @@ This is the Django template used by test-taskqueue.py
         <br />
     {% endif %}
     
-    {% if status == "completed" %}
-        <div class="break">
-            Note that this backup is a snapshot of tasks as at {{ job_start_timestamp }} UTC 
-            and will not reflect changes made after that time. 
-            You will need to rerun <a href="{{ home_page_url }}" >{{ app_title }}</a>
-            to create a new backup.
-        </div>
-        
-        <div class="break">
-        </div>
-        
+    {% if status == "Export completed" %}
         <!-- Choose format to return backup data -->
         <form method="POST" action="{{ results_url }}" >
         
 			<fieldset>
 				<legend>Export all tasks</legend>
-				<table class="format-selection">
+				<table  cellspacing="0" class="format-selection">
 					<!--<col width="20%">
 					<col width="80%">-->
+{% comment %}                        
+<!--
 					<tr>
-						<td class="format-name">
-							<input type="radio" name="format" value="import_export" checked="checked" /> Import/Export CSV<br />
-						</td>
 						<td>
 							CSV formatted for importing back into {{ app_title }} (e.g. as a backup, or when transferring tasks to another Google account).
+                            <img class="popupTrigger" id="help-import_export" src="/static/help.png" alt="Display help">
+                            <div class="popupContent" id="help-import_export-content">
+                                <img class="popupClose" border="0" src="/static/close.png" alt="Close">
+                                <div class="clear medium-break">
+                                    This format is used by <a class="take-note" href="http://import-tasks.appspot.com">Google Tasks Import</a>, which 
+                                    can be used to restore tasks. <span class="take-note">Google Tasks Import</span> can also be used to import tasks from a different account.
+                                </div>
+                                <div class="medium-break">
+                                    This format backs up everything except Task Links. 
+                                </div>
+                                <div class="comment medium-break ">
+                                    As far as I am aware, the only use for Task Links is when an email message is turned into a task; 
+                                    the link then refers to the original email message.
+                                    If tasks are restored into a different account, Task Links would not work (because they would refer to messages in another account).
+                                </div>
+                            </div>
 						</td>
 					</tr>
+-->                        
+{% endcomment %}                        
 					<tr>
 						<td class="format-name">
-							<input type="radio" name="format" value="outlook" /> Outlook CSV<br />
+							<input type="radio" name="format" value="outlook" checked="checked" /> Outlook CSV<br />
 						</td>
 						<td>
 							CSV file suitable for importing into Outlook.
@@ -255,7 +273,9 @@ This is the Django template used by test-taskqueue.py
 							<input type="radio" name="format" value="raw" /> Raw CSV<br />
 						</td>
 						<td>
-							CSV file containing almost all available properties for each task. See the <a href="/static/info.html">information page</a> for details.
+							CSV file containing almost all available properties for each task.
+                            <br />
+                            See the <a href="/static/info.html">information page</a> for details.
 						</td>
 					</tr>
 					<tr>
@@ -264,6 +284,16 @@ This is the Django template used by test-taskqueue.py
 						</td>
 						<td>
 							Same as Raw CSV, but with date/timestamps formatted suitable for reading by Excel.
+						</td>
+					</tr>
+					<tr>
+						<td class="format-name">
+							<input type="radio" name="format" value="import_export" /> Import/Export CSV<br />
+						</td>
+						<td>
+							CSV file containing just the data required to recreate tasks. See the <a href="/static/info.html#import_export_description">information page</a> for details.
+                                </div>
+                            </div>
 						</td>
 					</tr>
                     <tr>
@@ -279,8 +309,22 @@ This is the Django template used by test-taskqueue.py
 							<input type="radio" name="format" value="RTM" /> RTM email<br />
 						</td>
 						<td>
-							Email tasks in Remember The Milk format. 
-                            <span class="take-note-smaller">(<a href="#notes">Notes</a> 1, 2 &amp; 3)</span>
+							Email tasks in Remember The Milk format.
+                            <img class="popupTrigger" id="help-rtm" src="/static/help.png" alt="Display help">
+                            <div class="popupContent" id="help-rtm-content">
+                                <img class="popupClose" src="/static/close.png" alt="Close">
+                                <ol class="clear">
+                                    <li>
+                                        Attempting to email large tasklists will fail due to App Engine quota limits.
+                                    </li>
+                                    <li>
+                                        It appears that RTM will not import more than 50 tasks.
+                                    </li>
+                                    <li>
+                                        Any header text must be removed before forwarding the received email to your RTM import email address. The first line in the email must be a task.
+                                    </li>
+                                </ol>
+                            </div>
 						</td>
 					</tr>
 					</table>
@@ -309,8 +353,18 @@ This is the Django template used by test-taskqueue.py
             
 			<fieldset>
 				<legend>
-                    Display all tasks as a single web page, suitable for printing <span class="take-note-smaller"> (<a href="#notes">Note</a> 4)</span>
+                    Display all tasks as a single web page, suitable for printing
+                    <img class="popupTrigger" id="help-display" src="/static/help.png" alt="Display help">
                 </legend>
+                <div class="popupContent" id="help-display-content">
+                    <img class="popupClose" src="/static/close.png" alt="Close">
+                    <div class="clear medium-break">
+                        The resultant web page will contain all the tasks in all the task lists. There is no pretty formatting, so a page break may occur in the middle of a task.
+                    </div>
+                    <div class="medium-break">
+                        Note that the resultant printout can be MANY pages (especially when tasks have notes). 973 tasks in 7 tasklists resulted in 141 pages.
+                    </div>
+                </div>
                 <div class="format-selection">
                     <div class="left-column">
                         <div class="selection-column-header">
@@ -341,14 +395,27 @@ This is the Django template used by test-taskqueue.py
                             <li>
                                 <input id="due_selection_overdue" type="radio" name="due_selection" value="overdue" 
                                        onchange="changeCompletedOptions();" />
-                                <label for="due_selection_all">Overdue only(due before selected data)</label>
+                                <label for="due_selection_all">Overdue only (due before selected data)</label>
                             </li>
                         </ul>
                         <div class="selection-column-header">Other task filters</div>
                         <ul class="format-selection">
                             <li>
                                 <input type="checkbox" name="display_invalid_tasks" value="True" >
-                                    &nbsp;Display invalid/corrupted tasks? <span class="take-note-smaller">(<a href="#notes">Note</a> 7)</span>
+                                    &nbsp;Display invalid/corrupted tasks? 
+                                    <img class="popupTrigger" id="help-invalid" src="/static/help.png" alt="Display help">
+                                    <div class="popupContent" id="help-invalid-content">
+                                        <img class="popupClose" src="/static/close.png" alt="Close">
+                                        <div class="clear medium-break">
+                                            If checked, the application tries to identify and label potentially invalid tasks.
+                                        </div>
+                                        <div class="clear medium-break">
+                                            Sometimes, tasks can become corrupted, leaving an invalid parent value. These tasks still exist in the Google Tasks database, although Google does not display them.
+                                        </div>
+                                        <div class="medium-break">
+                                            Refer to <a href="/static/info.html#notes">note 4 on the information page</a> for more details.
+                                        </div>
+                                    </div>
                                 </input>
                             </li>
                         </ul>
@@ -361,7 +428,7 @@ This is the Django template used by test-taskqueue.py
                             <li>
                                 <input type="checkbox" id="display_completed_tasks" name="display_completed_tasks" value="True" 
                                        checked="checked"  onchange="changeCompletedSuboptions();">
-                                    &nbsp;Display completed tasks? <span class="take-note-smaller"> (<a href="#notes">Note</a> 5)</span>
+                                    &nbsp;Display completed tasks?
                                 </input>
                             </li>
                             <li>
@@ -369,7 +436,22 @@ This is the Django template used by test-taskqueue.py
                                 <li>
                                     <input type="checkbox" id="dim_completed_tasks" name="dim_completed_tasks" value="True" 
                                            onchange="changeDisplayCompleted();" checked="checked" >
-                                        &nbsp;Dim completed tasks? <span class="take-note-smaller"> (<a href="#notes">Note</a> 5)</span>
+                                        &nbsp;Dim completed tasks?
+                                    <img class="popupTrigger" id="help-display-completed" src="/static/help.png" alt="Display help">
+                                    <div class="popupContent" id="help-display-completed-content">
+                                        <img class="popupClose" width="24" height="24" src="/static/close.png" alt="Close">
+                                        <div class="clear">
+                                            <div class="small-break">
+                                                If checked, completed tasks are displayed using a dimmed grey font. 
+                                            </div>
+                                            <div class="small-break">
+                                                If unchecked, completed tasks are displayed normally.
+                                            </div>
+                                            <div class="small-break">
+                                                Hidden and deleted tasks are always dimmed.
+                                            </div>
+                                        </div>
+                                    </div>
                                     </input>
                                 </li>
                                 <li>
@@ -398,7 +480,7 @@ This is the Django template used by test-taskqueue.py
                 
                     <div class="take-note-para end-columns">
                     {% if progress >= large_list_html_warning_limit %}
-                        <span class="take-note">CAUTION: You have a very large number of tasks. Attempting to display the tasks page (especially if using method 1) may result in the server running out of memory and/or your browser timing out.
+                        <span class="take-note">CAUTION: You have a very large number of tasks. Attempting to display the tasks page may result in the server running out of memory and/or your browser timing out.
                         </span>
                         <br />
                         You may wish to export your tasks first, before attempting to display the tasks page.
@@ -409,71 +491,7 @@ This is the Django template used by test-taskqueue.py
         </form>
         <div class="break">
         </div>
-        
-        <div class="heading">
-            <a name="notes">Notes</a>
-        </div>
-        <table  class="format-selection">
-            <tr>
-                <td class="note-heading-smaller">
-                    Note 1 - 
-                </td>
-                <td>
-                    Attempting to email large tasklists will fail due to App Engine quota limits.
-                </td>
-            </tr>
-            <tr>
-                <td class="note-heading-smaller">
-                    Note 2 - 
-                </td>
-                <td>
-                    It appears that RTM will not import more than 50 tasks.
-                </td>
-            </tr>
-            <tr>
-                <td class="note-heading-smaller">
-                    Note 3 - 
-                </td>
-                <td>
-                    Any header text must be removed before forwarding the received email to your RTM import email address. The first line in the email must be a task.
-                </td>
-            </tr>
-            <tr>
-                <td class="note-heading-smaller">
-                    Note 4 - 
-                </td>
-                <td>
-                    The resultant web page will contain all the tasks in all the task lists. 
-                    There is no pretty formatting, so a page break may occur in the middle of a task.
-                    <br/>
-                    Note that the resultant printout can be MANY pages (especially when tasks have notes). 
-                    973 tasks in 7 tasklists resulted in 141 pages.
-                </td>
-            </tr>
-            <tr>
-                <td class="note-heading-smaller">
-                    Note 5 - 
-                </td>
-                <td>
-                    If checked, completed tasks are displayed using a dimmed grey font. Hidden and deleted tasks are always dim.
-                </td>
-            </tr>
-            <tr>
-                <td class="note-heading-smaller">
-                    Note 7 - 
-                </td>
-                <td>
-                    If checked, the application tries to identify and label potentially invalid tasks.
-                    <br />
-                    Refer to <a href="/static/info.html#notes">note 4 on the information page</a> for more details.
-                </td>
-            </tr>
-            <tr>
-                <td colspan="2">
-                    Refer to the <a href="/static/info.html">information page</a> for more information on the exported properties.
-                </td>
-            </tr>
-        </table>
+
     {% endif %}
 
 
@@ -493,6 +511,8 @@ This is the Django template used by test-taskqueue.py
 			Source code for this project is at <a href="http://{{ url_source_code }}">{{ url_source_code }}</a>
 		</div>
 	</div>
+
+	<div class="backgroundPopup"></div>
 
 </body>
 </html>

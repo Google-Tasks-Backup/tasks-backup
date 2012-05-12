@@ -66,7 +66,7 @@ BACKUP_REQUEST_QUEUE_NAME = 'tasks-backup-request'
 
 TASKS_QUEUE_KEY_NAME = 'user_email'
 
-HOME_PAGE_URL = '/'
+MAIN_PAGE_URL = '/'
 
 START_BACKUP_URL = '/startbackup'
 

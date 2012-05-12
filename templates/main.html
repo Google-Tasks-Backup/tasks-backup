@@ -1,0 +1,187 @@
+{% comment %}
+Copyright 2011 Google Inc.  All Rights Reserved.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+
+
+This is the Django template for the landing page.
+{% endcomment %}
+<!doctype html>
+<html>
+    <head>
+        <title>{{ app_title }}</title>
+        <link rel="stylesheet" type="text/css" href="/static/tasks_backup.css">
+        <link rel="shortcut icon" type="image/x-icon" href="/static/favicon.ico">
+        <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
+        <script type="text/javascript" src="/static/jquery.js"></script>
+        <script type="text/javascript" src="/static/popup.js"></script>
+        <script type="text/javascript">
+
+            function disableButton() {
+                document.getElementById("start_backup").value = "Starting backup (this may take several minutes) ...";
+                document.getElementById("start_backup").innerHTML = "Starting backup (this may take several minutes) ...";
+                document.getElementById("start_backup").disabled = true;
+            }
+            
+        </script>
+        <script type="text/javascript">
+
+          var _gaq = _gaq || [];
+          _gaq.push(['_setAccount', 'UA-30118203-1']);
+          _gaq.push(['_trackPageview']);
+
+          (function() {
+            var ga = document.createElement('script'); ga.type = 'text/javascript'; ga.async = true;
+            ga.src = ('https:' == document.location.protocol ? 'https://ssl' : 'http://www') + '.google-analytics.com/ga.js';
+            var s = document.getElementsByTagName('script')[0]; s.parentNode.insertBefore(ga, s);
+          })();
+
+        </script>
+    </head>
+
+<body>
+
+{% if is_authorized %}
+    <div class="usertitle">
+        Authorised user: {{ user_email }} <span class="logout-link">[ <a href="{{ logout_url }}">Log out</a> ]</span>
+    </div>
+{% endif %}
+
+    <noscript>
+        <br />
+        <h3>Javascript must be enabled to use this site</h3>
+        <br />
+    </noscript>
+    
+    {% if host_msg %}
+        <div class="break">
+        <h3>{{ host_msg }}</h3>
+        </div>
+    {% endif %}
+
+        <div class="break">
+            
+            <form method="POST" action = "{{ start_backup_url }}" onsubmit="disableButton();" >
+                <fieldset>
+                    <legend>Export tasks</legend>
+                    <table class="include-selection">
+                        <tr>
+                            <th align="left">Advanced settings</th>
+                        </tr>
+                        <tr>
+                            <td>
+                                <input type="checkbox" name="include_completed" value="True" checked="checked" >
+                                    &nbsp;Include completed tasks?
+                                </input>
+                                <img class="popupTrigger" id="help-completed" src="/static/help.png" alt="Display help">
+                                <div class="popupContent" id="help-completed-content">
+                                    <img class="popupClose" border="0" src="/static/close.png" alt="Close">
+                                    <div class="clear medium-break">
+                                        When checked, the backup includes completed tasks. If unchecked, only incomplete (needsAction) tasks are exported.
+                                    </div>
+                                    <div class="medium-break">
+                                        Selecting "Include completed tasks" is useful if you wish to retain a backup of tasks that have been completed.
+                                    </div>
+                                    <div class="medium-break">
+                                        Leaving this unchecked can speed up retrieving tasks, and reduce the size of backup files.
+                                    </div>
+                                </div>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td>
+                                <input type="checkbox" name="include_deleted" value="True" >
+                                    &nbsp;Include deleted tasks?
+                                </input>
+                                <img class="popupTrigger" id="help-deleted" src="/static/help.png" alt="Display help">
+                                <img class="popupTrigger" id="help-deleted" src="/static/warning.png" alt="Display warning">
+                                <div class="popupContent" id="help-deleted-content">
+                                    <img class="popupClose" border="0" src="/static/close.png" alt="Close">
+                                    <img src="/static/warning_32.png" alt="Display warning">
+                                    <ol class="help">
+                                        <li>When tasks are deleted, they are marked as <span class="take-note">deleted</span> and moved to the [Trash] view. </li>
+                                        <li>For most applications, exported data should not include deleted or hidden tasks.</li>
+                                        <li>
+                                            <span style="color:red;">CAUTION:</span> The Outlook, iCalendar and RTM file formats do not support <span class="take-note">deleted</span> or <span class="take-note">hidden</span> tasks, so those programs will display deleted and/or hidden tasks as normal tasks.
+                                        </li>
+                                    </ol>
+                                </div>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td>
+                                <input type="checkbox" name="include_hidden" value="True" >
+                                    &nbsp;Include hidden tasks?
+                                </input>
+                                <img class="popupTrigger" id="help-hidden" src="/static/help.png" alt="Display help">
+                                <img class="popupTrigger" id="help-hidden" src="/static/warning.png" alt="Display warning">
+                                <div class="popupContent" id="help-hidden-content">
+                                    <img class="popupClose" border="0" src="/static/close.png" alt="Close">
+                                    <img class="clear" src="/static/warning_32.png" alt="Display warning">
+                                    <ol class="help">
+                                        <li>When the [Clear completed] is pressed, any completed tasks are marked as <span class="take-note">hidden</span> and moved to the [Completed tasks] view. </li>
+                                        <li>For most applications, exported data should not include deleted or hidden tasks.</li>
+                                        <li>
+                                            <span style="color:red;">CAUTION:</span> The Outlook, iCalendar and RTM file formats do not support <span class="take-note">deleted</span> or <span class="take-note">hidden</span> tasks, so those programs will display deleted and/or hidden tasks as normal tasks.
+                                        </li>
+                                    </ol>
+                                </div>
+                            </td>
+                        </tr>
+                    </table>
+                    <!--<div class="small-break take-note-larger">
+                       Please only click once.
+                    </div>-->
+                    <input type="submit" value="Start backup" id="start_backup" class="big-button" ></input> 
+                    <div class="instructions">
+                        When you click the button to start the backup, you will be redirected to a page which will update regularly to show progress of the background process as it retrieves tasks from the Google server
+                    </div>
+                    <div class="instructions">
+                        The amount of time taken to generate the backup depends on various factors, 
+                        including server load and the total number of tasks. 
+                        At a rough estimate, the system processes 50-150 tasks per second. 
+                        This means that a task list with 5,000 tasks could take around 2 minutes.
+                    </div>
+                </fieldset>
+            </form>
+        </div>
+        
+    <br />
+
+	<div class="project-footer">
+        <div class="break">
+            Version {{ app_version }} ({{ upload_timestamp }})
+        </div>
+		<div class="break">
+			Questions or comments? Go to <a href="http://{{ url_discussion_group }}">{{ url_discussion_group }}</a>
+			or email <a href="mailto:{{ email_discussion_group }}">{{ email_discussion_group }}</a>
+		</div>
+		<div class="break">
+			Please report bugs or suggest improvements at <a href="http:/{{ url_issues_page }}">{{ url_issues_page }}</a>
+		</div>
+		<div class="break">
+			Source code for this project is at <a href="http://{{ url_source_code }}">{{ url_source_code }}</a>
+		</div>
+        <div class="break">
+            {{ app_title }} uses cookies for two purposes;
+            <ul>
+                <li>To track your authorisation credentials between pages. This ensure that you (and only you) can get the results of your backup request.</li>
+                <li><a href="http://www.google.com/analytics/">Google Analytics</a> is used to track usage such as; number of unique visitors, location, browser type, operating system. </li>
+            </ul>
+        </div>
+	</div>
+    
+	<div class="backgroundPopup"></div>
+
+</body>
+</html>

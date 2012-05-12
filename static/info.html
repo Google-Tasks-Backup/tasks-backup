@@ -5,7 +5,7 @@
 <html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en">
     <head>
         <title>Information about Google Tasks</title>
-        <link rel="stylesheet" type="text/css" href="/static/tasks_backup.css"></link>
+        <link rel="stylesheet" type="text/css" href="/static/tasks_backup.css">
         <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
         <script type="text/javascript">
             // Copyright 2001 Idocs.com      
@@ -182,9 +182,11 @@
     </div>
     
     <a name="import_export_description"></a>
-    <h2>Description of the {{ app_title }} "Import/Export CSV" file format</h2>
+    <h2>Importing and exporting</h2>
+    <h3>Description of the Google Tasks Backup "Import/Export CSV" file format</h3>
     <div class="break">
-        Files exported from {{ app_title }} in this format have a filename format of <span class="fixed-font">tasks_import_export_XXXXXX.csv</span>, where <span class="fixed-font">XXXXXX</span> identifies the account name and export date. 
+        Files exported from Google Tasks Backup in this format have a filename format of <span class="fixed-font">tasks_import_export_XXXXXX.csv</span>, where <span class="fixed-font">XXXXXX</span> identifies the account name and export date. 
+        Each row in the CSV represents one task, and includes all task properties required to recreate the task, including tasklist name and task/sub-task relationship.
     </div>
     <div class="break">
         The file is a standard Windows-format CSV (comma-separated-values) file, and contains all the data that is needed to re-create the tasklists and tasks in a Google account. The import file must observe the following rules;
@@ -197,14 +199,38 @@
             <li>There must be no spaces between fields and the comma separators.</li>
             <li>Multi-line text is allowed in the notes field, by using <span class="fixed-font">\n</span> as the line break.</li>
             <li>A blank field may be indicated by <span class="fixed-font">""</span> (empty string) or by having no space between consecutive commas.</li>
-            <li>Dates and times are UTC, and must be formatted as indicated in <a href="#Table2">Table 2</a><br />
+            <li>Dates and times are UTC, and must be formatted as indicated in <a href="#Table2">Table 2</a>
+                <br />
                 <span class="italic">Note that the "UTC " prefix on date fields serves two purposes. It reminds the user that the fields are UTC, and it prevents spreadsheet programs such as Excel and OpenOffice Calc from rewriting date and time formatting.</span></li>
             <li>Task state must be consistent. Refer to <a href="#Table1">Table 1</a> for valid states.</li>
             <li>If editing the import/export file in OpenOffice Calc, choose "Separated by Comma" and "Quoted field as text"</li>
+            <li>
+                This format does not include Task Links. 
+                <br />
+                <span class="italic">
+                    As far as I am aware, the only use for Task Links is when an email message is turned into a task; 
+                    the link then refers to the original email message.
+                    If tasks are restored into a different account, Task Links would not work (because they would refer to messages in another account).
+                </span>
+            </li>
         </ul>
     </div>
     <div class="break">
-        When importing tasks into an existing tasklist, {{ app_title }} is not able to check for duplicate tasks. If you 
+        <h3>Cautions when importing;</h3>
+        <ul>
+            <li>
+            Note that tasklist names are case-sensitive, so if you have an existing tasklist name <span class="fixed-font">"Apples"</span>, and the tasklist name in your import data is <span class="fixed-font">"apples"</span>, a new tasklist named <span class="fixed-font">"apples"</span> will be created even if you have chosen "Add task to existing tasklists."
+            </li>
+            <li>
+                When importing tasks into an existing tasklist, Google Tasks Backup is not able to check for duplicate tasks. The imported task will simply be added to the specified tasklist, potentially resulting in duplicate tasks. If you think that the imported data may contain tasks which already exist in your existing tasklist, you may wish to create new tasklists by appending something to the imported tasklist name (either the date and time, or your own text).
+            </li>
+            <li>
+                If you are sure that the import data contains the most current list of tasks, you can delete or rename existing tasklists, so that the newly created tasklists will contain only the imported data.
+            </li>
+            <li>
+                If either the existing or imported data has duplicate tasklist names (not recommended, but allowed by Google), all of the imported tasks in that tasklist will be added to ONE of those duplicate tasklists.
+            </li>
+        </ul>
     </div>
     <a name="Table1"></a>
     <table border="1" cellpadding="5">
@@ -433,9 +459,155 @@
         </tr>
     </table>
 
+        
     <div class="break">
     </div>
- 
+    
+    <hr>
+    
+    <a name="index_notes"></a>
+    <h2>Export Options</h2>
+        <table  class="format-selection">
+            <tr>
+                <td class="note-heading-smaller">
+                    Note 1 - 
+                </td>
+                <td>
+                    These settings may be used when the user wishes to customise the retrieved data.
+                    <br />
+                    For most applications, exported data should not include deleted or hidden tasks.
+                    <br />
+                <span class="take-note">CAUTION:</span> The Outlook, iCalendar and RTM file formats do not support <span class="take-note">deleted</span> or <span class="take-note">hidden</span> tasks, so those programs will display deleted and/or hidden tasks as normal tasks.
+                </td>
+            </tr>
+            <tr>
+                <td class="note-heading-smaller">
+                    Note 2 - 
+                </td>
+                <td>
+                    When checked, the backup includes completed tasks. If unchecked, only incomplete (needsAction) tasks are exported.
+                    <br />
+                    Selecting "Include completed tasks?" is useful if you wish to retain a backup of tasks that have been completed.
+                </td>
+            </tr>
+            <tr>
+                <td class="note-heading-smaller">
+                    Note 3 - 
+                </td>
+                <td>
+                    When tasks are deleted, they are marked as Hidden and moved to the [Trash] view.
+                    <br />
+                    Outlook, RTM and iCal do not differentiate deleted tasks, so they will appear as normal tasks.
+                </td>
+            </tr>
+            <tr>
+                <td class="note-heading-smaller">
+                    Note 4 - 
+                </td>
+                <td>
+                    According to Google, deleted tasks stay in the Trash (deleted = True) for "some period of time" and are then auto deleted. 
+					I have noticed deleted task up to six months old. 
+					There does not appear to be any way to force a task to be actually deleted. 
+					That is, the Trash bin cannot be emptied by the user.
+                </td>
+            </tr>
+            <tr>
+                <td class="note-heading-smaller">
+                    Note 5 - 
+                </td>
+                <td>
+                    When tasks which have been marked complete, and then [Clear completed] is clicked, 
+					those tasks are marked as Completed AND Hidden. 
+                    <br />
+                    Outlook, RTM and iCal do not differentiate hidden tasks, so they will appear as normal tasks.
+                </td>
+            </tr>
+            <tr>
+                <td class="note-heading-smaller">
+                    Note 6 - 
+                </td>
+                <td>
+                    If checked, deleted and hidden tasks will be dimmed (grey text) in the HTML view, 
+					and will include a 'hidden' or 'deleted' label.
+                </td>
+            </tr>
+            <tr>
+                <td colspan="2">
+                    Refer to the <a href="/static/info.html">information page</a> for more details on the completed, hidden and deleted properties.
+                </td>
+            </tr>
+        </table>
+        
+    <div class="break">
+    </div>
+    
+    <hr>
+    
+    <a name="progress_notes"></a>
+    <h2>Export Options</h2>
+    
+    <table  class="format-selection">
+            <tr>
+                <td class="note-heading-smaller">
+                    Note 1 - 
+                </td>
+                <td>
+                    Attempting to email large tasklists will fail due to App Engine quota limits.
+                </td>
+            </tr>
+            <tr>
+                <td class="note-heading-smaller">
+                    Note 2 - 
+                </td>
+                <td>
+                    It appears that RTM will not import more than 50 tasks.
+                </td>
+            </tr>
+            <tr>
+                <td class="note-heading-smaller">
+                    Note 3 - 
+                </td>
+                <td>
+                    Any header text must be removed before forwarding the received email to your RTM import email address. The first line in the email must be a task.
+                </td>
+            </tr>
+            <tr>
+                <td class="note-heading-smaller">
+                    Note 4 - 
+                </td>
+                <td>
+                    The resultant web page will contain all the tasks in all the task lists. 
+                    There is no pretty formatting, so a page break may occur in the middle of a task.
+                    <br/>
+                    Note that the resultant printout can be MANY pages (especially when tasks have notes). 
+                    973 tasks in 7 tasklists resulted in 141 pages.
+                </td>
+            </tr>
+            <tr>
+                <td class="note-heading-smaller">
+                    Note 5 - 
+                </td>
+                <td>
+                    If checked, completed tasks are displayed using a dimmed grey font. Hidden and deleted tasks are always dim.
+                </td>
+            </tr>
+            <tr>
+                <td class="note-heading-smaller">
+                    Note 7 - 
+                </td>
+                <td>
+                    If checked, the application tries to identify and label potentially invalid tasks.
+                    <br />
+                    Refer to <a href="/static/info.html#notes">note 4 on the information page</a> for more details.
+                </td>
+            </tr>
+        </table>
 
+        <div class="break">
+        Icons thanks to <a href="http://www.visualpharm.com/">Visual Pharm</a>, <a href="http://www.iconarchive.com/show/sleek-xp-software-icons-by-deleket/Windows-Close-Program-icon.html">Deleket</a> and <a href="http://www.gettyicons.com/free-icon/133/shimmer-icon-set/free-warning-icon-png/">Creative Freedom</a>
+        </div>
+        <div class="break">
+            Popup windows thanks to <a href="http://yensdesign.com/2008/09/how-to-create-a-stunning-and-smooth-popup-using-jquery/">yendesign</a>
+        </div>
   </body>
 </html>

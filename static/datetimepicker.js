@@ -113,6 +113,8 @@ function RenderCal()
 
 	docCal.open();
 	docCal.writeln("<html><head><title>"+WindowTitle+"</title>");
+    docCal.writeln('<link rel="shortcut icon" type="image/x-icon" href="/static/favicon.ico">');
+    docCal.writeln('<link rel="icon" type="image/x-icon" href="/static/favicon.ico">');
 	docCal.writeln("<script>var winMain=window.opener;</script>");
 	docCal.writeln("</head><body background='"+ThemeBg+"' link="+FontColor+" vlink="+FontColor+"><form name='Calendar'>");
 

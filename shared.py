@@ -40,6 +40,30 @@ def get_exception_msg(e, maxTBlevel=5):
     return str(excName) + ": " + str(e)
          
 
+def delete_blobstore(blob_info):
+    fn_name = "delete_blobstore(): "
+    logging.debug(fn_name + "<Start>")
+    logservice.flush()
+    
+    if blob_info:
+        # -------------------------------------
+        #       Delete the Blobstore item
+        # -------------------------------------
+        try:
+            blob_info.delete()
+            logging.debug(fn_name + "Blobstore deleted")
+            logservice.flush()
+        except Exception, e:
+            logging.exception(fn_name + "Exception deleting " + file_name + ", key = " + blob_key)
+            logservice.flush()
+    else:
+        logging.warning(fn_name + "No blobstore to delete")
+        logservice.flush()
+
+    logging.debug(fn_name + "<End>")
+    logservice.flush()
+    
+
 def get_settings(hostname):
     """ Returns a tuple with hostname-specific settings
     args
@@ -54,12 +78,16 @@ def get_settings(hostname):
         host_msg         -- An optional message which is displayed on some web pages, 
                         for app instance running on this particular host
     """
-  
+
+    if hostname.lower().startswith("www."):
+        # If user accessed the service using www.XXXXXX.appspot.com, strip the "www." so we can match settings
+        hostname = hostname[4:]
+        
     if settings.client_ids.has_key(hostname):
         client_id = settings.client_ids[hostname]
     else:
         client_id = None
-        raise KeyError("No ID entry in settings module for host = %s\nPlease check the adress" % hostname)
+        raise KeyError("No ID entry in settings module for host = %s\nPlease check the address" % hostname)
   
     if settings.client_secrets.has_key(hostname):
         client_secret = settings.client_secrets[hostname]
@@ -77,8 +105,8 @@ def get_settings(hostname):
     else:
         app_title = settings.DEFAULT_APP_TITLE
         
-    if hasattr(settings, 'product_name') and settings.product_name.has_key(client_id):
-        product_name = settings.app_titles[client_id]
+    if hasattr(settings, 'product_names') and settings.product_names.has_key(client_id):
+        product_name = settings.product_names[client_id]
     else:
         product_name = settings.DEFAULT_PRODUCT_NAME
   

@@ -12,7 +12,7 @@
  * limitations under the License.
  *
  * OrigAuthor: dwightguth@google.com (Dwight Guth)
- * Author: Julie.Smith.1999@gmail.com (Julie Smith)
+ * Modified by: Julie.Smith.1999@gmail.com (Julie Smith)
  *
  * Form styling ideas from http://www.webcredible.co.uk/user-friendly-resources/css/css-forms.shtml
  *
@@ -20,7 +20,7 @@
 
 body {
   font-family: Arial, Helvetica, sans-serif;
-  font-size: 10pt;
+  /* font-size: 10pt; */
   max-width: 1024px;
   margin: auto;
   padding-left: 15px;
@@ -33,10 +33,47 @@ fieldset
 	padding-top: 10px;
 }
 
-
 fieldset fields { 
   clear: both;
 } 
+
+ol {
+    padding-left: 20px;
+}
+    
+ol li{
+    padding-top: 3px;
+    padding-bottom: 5px;
+    padding-left: 5px;
+}
+
+ul li{
+    padding-top: 3px;
+    padding-bottom: 5px;
+    padding-left: 5px;
+}
+
+.popupContent ol {
+    padding-left: 15px !important;
+    margin-left:10px;
+}
+
+.popupContent ul {
+    padding-left: 5px;
+    margin-left:10px;
+}
+
+.radio-button-left
+{
+   float: left;
+   margin-right: 8px;
+}
+
+.radio-button-text
+{
+    float: left;
+    width: 90%; /* Adjust this value to fit */
+}
 
 input.choose_display_format { 
   float: left;
@@ -54,6 +91,13 @@ label.choose_display_format {
     margin-right: 45px;
     margin-top: 12px;
     margin-bottom: 20px;
+}
+
+div.select-import-file {
+    margin-left: 12px;
+    margin-right: 12px;
+    margin-top: 12px;
+    margin-bottom: 15px;
 }
 
 .sample-image {
@@ -74,10 +118,11 @@ label.choose_display_format {
 
 legend
 {
-	color: #fff;
+	/* color: #fff; */
 	background: #ffa20c;
 	border: 1px solid #781351;
-	padding: 2px 6px
+	padding: 2px 6px;
+    font-weight: bold;
 }
 
 .info-ul > ul > li {
@@ -86,6 +131,7 @@ legend
 
 .fixed-font {
     font-family: "Courier New", Courier, monospace;
+    white-space: nowrap;
 }
 
 .italic{
@@ -101,7 +147,7 @@ legend
 
 .view-tr {
     text-align:left;
-    valign: top;
+    vertical-align: top;
 }
 
 .minor-heading {
@@ -126,6 +172,7 @@ legend
 .import-completed-message {
     margin-top:60px;
     margin-left:30px;
+    margin-bottom:20px;
 }
 
 .take-note-smaller {
@@ -137,7 +184,7 @@ legend
     font-size: larger;
     margin-left: 35px;
     margin-bottom: 10px;
-    //margin-top: 10px;
+    /* margin-top: 10px; */
     margin-right: 35px;
 }
 
@@ -153,6 +200,11 @@ legend
 
 .small-break {
   margin-bottom: 6px !important;
+}
+
+.medium-break {
+  margin-top: 10px !important;
+  margin-bottom: 5px !important;
 }
 
 .disabled {
@@ -194,7 +246,13 @@ legend
 .fieldlabel {
   font-weight: bold;
 }
- 
+
+ul.choose-import-method {
+  list-style-type: none;
+  padding-left: 1.8em;
+  padding-bottom: 20px;
+}
+
 .task-title  {
   display: inline-block;
   font-weight: bold;
@@ -228,13 +286,20 @@ td.action-button {
 }
 
 table.include-selection {
-	/*border-collapse:separate;*/
-	/*border-spacing:25px 6px; /* Horiz, vert */
-    border-spacing:5px 5px;
+	border-collapse:separate;
+	/* border-spacing:25px 6px; */ /* Horiz, vert */
+    border-spacing:10px 5px; /* Horiz, vert */
     border-style:solid;
+    padding-bottom: 7px;
     margin-top:10px;
     margin-left:45px;
-    margin-bottom:15px;
+    margin-bottom:10px;
+}
+
+table.include-selection td{
+    padding-top: 0px;
+    padding-bottom: 0px;
+    padding-left: 5px;
 }
 
 
@@ -243,11 +308,20 @@ div.selection-column-header {
     font-weight: bold;
     }
 
-span.due_date {
-    border-style:solid;
-    padding:3px;
+table.format-selection {
+	border-collapse:separate;
+	/*border-spacing:5px 10px; /* Horiz, vert */
+    border-spacing:5px 5px; /* Horiz, vert */
 }
-    
+
+table.format-selection td{
+    padding-top: 0px;
+    padding-bottom: 0px;
+    margin-top: 0px;
+    margin-bottom: 0px;
+    padding-left: 5px;
+}
+
 ul.format-selection {
     list-style-type:none;
     padding: 0;
@@ -259,6 +333,16 @@ ul.sub-list {
     margin-left: 15px;
 }
 
+td.format-name {
+	white-space: nowrap;
+	font-weight: bold;
+}
+
+span.due_date {
+    border-style:solid;
+    padding:3px;
+}
+    
 div.left-column {
     float:left;
     width: 60%;
@@ -268,7 +352,7 @@ div.left-column {
     
 div.right-column {
     float:left;
-    //width:50%;
+    /* width:50%; */
     padding-left:10px;
     padding-right:10px;
 }
@@ -278,18 +362,6 @@ div.end-columns {
 }
     
     
-    
-    
-table.format-selection {
-	border-collapse:separate;
-	border-spacing:5px 10px; /* Horiz, vert */
-}
-
-td.format-name {
-	white-space: nowrap;
-	font-weight: bold;
-}
-
 td.note-heading {
 	white-space: nowrap;
 	font-weight: bold;
@@ -316,8 +388,19 @@ td.not-valid {
     font-weight: bold;
 }
 
+.medium-button {
+    cursor: pointer;
+    width: 95%;
+    font-size: 16pt;
+    font-weight: bold;
+    /* padding-left:75px; */
+    /*padding-right:25px;*/
+    margin-left:45px;
+    /* margin-right:35px; */
+}
+
 .file-button {
-    //cursor: pointer;
+    /* cursor: pointer; */
     width: 50%;
     font-size: 16pt;
     font-weight: bold;
@@ -334,14 +417,12 @@ li.tasklist {
   padding-bottom: 10px;
 }
 
-span.tasklistheading {
+span.tasklistname {
   font-size: larger;
   font-weight: bold;
 }
 
 div.tasklistheading {
-  font-size: larger;
-  font-weight: bold;
   margin-bottom: 5px;
 }
 
@@ -418,6 +499,63 @@ div.task-attribute-hidden-or-deleted {
   font-style: italic;
 }
 
+/*
+ * For popup windows
+ */
+.backgroundPopup{
+    display:none;
+    position:fixed;
+    _position:absolute; /* hack for internet explorer 6*/
+    top:0;
+    left:0;
+    background:#000000;
+    border:1px solid #cecece;
+    z-index:1;
+    
+    /* 
+     * NOTE: On IE9, height and width 100% only creates a background as big as the visible window, 
+     * minus padding/borders. We set the height and width in the loadPopup() method in popup.js to ensure
+     * that the background fully covers the document. This is especially important if user scrolls, and
+     * tries to click outside the popup to close the popup.
+     * IE9 also ignores opacity, so that is also set in the loadPopup() method.
+     */
+    height:100%; 
+    width:100%;
+}
+
+.popupContent{
+    display:none;
+    /*position:fixed;*/
+    position:absolute; /* hack for internet explorer 6*/
+    width:25%;
+    background:#FFFFFF;
+    border:2px solid #cecece;
+    z-index:2;
+    padding:12px;
+    font-size:13px;
+}
+
+.popupCloseX{
+    font-size:18px;
+    line-height:18px;
+    right:6px;
+    top:4px;
+    position:absolute;
+    color:#6fa5fd;
+    font-weight:700;
+    display:block;
+}
+
+.popupClose{
+    font-size:18px;
+    line-height:18px;
+    float:right;
+}
+
+.clear
+{
+    clear:both;
+}
 
 /*
  * *********************

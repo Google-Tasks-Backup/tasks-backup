@@ -19,7 +19,9 @@ This is the Django master template for snapshots.html and import.html.
 <html>
     <head>
         <title>{{ app_title }} - {% block title %}{% endblock %}</title>
-        <link rel="stylesheet" type="text/css" href="/static/tasks_backup.css"></link>
+        <link rel="stylesheet" type="text/css" href="/static/tasks_backup.css">
+        <link rel="shortcut icon" type="image/x-icon" href="/static/favicon.ico">
+        <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
         {% block head %}
         {% endblock %}
         <script type="text/javascript">
@@ -55,7 +57,7 @@ This is the Django master template for snapshots.html and import.html.
     <tr>
     <!--
       <td valign="top" style="padding-top: 5px;">
-        <a href="{{ home_page_url }}"><img src="/logo.png" width="120" height="120" /></a>
+        <a href="{{ url_home_page }}"><img src="/logo.png" width="120" height="120" /></a>
       </td>
     -->
       <td>
