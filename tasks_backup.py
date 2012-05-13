@@ -1367,7 +1367,7 @@ class ReturnResultsHandler(webapp.RequestHandler):
     <title>""")
         self.response.out.write(app_title)
         self.response.out.write("""- List of tasks</title>
-<link rel="stylesheet" type="text/css" href="static/tasks_backup.css">
+<link rel="stylesheet" type="text/css" href="static/tasks_backup.css" />
 <script type="text/javascript">
 
   var _gaq = _gaq || [];
