@@ -1051,7 +1051,10 @@ class ReturnResultsHandler(webapp.RequestHandler):
                                 else:
                                     num_incomplete_tasks = num_incomplete_tasks + 1
                                 if task.get(u'depth', 0) < 0:
+                                    task[u'invalid'] = True
                                     num_invalid_tasks = num_invalid_tasks + 1
+                                    # logging.debug(fn_name + "Found invalid task ==>")
+                                    # logging.debug(task)
                                 if task.get(u'hidden'):
                                     num_hidden_tasks = num_hidden_tasks + 1
                                 if task.get(u'deleted'):
@@ -1193,9 +1196,11 @@ class ReturnResultsHandler(webapp.RequestHandler):
         except apiproxy_errors.OverQuotaError:
             # Refer to https://developers.google.com/appengine/docs/quotas#When_a_Resource_is_Depleted
             logging.exception(fn_name + "Unable to send email")
-            self.response.out.write("""Sorry, unable to send email due to quota limitations of my AppSpot account.
+            self.response.out.write("""Sorry, unable to send email due to quota limitations of my Appspot account.
                                        <br />
-                                       It may be that your email is too large, or that to many emails have been sent by others in the past 24 hours.
+                                       It may be that your email is too large, or that too many emails have been sent by others in the past 24 hours.
+                                       </br>
+                                       Use your browser back button to return to the previous page.
                                     """)
             logging.debug(fn_name + "<End> (due to exception)")
             logservice.flush()
@@ -1218,6 +1223,7 @@ class ReturnResultsHandler(webapp.RequestHandler):
           logging.debug(fn_name + "Email sent")
           
         self.response.out.write("Email sent to %s </br>Use your browser back button to return to the previous page" % user_email)
+        
         #self.redirect("/completed")
         # logging.debug(fn_name + "Calling garbage collection")
         # gc.collect()
@@ -1366,7 +1372,7 @@ class ReturnResultsHandler(webapp.RequestHandler):
 <head>
     <title>""")
         self.response.out.write(app_title)
-        self.response.out.write("""- List of tasks</title>
+        self.response.out.write(""" - List of tasks</title>
 <link rel="stylesheet" type="text/css" href="static/tasks_backup.css" />
 <script type="text/javascript">
 
@@ -1472,6 +1478,7 @@ class ReturnResultsHandler(webapp.RequestHandler):
                         task_notes = shared.escape_html(task.get(u'notes', None))
                         task_deleted = task.get(u'deleted', None)
                         task_hidden = task.get(u'hidden', None)
+                        task_invalid = task.get(u'invalid', False)
                         task_indent = str(task.get('indent', 0))
                         
                         
@@ -1501,7 +1508,7 @@ class ReturnResultsHandler(webapp.RequestHandler):
                         dim_class = ""
                         if task_completed and dim_completed_tasks:
                             dim_class = "dim"
-                        if task_deleted or task_hidden:
+                        if task_deleted or task_hidden or task_invalid:
                             dim_class = "dim"
                         
                         self.response.out.write("""<div style="padding-left:""")
@@ -1538,13 +1545,14 @@ class ReturnResultsHandler(webapp.RequestHandler):
                             self.response.out.write(task_updated)
                             self.response.out.write("""</div>""")
                             
+                        if task_invalid:
+                            self.response.out.write("""<div class="task-attribute-hidden-or-deleted">- Invalid -</div>""")
+                                
                         if task_deleted:
-                            self.response.out.write("""
-                                <div class="task-attribute-hidden-or-deleted">- Deleted -</div>""")
+                            self.response.out.write("""<div class="task-attribute-hidden-or-deleted">- Deleted -</div>""")
                                 
                         if task_hidden:
-                            self.response.out.write("""
-<div class="task-attribute-hidden-or-deleted">- Hidden -</div>""")
+                            self.response.out.write("""<div class="task-attribute-hidden-or-deleted">- Hidden -</div>""")
                         # End of task details div
                         # End of task div
                         self.response.out.write("""</div>

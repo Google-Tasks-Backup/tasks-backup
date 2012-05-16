@@ -80,7 +80,7 @@
     
     
     <div class="break">
-        Note that this information is based on my own discoveries and conclusions as at 27 Feb 2012. I hope that this information helps people, but I cannot guarantee the accuracy or completeness of this information. Note also that Google may change their specifications, in which case this information may be out of date.
+        Note that this information is based on my own discoveries and conclusions as at May 2012. I hope that this information helps people, but I cannot guarantee the accuracy or completeness of this information. Note also that Google may change their specifications, in which case this information may be out of date.
     </div>
     
     <h3>Understanding the Raw and Python data formats</h3>
@@ -88,11 +88,26 @@
     <div class="break">
         <ul>
             <li>
-            The Python format includes all the data that Google stores for each task. The meaning of each task property is described at <a href="https://developers.google.com/google-apps/tasks/v1/reference/tasks#resource">developers.google.com/google-apps/tasks/v1/reference/tasks#resource</a>  
+                The <span class="take-note">Python</span> format includes all the data that Google stores for each task. The meaning of each task property is described 
+                at <a href="https://developers.google.com/google-apps/tasks/v1/reference/tasks#resource">developers.google.com/google-apps/tasks/v1/reference/tasks#resource</a>  
             </li>
-            <li>The Raw CSV format includes everything except the <span class="property-name">links</span> property.</li>
-            <li>In the Raw and Python formats, subtasks are related to parent tasks through the <span class="property-name">parent</span> property. <span class="take-note-smaller">(<a href="#notes">Note</a> 4)</span></li>
-            <li>The Nested Python format adds a <span class="property-name">children</span> property to tasks, and moves any child tasks to the parent task's <span class="property-name">children</span> property.</li>
+            <li>
+                The <span class="take-note">Raw CSV</span> format includes everything except the <span class="property-name">links</span> property.
+                <br />
+                <span class="italic">
+                    As far as I am aware, the only use for Task Links is when an email message is turned into a task; 
+                    the link then refers to the original email message.
+                    If tasks are restored into a different account, Task Links would not work (because they would refer to messages in another account).
+                </span>
+            </li>
+            <li>
+                In the <span class="take-note">Raw CSV</span> and <span class="take-note">Python</span> formats, subtasks are related to parent tasks through the <span class="property-name">parent</span> 
+                property. <span class="take-note-smaller">(<a href="#note4">Note 4</a>)</span>
+            </li>
+            <li>
+                See <a href="#import_export_description">below</a> for a detailed description of the 
+                <span class="take-note">Import/Export CSV</span> format.
+            </li>
         </ul>
         
         
@@ -108,7 +123,8 @@
                 </ul>
             </li>
             <li>
-                Mark a task complete, and then click [Clear completed] ==> <span class="property-name">status</span> = "completed", <span class="property-name">hidden</span> = "True"
+                Mark a task complete, and then click [Clear completed] ==> <span class="property-name">status</span> = "completed", 
+                <span class="property-name">hidden</span> = "True"
                 <ul>
                     <li>
                          Task only appears in [Completed tasks] view
@@ -116,10 +132,10 @@
                 </ul>
             </li>
             <li>
-                Mark a task complete, and then click [Delete] ==> <span class="property-name">status</span> = "completed", <span class="property-name">deleted</span> = "True"
+                Highlight a task, and then click [Delete] ==> <span class="property-name">deleted</span> = "True"
                 <ul>
                     <li>
-                        Task only appears in [Trash] view <span class="take-note-smaller">(<a href="#notes">Note</a> 3)</span>
+                        Task only appears in [Trash] view <span class="take-note-smaller">(<a href="#note3">Note 3</a>)</span>
                     </li>
                 </ul>
             </li>
@@ -135,7 +151,8 @@
     <table border="1" cellpadding="5">
         <caption class="heading" >Table 1: Task states</caption>
         <tr>
-            <th colspan="3">Task properties <span class="take-note-smaller">(<a href="#notes">Note</a> 1, 2)</span></th><th rowspan="2">Description</th><th colspan="3">Visible in View:</th>
+            <th colspan="3">Task properties <span class="take-note-smaller">(<a href="#note1">Note 1</a>, <a href="#note1">2</a>)</span></th>
+            <th rowspan="2">Description</th><th colspan="3">Visible in View:</th>
         </tr>
         <tr>
             <th><span class="property-name">status</span></th>
@@ -143,23 +160,23 @@
             <th><span class="property-name">hidden</span></th>
             <th class="view-tr">My order<br />Sort by date</th>
             <th class="view-tr">Completed tasks</th>
-            <th class="view-tr">Trash<br/><span class="take-note-smaller">(<a href="#notes">Note</a> 3)</span></th>
+            <th class="view-tr">Trash<br/><span class="take-note-smaller">(<a href="#note3">Note 3</a>)</span></th>
         </tr>
         
         <tr>
             <td>needsAction</td><td></td><td></td><td>To be completed, visible in main window</td><td>Yes</td><td>No</td><td>No</td>
         </tr>
         <tr>
-            <td>completed</td><td></td><td></td><td>Marked complete, before clicking [Clear completed]</td><td>Yes</td><td>Yes</td><td>No</td>
-        </tr>
-        <tr>
-            <td>completed</td><td></td><td>True</td><td>Marked complete, after clicking [Clear completed]</td><td>No</td><td>Yes</td><td>No</td>
-        </tr>
-        <tr>
             <td>needsAction</td><td>True</td><td></td><td>Deleted incomplete task. Visible only in [Trash]</td><td>No</td><td>No</td><td>Yes</td>
         </tr>
         <tr>
+            <td>completed</td><td></td><td></td><td>Marked complete, before clicking [Clear completed]</td><td>Yes</td><td>Yes</td><td>No</td>
+        </tr>
+        <tr>
             <td>completed</td><td>True</td><td></td><td>Deleted completed task. Visible only in [Trash]</td><td>No</td><td>No</td><td>Yes</td>
+        </tr>
+        <tr>
+            <td>completed</td><td></td><td>True</td><td>Marked complete, after clicking [Clear completed]</td><td>No</td><td>Yes</td><td>No</td>
         </tr>
         <tr>
             <td>needsAction</td><td>True</td><td>True</td> <td class="not-valid" colspan="4"> ======= Not valid =======</td>
@@ -177,7 +194,9 @@
  
     <h3>Other problems</h3>
     <div class="break">
-        The <span class="property-name">completed</span> property has occassionally contained invalid timestamps, where the year is stored as a large negative number such as -1701567. In this case, the application sets the <span class="property-name">completed</span> property to "0001-01-01 00:00:00"
+        Date/time properties such as the <span class="property-name">completed</span> property have occassionally contained invalid timestamps, 
+        where the year is stored as a large negative number such as -1701567. 
+        In this case, the application exports the value "1900-01-01 00:00:00" instead.
         
     </div>
     
@@ -185,15 +204,22 @@
     <h2>Importing and exporting</h2>
     <h3>Description of the Google Tasks Backup "Import/Export CSV" file format</h3>
     <div class="break">
-        Files exported from Google Tasks Backup in this format have a filename format of <span class="fixed-font">tasks_import_export_XXXXXX.csv</span>, where <span class="fixed-font">XXXXXX</span> identifies the account name and export date. 
-        Each row in the CSV represents one task, and includes all task properties required to recreate the task, including tasklist name and task/sub-task relationship.
+        Files exported from Google Tasks Backup in the <span class="take-note">Import/Export CSV</span> format have a filename format 
+        of <span class="fixed-font">tasks_import_export_XXXXXX.csv</span>, where <span class="fixed-font">XXXXXX</span> identifies 
+        the account name and export date. 
     </div>
     <div class="break">
-        The file is a standard Windows-format CSV (comma-separated-values) file, and contains all the data that is needed to re-create the tasklists and tasks in a Google account. The import file must observe the following rules;
+        The file is a standard Windows-format CSV (comma-separated-values) file, and includes 
+        all task properties required to recreate the task, including tasklist name and <span class="no-break">task/sub-task</span> relationship.
+    </div>
+    <div class="break">
+        
+        The import file must observe the following rules;
         <ul>
-            <li>The first row is a header row, and contains the column names.</li>
+            <li>The first row is a header row, and contains the column names (see <a href="#import_example">sample</a> below).</li>
             <li>Tasks must be grouped by tasklist.</li>
-            <li>Tasks must appear in the file in the order that they should appear in the standard "My Order" view in Google Tasks. See the <a href="#import_example">example</a> below.</li>
+            <li>Tasks must appear in the file in the order that they should appear in the standard "My Order" view in Google Tasks. 
+                See the <a href="#import_example">example</a> below.</li>
             <li>All fields except depth are double-quote delimited strings.</li>
             <li>Double-quotes within text must be escaped (i.e., replace the single <span class="fixed-font">"</span> with <span class="fixed-font">""</span>)</li>
             <li>There must be no spaces between fields and the comma separators.</li>
@@ -201,7 +227,10 @@
             <li>A blank field may be indicated by <span class="fixed-font">""</span> (empty string) or by having no space between consecutive commas.</li>
             <li>Dates and times are UTC, and must be formatted as indicated in <a href="#Table2">Table 2</a>
                 <br />
-                <span class="italic">Note that the "UTC " prefix on date fields serves two purposes. It reminds the user that the fields are UTC, and it prevents spreadsheet programs such as Excel and OpenOffice Calc from rewriting date and time formatting.</span></li>
+                <span class="italic">Note that the " UTC" suffix on date fields serves two purposes. 
+                It reminds the user that the fields are UTC, and it prevents spreadsheet programs such as Excel and OpenOffice Calc 
+                from rewriting date and time formatting.</span>
+            </li>
             <li>Task state must be consistent. Refer to <a href="#Table1">Table 1</a> for valid states.</li>
             <li>If editing the import/export file in OpenOffice Calc, choose "Separated by Comma" and "Quoted field as text"</li>
             <li>
@@ -222,17 +251,23 @@
             Note that tasklist names are case-sensitive, so if you have an existing tasklist name <span class="fixed-font">"Apples"</span>, and the tasklist name in your import data is <span class="fixed-font">"apples"</span>, a new tasklist named <span class="fixed-font">"apples"</span> will be created even if you have chosen "Add task to existing tasklists."
             </li>
             <li>
-                When importing tasks into an existing tasklist, Google Tasks Backup is not able to check for duplicate tasks. The imported task will simply be added to the specified tasklist, potentially resulting in duplicate tasks. If you think that the imported data may contain tasks which already exist in your existing tasklist, you may wish to create new tasklists by appending something to the imported tasklist name (either the date and time, or your own text).
+                When importing tasks into an existing tasklist, Google Tasks Backup is not able to check for duplicate tasks. 
+                The imported tasks will simply be added to the specified tasklist, potentially resulting in duplicate tasks. 
+                If you think that the imported data may contain tasks which already exist in your existing tasklist, you may 
+                wish to create new tasklists by appending something to the imported tasklist name (either the automatically generated 
+                date and time, or your own text).
             </li>
             <li>
-                If you are sure that the import data contains the most current list of tasks, you can delete or rename existing tasklists, so that the newly created tasklists will contain only the imported data.
+                If you are sure that the import data contains the most current list of tasks, you can choose to delete existing tasklists, 
+                so that the newly created tasklists will contain only the imported data.
             </li>
             <li>
-                If either the existing or imported data has duplicate tasklist names (not recommended, but allowed by Google), all of the imported tasks in that tasklist will be added to ONE of those duplicate tasklists.
+                If either the existing or imported data has duplicate tasklist names (not recommended, but allowed by Google), 
+                all of the imported tasks in that tasklist will be added to ONE of those duplicate tasklists.
             </li>
         </ul>
     </div>
-    <a name="Table1"></a>
+    <a name="Table2"></a>
     <table border="1" cellpadding="5">
         <caption class="heading" >Table 2: Import file format</caption>
         <tr>
@@ -336,7 +371,7 @@
         <img class="sample-image" src="/static/Example-Tasks-My_order.PNG">
     </div>
     
-    <div class="minor-heading">{{ app_title }} displays this as;</div>
+    <div class="minor-heading">Google Tasks Backup displays this as;</div>
     <div class="task-sample">
         <div class="tasklistheading">
             Task List: My Tasklist - 6 tasks.
@@ -404,6 +439,11 @@
         </div>    
     </div>
     
+        
+    <hr>
+    
+    <div class="break">
+    </div>
     
     <div class="heading">
         <a name="notes">Notes</a>
@@ -411,33 +451,42 @@
     <table  class="format-selection">
         <tr>
             <td class="note-heading-smaller">
-                Note 1 - 
+                <a name="note1">Note 1 - </a>
             </td>
             <td>
-                <span class="take-note">CAUTION:</span> The Outlook, RTM and iCalendar file formats do not have fields for <span class="property-name">deleted</span> or <span class="property-name">hidden</span>, so those programs will display deleted and/or hidden tasks as normal tasks. Unless you have a specific reason, Do not include <span class="take-note">deleted</span> and <span class="take-note">hidden</span> tasks when downloading for applications such as Outlook, RTM or iCalendar.
+                <span class="take-note">CAUTION:</span> The Outlook, RTM and iCalendar file formats do not have fields for 
+                <span class="property-name">deleted</span> or <span class="property-name">hidden</span>, so those programs 
+                will display deleted and/or hidden tasks as normal tasks. 
+                Unless you have a specific reason, do not include <span class="take-note">deleted</span> or 
+                <span class="take-note">hidden</span> tasks when downloading for applications such as Outlook, RTM or iCalendar.
             </td>
         </tr>
         <tr>
             <td class="note-heading-smaller">
-                Note 2 - 
+                <a name="note2">Note 2 - </a>
             </td>
             <td>
-                All 3 properties are stored by Google as strings. The <span class="property-name">status</span> field may be either "needsAction" or "completed". The <span class="property-name">deleted</span> and <span class="property-name">hidden</span> properties can be either an empty string (indicating false), or the word "True".
+                All 3 properties are stored by Google as strings. 
+                The <span class="property-name">status</span> field may be either "needsAction" or "completed". 
+                The <span class="property-name">deleted</span> and <span class="property-name">hidden</span> properties can be 
+                either an empty string (indicating false), or the word "True".
             </td>
         </tr>
         <tr>
             <td class="note-heading-smaller">
-                Note 3 - 
+                <a name="note3">Note 3 - </a>
             </td>
             <td>
                 When tasks are deleted, they are marked as Hidden and moved to the [Trash] view.
                 <br/>
-                According to Google, deleted tasks stay in the Trash (deleted = True) for "some period of time" and are then auto deleted. I have noticed deleted task up to six months old. There does not appear to be any way to force a task to be actually deleted. That is, the Trash bin cannot be emptied by the user.
+                According to Google, deleted tasks stay in the Trash (deleted = True) for "some period of time" and are then auto deleted. 
+                I have noticed deleted tasks up to six months old. There does not appear to be any way to force a task to be actually deleted. 
+                That is, the Trash bin cannot be emptied by the user.
             </td>
         </tr>
         <tr>
             <td class="note-heading-smaller">
-                Note 4 - 
+                <a name="note4">Note 4 - </a>
             </td>
             <td>
                 <span class="take-note">CAUTION:</span> Sometimes, tasks can become corrupted, leaving an invalid <span class="property-name">parent</span> value. These tasks still exist in the Google Tasks database, although Google does not display them.
@@ -454,7 +503,8 @@
                     <li>Restore D from Trash</li>
                 </ol>
                 Since task D's parent no longer exists, Google doesn't know where to put the task,
-                so it becomes an (invisible) orphan. There is an option to attempt to identify and display invalid/corrupted tasks.
+                so it becomes an (invisible) orphan. The display page provides an option to attempt to identify and display 
+                invalid/corrupted tasks.
             </td>
         </tr>
     </table>
@@ -464,150 +514,15 @@
     </div>
     
     <hr>
-    
-    <a name="index_notes"></a>
-    <h2>Export Options</h2>
-        <table  class="format-selection">
-            <tr>
-                <td class="note-heading-smaller">
-                    Note 1 - 
-                </td>
-                <td>
-                    These settings may be used when the user wishes to customise the retrieved data.
-                    <br />
-                    For most applications, exported data should not include deleted or hidden tasks.
-                    <br />
-                <span class="take-note">CAUTION:</span> The Outlook, iCalendar and RTM file formats do not support <span class="take-note">deleted</span> or <span class="take-note">hidden</span> tasks, so those programs will display deleted and/or hidden tasks as normal tasks.
-                </td>
-            </tr>
-            <tr>
-                <td class="note-heading-smaller">
-                    Note 2 - 
-                </td>
-                <td>
-                    When checked, the backup includes completed tasks. If unchecked, only incomplete (needsAction) tasks are exported.
-                    <br />
-                    Selecting "Include completed tasks?" is useful if you wish to retain a backup of tasks that have been completed.
-                </td>
-            </tr>
-            <tr>
-                <td class="note-heading-smaller">
-                    Note 3 - 
-                </td>
-                <td>
-                    When tasks are deleted, they are marked as Hidden and moved to the [Trash] view.
-                    <br />
-                    Outlook, RTM and iCal do not differentiate deleted tasks, so they will appear as normal tasks.
-                </td>
-            </tr>
-            <tr>
-                <td class="note-heading-smaller">
-                    Note 4 - 
-                </td>
-                <td>
-                    According to Google, deleted tasks stay in the Trash (deleted = True) for "some period of time" and are then auto deleted. 
-					I have noticed deleted task up to six months old. 
-					There does not appear to be any way to force a task to be actually deleted. 
-					That is, the Trash bin cannot be emptied by the user.
-                </td>
-            </tr>
-            <tr>
-                <td class="note-heading-smaller">
-                    Note 5 - 
-                </td>
-                <td>
-                    When tasks which have been marked complete, and then [Clear completed] is clicked, 
-					those tasks are marked as Completed AND Hidden. 
-                    <br />
-                    Outlook, RTM and iCal do not differentiate hidden tasks, so they will appear as normal tasks.
-                </td>
-            </tr>
-            <tr>
-                <td class="note-heading-smaller">
-                    Note 6 - 
-                </td>
-                <td>
-                    If checked, deleted and hidden tasks will be dimmed (grey text) in the HTML view, 
-					and will include a 'hidden' or 'deleted' label.
-                </td>
-            </tr>
-            <tr>
-                <td colspan="2">
-                    Refer to the <a href="/static/info.html">information page</a> for more details on the completed, hidden and deleted properties.
-                </td>
-            </tr>
-        </table>
-        
-    <div class="break">
-    </div>
-    
-    <hr>
-    
-    <a name="progress_notes"></a>
-    <h2>Export Options</h2>
-    
-    <table  class="format-selection">
-            <tr>
-                <td class="note-heading-smaller">
-                    Note 1 - 
-                </td>
-                <td>
-                    Attempting to email large tasklists will fail due to App Engine quota limits.
-                </td>
-            </tr>
-            <tr>
-                <td class="note-heading-smaller">
-                    Note 2 - 
-                </td>
-                <td>
-                    It appears that RTM will not import more than 50 tasks.
-                </td>
-            </tr>
-            <tr>
-                <td class="note-heading-smaller">
-                    Note 3 - 
-                </td>
-                <td>
-                    Any header text must be removed before forwarding the received email to your RTM import email address. The first line in the email must be a task.
-                </td>
-            </tr>
-            <tr>
-                <td class="note-heading-smaller">
-                    Note 4 - 
-                </td>
-                <td>
-                    The resultant web page will contain all the tasks in all the task lists. 
-                    There is no pretty formatting, so a page break may occur in the middle of a task.
-                    <br/>
-                    Note that the resultant printout can be MANY pages (especially when tasks have notes). 
-                    973 tasks in 7 tasklists resulted in 141 pages.
-                </td>
-            </tr>
-            <tr>
-                <td class="note-heading-smaller">
-                    Note 5 - 
-                </td>
-                <td>
-                    If checked, completed tasks are displayed using a dimmed grey font. Hidden and deleted tasks are always dim.
-                </td>
-            </tr>
-            <tr>
-                <td class="note-heading-smaller">
-                    Note 7 - 
-                </td>
-                <td>
-                    If checked, the application tries to identify and label potentially invalid tasks.
-                    <br />
-                    Refer to <a href="/static/info.html#notes">note 4 on the information page</a> for more details.
-                </td>
-            </tr>
-        </table>
 
         <div class="break">
-        Icons thanks to <a href="http://www.visualpharm.com/">Visual Pharm</a>, <a href="http://www.iconarchive.com/show/sleek-xp-software-icons-by-deleket/Windows-Close-Program-icon.html">Deleket</a> and <a href="http://www.gettyicons.com/free-icon/133/shimmer-icon-set/free-warning-icon-png/">Creative Freedom</a>
+            Icons thanks to <a href="http://www.visualpharm.com/">Visual Pharm</a>, <a href="http://www.iconarchive.com/show/sleek-xp-software-icons-by-deleket/Windows-Close-Program-icon.html">Deleket</a> and <a href="http://www.gettyicons.com/free-icon/133/shimmer-icon-set/free-warning-icon-png/">Creative Freedom</a>
         </div>
         <div class="break">
-            Popup windows thanks to <a href="http://yensdesign.com/2008/09/how-to-create-a-stunning-and-smooth-popup-using-jquery/">yendesign</a>
+            Popup help window script thanks to <a href="http://yensdesign.com/2008/09/how-to-create-a-stunning-and-smooth-popup-using-jquery/">yendesign</a>
+        </div>
+        <div class="break">
+            Popup calendar script thanks to <a href="http://www.rainforestnet.com">TengYong Ng</a>
         </div>
   </body>
 </html>

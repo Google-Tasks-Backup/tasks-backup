@@ -159,7 +159,12 @@ legend
 .take-note {
   font-weight: bold;
 }
-  
+
+.no-break {
+    white-space:nowrap;
+}
+
+
 .take-note-larger {
     font-weight: bold;
     font-size: larger;

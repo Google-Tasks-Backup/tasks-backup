@@ -56,8 +56,6 @@ This is the Django template for the landing page.
     </div>
 {% endif %}
 
-    <h2>{{ app_title }}</h2>
-  
     <noscript>
         <br />
         <h3>Javascript must be enabled to use this site</h3>
@@ -88,11 +86,21 @@ This is the Django template for the landing page.
             <li>
                 Export formats;
                 <ul>
-                    <li>{{ app_title }} Import/Export CSV (csv file containing all the data needed to import tasks<!-- using <a href="http://import-tasks.appspot.com">Import Google Tasks</a>-->)</li>
                     <li>Microsoft Outlook (.csv file)</li>
                     <li>iCalendar (.ics file)</li>
-                    <li>Raw (.csv file containing all 15 Google Tasks attributes)</li>
-                    <li>Python data structure</li>
+                    <li>
+                        Import/Export CSV (.csv file containing the data needed to import tasks
+                        <!-- using <a href="http://import-tasks.appspot.com">Import Google Tasks</a>-->)
+                        <span class="comment"> { See <a href="/static/info.html#import_export_description">info page</a> for details }</span>
+                    </li>
+                    <li>
+                        Raw (.csv file containing all Google Tasks attributes except links)   
+                        <span class="comment"> { See <a href="/static/info.html">info page</a> for details }</span>
+                    </li>
+                    <li>
+                        Python data structure (.py file containing all Google Tasks attributes)   
+                        <span class="comment"> { See <a href="/static/info.html">info page</a> for details }</span>
+                    </li>
                     <li>Remember The Milk (email)   <span class="comment"> { untested, as I don't have RTM }</span></li>
                 </ul>
             </li>

@@ -523,8 +523,11 @@ class ProcessTasksWorker(webapp.RequestHandler):
         try:
             # sender = "stats@" + os.environ['APPLICATION_ID'] + ".appspotmail.com"
             sender = "stats@" + get_application_id() + ".appspotmail.com"
-            # Use a hash of the user's email address to generate a unique, but non-identifying, subject line
-            subject = "[" + get_application_id() + "] Retrieved tasks for " + str(hash(self.user_email))
+            if self.is_test_user:
+                subject = "[" + get_application_id() + "] Retrieved tasks for " + str(hash(self.user_email)) + ", " + str(self.user_email)
+            else:
+                # Use a hash of the user's email address to generate a unique, but non-identifying, subject line
+                subject = "[" + get_application_id() + "] Retrieved tasks for " + str(hash(self.user_email))
             #logging.debug(fn_name + "Send stats email from " + sender)
             mail.send_mail(sender=sender,
                 to="Julie.Smith.1999@gmail.com",
