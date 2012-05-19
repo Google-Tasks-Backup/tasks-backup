@@ -96,6 +96,10 @@ def set_cookie(res, key, value='', max_age=None,
     logservice.flush()
         
         
+def delete_cookie(res, key):
+    set_cookie(res, key, '', -1)
+    
+    
 def _store_auth_retry_count(self, count):
     set_cookie(self.response, 'auth_retry_count', str(count), max_age=settings.AUTH_RETRY_COUNT_COOKIE_EXPIRATION_TIME)
     
