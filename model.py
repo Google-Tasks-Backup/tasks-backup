@@ -51,7 +51,7 @@ class ProcessTasksJob(db.Model):
     
     # Job status, to display to user and control web page and foreground app behaviour
     # status = db.StringProperty(indexed=False, choices=('starting', 'initialising', 'building', 'completed', 'importing', 'import_completed', 'error'), default='starting')
-    status = db.StringProperty(indexed=False, choices=(constants.JobStatus.ALL_VALUES), default=constants.JobStatus.STARTING)
+    status = db.StringProperty(indexed=False, choices=(constants.ExportJobStatus.ALL_VALUES), default=constants.ExportJobStatus.STARTING)
     
     # Total number of tasks backed up. Used to display progress to user. Updated when an entire tasklist has been backed up
     total_progress = db.IntegerProperty(indexed=False, default=0) 

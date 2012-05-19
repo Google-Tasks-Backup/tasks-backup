@@ -65,210 +65,13 @@ import appversion # appversion.version is set before the upload process to keep 
 import shared # Code whis is common between tasks-backup.py and worker.py
 import constants
 
-
-# Name of folder containg templates. Do not include path separator characters, as they are inserted by os.path.join()
-_path_to_templates = "templates"
-
-def _set_cookie(res, key, value='', max_age=None,
-                   path='/', domain=None, secure=None, httponly=False,
-                   version=None, comment=None):
-    """
-    Set (add) a cookie for the response
-    """       
-    cookies = Cookie.SimpleCookie()
-    cookies[key] = value
-    for var_name, var_value in [
-        ('max-age', max_age),
-        ('path', path),
-        ('domain', domain),
-        ('secure', secure),
-        ('HttpOnly', httponly),
-        ('version', version),
-        ('comment', comment),
-        ]:
-        if var_value is not None and var_value is not False:
-            cookies[key][var_name] = str(var_value)
-        if max_age is not None:
-            cookies[key]['expires'] = max_age
-    header_value = cookies[key].output(header='').lstrip()
-    res.headers.add_header("Set-Cookie", header_value)
-        
   
-def _redirect_for_auth(self, user):
-    """Redirects the webapp response to authenticate the user with OAuth2.
-    
-        Uses the 'state' parameter to store the URL of the calling page. 
-        The handler for /oauth2callback can therefore redirect the user back to the page they
-        were on when _get_credentials() failed.
-    """
-
-    fn_name = "_redirect_for_auth(): "
-    
-    try:
-        client_id, client_secret, user_agent, app_title, product_name, host_msg = shared.get_settings(self.request.host)
-
-        flow = client.OAuth2WebServerFlow(
-            client_id=client_id,
-            client_secret=client_secret,
-            scope="https://www.googleapis.com/auth/tasks",
-            user_agent=user_agent,
-            xoauth_displayname=product_name,
-            state=self.request.path_qs)
-
-        callback = self.request.relative_url("/oauth2callback")
-        authorize_url = flow.step1_get_authorize_url(callback)
-        memcache.set(user.user_id(), pickle.dumps(flow))
-        logging.debug(fn_name + "Redirecting to " + str(authorize_url))
-        if self.request.cookies.has_key('auth_count'):
-            auth_count = int(self.request.cookies['auth_count'])
-        else:
-            auth_count = 0
-        auth_count_str = str(auth_count + 1)
-        logging.debug(fn_name + "Writing cookie: auth_count = " + auth_count_str)
-        logservice.flush()
-        _set_cookie(self.response, 'auth_count', auth_count_str, max_age=settings.AUTH_COUNT_COOKIE_EXPIRATION_TIME)        
-
-        self.redirect(authorize_url)
-    except Exception, e:
-        logging.exception(fn_name + "Caught top-level exception")
-        self.response.out.write("""Oops! Something went terribly wrong.<br />%s<br />Please report this error to <a href="http://code.google.com/p/tasks-backup/issues/list">code.google.com/p/tasks-backup/issues/list</a>""" % shared.get_exception_msg(e))
-        logging.debug(fn_name + "<End> due to exception" )
-        logservice.flush()
-
-  
-def _get_credentials():
-    """ Retrieve credentials for the user
-            
-        Returns:
-            result              True if we have valid credentials for the user
-            user                User object for current user
-            credentials         Credentials object for current user. None if no credentials.
-            
-        If no credentials, or credentials are invalid, the calling method can call _redirect_for_auth(self, user), 
-        which sets the redirect URL back to the calling page. That is, user is redirected to calling page after authorising.
-        
-    """    
-        
-    fn_name = "_get_credentials(): "
-    
-    credentials = None
-    result = False
-    user = users.get_current_user()
-
-    if user is None:
-        # User is not logged in, so there can be no credentials.
-        logging.debug(fn_name + "User is not logged in")
-        logservice.flush()
-        return False, None, None
-        
-    credentials = appengine.StorageByKeyName(
-        model.Credentials, user.user_id(), "credentials").get()
-        
-    result = False
-    
-    if credentials:
-        if credentials.invalid:
-            # We have credentials, but they are invalid
-            logging.debug(fn_name + "Invalid credentials")
-            result = False
-        else:
-            logging.debug(fn_name + "Calling tasklists service to confirm valid credentials")
-            # so it turns out that the method that checks if the credentials are okay
-            # doesn't give the correct answer unless you try to refresh it.  So we do that
-            # here in order to make sure that the credentials are valid before being
-            # passed to a worker.  Obviously if the user revokes the credentials after
-            # this point we will continue to get an error, but we can't stop that.
-            
-            # Credentials are possibly valid, but need to be confirmed by refreshing
-            # Try multiple times, just in case call to server fails due to external probs (e.g., timeout)
-            retry_count = constants.NUM_API_RETRIES
-            while retry_count > 0:
-                try:
-                    http = httplib2.Http()
-                    http = credentials.authorize(http)
-                    service = discovery.build("tasks", "v1", http)
-                    tasklists = service.tasklists()
-                    tasklists_list = tasklists.list().execute()
-                    # Successfully used credentials, everything is OK, so break out of while loop 
-                    result = True
-                    break 
-                except Exception, e:
-                    retry_count = retry_count - 1
-                    if retry_count > 0:
-                        logging.debug(fn_name + "Error checking that credentials are valid: " + 
-                            str(retry_count) + " retries remaining. " + shared.get_exception_msg(e))
-                    else:
-                        logging.exception(fn_name + "Still errors checking that credentials are valid, even after 3 retries")
-                        credentials = None
-                        result = False
-    else:
-        # No credentials
-        logging.debug(fn_name + "No credentials")
-        result = False
-           
-    return result, user, credentials
-
-  
-def _serve_retry_page(self, msg1, msg2 = None, msg3 = None):
-    """ Serve retry.html page to user with message, and a Back button """
-    fn_name = "_serve_retry_page: "
-
-    logging.debug(fn_name + "<Start>")
-    logservice.flush()
-    
-    try:
-        client_id, client_secret, user_agent, app_title, product_name, host_msg = shared.get_settings(self.request.host)
-
-        # logging.debug(fn_name + "Calling _get_credentials()")
-        # logservice.flush()
-        
-        user, credentials = _get_credentials()
-            
-        if user:
-            user_email = user.email()
-        
-        
-        path = os.path.join(os.path.dirname(__file__), _path_to_templates, "retry.html")
-        if not credentials or credentials.invalid:
-            is_authorized = False
-        else:
-            is_authorized = True
-
-          
-        template_values = {'app_title' : app_title,
-                           'host_msg' : host_msg,
-                           'url_home_page' : settings.MAIN_PAGE_URL,
-                           'product_name' : product_name,
-                           'is_authorized': is_authorized,
-                           'user_email' : user_email,
-                           'start_backup_url' : settings.START_BACKUP_URL,
-                           'msg1': msg1,
-                           'msg2': msg2,
-                           'msg3': msg3,
-                           'url_main_page' : settings.MAIN_PAGE_URL,
-                           'logout_url': users.create_logout_url(settings.WELCOME_PAGE_URL),
-                           'url_discussion_group' : settings.url_discussion_group,
-                           'email_discussion_group' : settings.email_discussion_group,
-                           'url_issues_page' : settings.url_issues_page,
-                           'url_source_code' : settings.url_source_code,
-                           'app_version' : appversion.version,
-                           'upload_timestamp' : appversion.upload_timestamp}
-        self.response.out.write(template.render(path, template_values))
-        logging.debug(fn_name + "<End>" )
-        logservice.flush()
-    except Exception, e:
-        logging.exception(fn_name + "Caught top-level exception")
-        self.response.out.write("""Oops! Something went terribly wrong.<br />%s<br />Please report this error to <a href="http://code.google.com/p/tasks-backup/issues/list">code.google.com/p/tasks-backup/issues/list</a>""" % shared.get_exception_msg(e))
-        logging.debug(fn_name + "<End> due to exception" )
-        logservice.flush()
-    
-
     
 class MainHandler(webapp.RequestHandler):
     """Handler for /."""
 
     def get(self):
-        """Handles GET requests for /."""
+        """ Main page, once user has been authenticated """
 
         fn_name = "MainHandler.get(): "
 
@@ -276,23 +79,15 @@ class MainHandler(webapp.RequestHandler):
         logservice.flush()
         
         try:
-            # DEBUG
-            # if self.request.cookies.has_key('auth_count'):
-                # logging.debug(fn_name + "Cookie: auth_count = " + str(self.request.cookies['auth_count']))
-            # else:
-                # logging.debug(fn_name + "No auth_count cookie found")
-            # logservice.flush()            
-                
             client_id, client_secret, user_agent, app_title, product_name, host_msg = shared.get_settings(self.request.host)
 
-            # logging.debug(fn_name + "Calling _get_credentials()")
-            # logservice.flush()
-            
-            ok, user, credentials = _get_credentials()
+            ok, user, credentials, fail_msg, fail_reason = shared.get_credentials(self)
             if not ok:
-                self.redirect(settings.WELCOME_PAGE_URL)
                 # User not logged in, or no or invalid credentials
-                # _redirect_for_auth(self, user)
+                logging.info(fn_name + "Get credentials error: " + fail_msg)
+                logservice.flush()
+                # self.redirect(settings.WELCOME_PAGE_URL)
+                shared.redirect_for_auth(self, user)
                 return
                 
             user_email = user.email()
@@ -301,7 +96,7 @@ class MainHandler(webapp.RequestHandler):
             is_authorized = True
             # logging.debug(fn_name + "Resetting auth_count cookie to zero")
             # logservice.flush()
-            _set_cookie(self.response, 'auth_count', '0', max_age=settings.AUTH_COUNT_COOKIE_EXPIRATION_TIME)
+            
             if self.request.host in settings.LIMITED_ACCESS_SERVERS:
                 logging.debug(fn_name + "Running on limited-access server")
                 if not shared.isTestUser(user_email):
@@ -310,20 +105,6 @@ class MainHandler(webapp.RequestHandler):
                     logging.debug(fn_name + "<End> (restricted access)" )
                     logservice.flush()
                     return
-
-            
-            
-            # if shared.isTestUser(user_email):
-                # logging.debug(fn_name + "Started by test user %s" % user_email)
-                
-                # try:
-                    # headers = self.request.headers
-                    # for k,v in headers.items():
-                        # logging.debug(fn_name + "browser header: " + str(k) + " = " + str(v))
-                        
-                # except Exception, e:
-                    # logging.exception(fn_name + "Exception retrieving request headers")
-                    
               
             template_values = {'app_title' : app_title,
                                'host_msg' : host_msg,
@@ -343,10 +124,8 @@ class MainHandler(webapp.RequestHandler):
                                'app_version' : appversion.version,
                                'upload_timestamp' : appversion.upload_timestamp}
                                
-            path = os.path.join(os.path.dirname(__file__), _path_to_templates, "main.html")
+            path = os.path.join(os.path.dirname(__file__), constants.PATH_TO_TEMPLATES, "main.html")
             self.response.out.write(template.render(path, template_values))
-            # logging.debug(fn_name + "Calling garbage collection")
-            # gc.collect()
             logging.debug(fn_name + "<End>" )
             logservice.flush()
         except Exception, e:
@@ -374,34 +153,16 @@ class WelcomeHandler(webapp.RequestHandler):
         try:
             client_id, client_secret, user_agent, app_title, product_name, host_msg = shared.get_settings(self.request.host)
 
-            # logging.debug(fn_name + "Calling _get_credentials()")
-            # logservice.flush()
-            
-            ok, user, credentials = _get_credentials()
+            ok, user, credentials, fail_msg, fail_reason = shared.get_credentials(self)
             if not ok:
                 is_authorized = False
             else:
                 is_authorized = True
-                # logging.debug(fn_name + "Resetting auth_count cookie to zero")
-                # logservice.flush()
-                _set_cookie(self.response, 'auth_count', '0', max_age=settings.AUTH_COUNT_COOKIE_EXPIRATION_TIME)
             
             user_email = None
             if user:
                 user_email = user.email()
             
-            # if shared.isTestUser(user_email):
-                # logging.debug(fn_name + "Started by test user %s" % user_email)
-                
-                # try:
-                    # headers = self.request.headers
-                    # for k,v in headers.items():
-                        # logging.debug(fn_name + "browser header: " + str(k) + " = " + str(v))
-                        
-                # except Exception, e:
-                    # logging.exception(fn_name + "Exception retrieving request headers")
-                    
-              
             template_values = {'app_title' : app_title,
                                'host_msg' : host_msg,
                                'url_home_page' : settings.MAIN_PAGE_URL,
@@ -419,10 +180,8 @@ class WelcomeHandler(webapp.RequestHandler):
                                'app_version' : appversion.version,
                                'upload_timestamp' : appversion.upload_timestamp}
                                
-            path = os.path.join(os.path.dirname(__file__), _path_to_templates, "welcome.html")
+            path = os.path.join(os.path.dirname(__file__), constants.PATH_TO_TEMPLATES, "welcome.html")
             self.response.out.write(template.render(path, template_values))
-            # logging.debug(fn_name + "Calling garbage collection")
-            # gc.collect()
             logging.debug(fn_name + "<End>" )
             logservice.flush()
         except Exception, e:
@@ -438,11 +197,14 @@ class StartBackupHandler(webapp.RequestHandler):
     
     def get(self):
         """ Handles redirect from authorisation.
+            The only time we should get here is if retrieving credentials failed in _start_backup(), 
+            and we were redirected here after successfully authenticating.
         
-            This can happen if retrieving credentials fails when handling the Blobstore upload.
-            
-            In that case, shared._redirect_for_auth() stores the URL for the StartBackupHandler()
-            When OAuthCallbackHandler() redirects to here (on successful authorisation), it comes in as a GET
+            There should be a backup job record, and its status should be STARTING
+
+            shared.redirect_for_auth() stores the URL for the StartBackupHandler(), so when OAuthCallbackHandler()
+            redirects to here (on successful authorisation), it comes in as a GET, so we call _start_backup() to 
+            (re)start the export.
         """
         
         fn_name = "StartBackupHandler.get(): "
@@ -451,32 +213,33 @@ class StartBackupHandler(webapp.RequestHandler):
         logservice.flush()
         
         try:
-            # Only get the user here. The credentials are retrieved within start_import_job()
+            # Only get the user here. The credentials are retrieved within _start_backup()
             # Don't need to check if user is logged in, because all pages (except '/') are set as secure in app.yaml
             user = users.get_current_user()
             user_email = user.email()
-            # Retrieve the import job record for this user
+            # Retrieve the export job record for this user
             tasks_backup_job = model.ProcessTasksJob.get_by_key_name(user_email)
             
+            # There should be a backup job record, and its status should be STARTING
             if tasks_backup_job is None:
                 logging.error(fn_name + "No DB record for " + user_email)
-                shared._serve_message_page("No import job found.",
+                shared.serve_message_page("No export job found.",
                     "If you believe this to be an error, please report this at the link below, otherwise",
-                    """<a href="/main">start an import</a>""")
+                    """<a href="/main">start an export</a>""")
                 logging.warning(fn_name + "<End> No DB record")
                 logservice.flush()
                 return
             
-            if tasks_backup_job.status != constants.JobStatus.STARTING:
+            if tasks_backup_job.status != constants.ExportJobStatus.STARTING:
                 # The only time we should get here is if the credentials failed, and we were redirected after
                 # successfully authorising. In that case, the jab status should still be STARTING
-                shared._serve_message_page("Invalid job status: " + str(tasks_backup_job.status),
+                shared.serve_message_page("Invalid job status: " + str(tasks_backup_job.status),
                     "Please report this error (see link below)")
                 logging.warning(fn_name + "<End> Invalid job status: " + str(tasks_backup_job.status))
                 logservice.flush()
                 return
                 
-            self.start_import_job(tasks_backup_job)
+            self.start_export_job(tasks_backup_job)
             
         except Exception, e:
             logging.exception(fn_name + "Caught top-level exception")
@@ -498,7 +261,7 @@ class StartBackupHandler(webapp.RequestHandler):
         logservice.flush()
 
         try:
-            # Only get the user here. The credentials are retrieved within start_import_job()
+            # Only get the user here. The credentials are retrieved within start_export_job()
             # Don't need to check if user is logged in, because all pages (except '/') are set as secure in app.yaml
             user = users.get_current_user()
             user_email = user.email()
@@ -506,7 +269,7 @@ class StartBackupHandler(webapp.RequestHandler):
             
             # logging.debug(fn_name + "Resetting auth_count cookie to zero")
             # logservice.flush()
-            _set_cookie(self.response, 'auth_count', '0', max_age=settings.AUTH_COUNT_COOKIE_EXPIRATION_TIME)
+            
 
             is_test_user = shared.isTestUser(user_email)
             if self.request.host in settings.LIMITED_ACCESS_SERVERS:
@@ -541,7 +304,7 @@ class StartBackupHandler(webapp.RequestHandler):
                                     ", include_deleted = " + str(tasks_backup_job.include_deleted))
             logservice.flush()
             
-            # Try to start the import job now.
+            # Try to start the export job now.
             # _start_backup() will attempt to retrieve the user's credentials. If that fails, then
             # the this URL will be called again as a GET, and we retry _start_backup() then
             self._start_backup(tasks_backup_job)
@@ -561,10 +324,11 @@ class StartBackupHandler(webapp.RequestHandler):
         fn_name = "StartBackupHandler._start_backup(): "
     
         try:
-            ok, user, credentials = _get_credentials()
+            ok, user, credentials, fail_msg, fail_reason = shared.get_credentials(self)
             if not ok:
                 # User not logged in, or no or invalid credentials
-                _redirect_for_auth(self, user)
+                logging.warning(fn_name + "Error getting credentials: " + fail_msg + " - Redirecting for auth")
+                shared.redirect_for_auth(self, user)
                 return
 
             user_email = user.email()                
@@ -604,9 +368,6 @@ class StartBackupHandler(webapp.RequestHandler):
     
     
     
-    
-    
-    
 class ShowProgressHandler(webapp.RequestHandler):
     """Handler to display progress to the user """
     
@@ -618,25 +379,16 @@ class ShowProgressHandler(webapp.RequestHandler):
         logservice.flush()
         
         try:
-            # DEBUG
-            # if self.request.cookies.has_key('auth_count'):
-                # logging.debug(fn_name + "Cookie: auth_count = " + str(self.request.cookies['auth_count']))
-            # else:
-                # logging.debug(fn_name + "No auth_count cookie found")
-            # logservice.flush()            
-                
-            ok, user, credentials = _get_credentials()
-            if not ok:
-                # User not logged in, or no or invalid credentials
-                _redirect_for_auth(self, user)
+            user = users.get_current_user()
+            if not user:
+                # User not logged in
+                logging.info(fn_name + "No user information")
+                logservice.flush()
+                shared.redirect_for_auth(self, user)
                 return
                 
             client_id, client_secret, user_agent, app_title, product_name, host_msg = shared.get_settings(self.request.host)
-          
-              
-            # logging.debug(fn_name + "Resetting auth_count cookie to zero")
-            # logservice.flush()
-            _set_cookie(self.response, 'auth_count', '0', max_age=settings.AUTH_COUNT_COOKIE_EXPIRATION_TIME)    
+                
             user_email = user.email()
             if self.request.host in settings.LIMITED_ACCESS_SERVERS:
                 logging.debug(fn_name + "Running on limited-access server")
@@ -672,9 +424,9 @@ class ShowProgressHandler(webapp.RequestHandler):
                 include_hidden = tasks_backup_job.include_hidden
                 job_msg = tasks_backup_job.message
                 
-                #if status != 'completed' and status != 'import_completed' and status != 'error':
-                #if not status in [constants.JobStatus.EXPORT_COMPLETED, constants.JobStatus.IMPORT_COMPLETED, constants.JobStatus.ERROR ]:
-                if not status in constants.JobStatus.STOPPED_VALUES:
+                #if status != 'completed' and status != 'export_completed' and status != 'error':
+                #if not status in [constants.ExportJobStatus.EXPORT_COMPLETED, constants.ExportJobStatus.IMPORT_COMPLETED, constants.ExportJobStatus.ERROR ]:
+                if not status in constants.ExportJobStatus.STOPPED_VALUES:
                     # Check if the job has exceeded either progress or total times
                     if job_execution_time.seconds > settings.MAX_JOB_TIME:
                         logging.error(fn_name + "Job created " + str(job_execution_time.seconds) + " seconds ago. Exceeded max allowed " +
@@ -694,7 +446,7 @@ class ShowProgressHandler(webapp.RequestHandler):
                             error_message = error_message + ", previous error was " + tasks_backup_job.error_message
                         status = 'job_stalled'
             
-            if status == constants.JobStatus.EXPORT_COMPLETED:
+            if status == constants.ExportJobStatus.EXPORT_COMPLETED:
                 logging.info(fn_name + "Retrieved " + str(progress) + " tasks for " + str(user_email))
             else:
                 logging.debug(fn_name + "Status = " + str(status) + ", progress = " + str(progress) + 
@@ -703,9 +455,7 @@ class ShowProgressHandler(webapp.RequestHandler):
             if error_message:
                 logging.warning(fn_name + "Error message: " + str(error_message))
             
-            path = os.path.join(os.path.dirname(__file__), _path_to_templates, "progress.html")
-            
-            #refresh_url = self.request.host + '/' + settings.PROGRESS_URL
+            path = os.path.join(os.path.dirname(__file__), constants.PATH_TO_TEMPLATES, "progress.html")
             
             template_values = {'app_title' : app_title,
                                'host_msg' : host_msg,
@@ -734,8 +484,6 @@ class ShowProgressHandler(webapp.RequestHandler):
                                'app_version' : appversion.version,
                                'upload_timestamp' : appversion.upload_timestamp}
             self.response.out.write(template.render(path, template_values))
-            # logging.debug(fn_name + "Calling garbage collection")
-            # gc.collect()
             logging.debug(fn_name + "<End>")
             logservice.flush()
         except Exception, e:
@@ -752,8 +500,10 @@ class ReturnResultsHandler(webapp.RequestHandler):
     def get(self):
         """ If user attempts to go direct to /results, we redirect to /progress so user can choose format.
         
-            This may also happen if credentials expire. The _redirect_for_auth() method includes the current URL,
+            This may also happen if credentials expire. The redirect_for_auth() method includes the current URL,
             but the OAuthHandler() can only redirect to a URL (not POST to it, because it no longer has the data).
+            
+            If we are here due to auth failure, the web page uses JavaScript to action the user's original selection
         """
         fn_name = "ReturnResultsHandler.get(): "
         logging.debug(fn_name + "<Start>")
@@ -761,12 +511,10 @@ class ReturnResultsHandler(webapp.RequestHandler):
         
         try:
             logging.info(fn_name + "Expected POST for " + str(settings.RESULTS_URL) + 
-                            ", so redirecting to " + str(settings.PROGRESS_URL))
+                            "; May have been re-authentication when user selected an action, so redirecting to " + str(settings.PROGRESS_URL))
             logservice.flush()
             # Display the progress page to allow user to choose format for results
             self.redirect(settings.PROGRESS_URL)
-            # logging.debug(fn_name + "Calling garbage collection")
-            # gc.collect()
             logging.debug(fn_name + "<End>")
             logservice.flush()
         except Exception, e:
@@ -782,26 +530,31 @@ class ReturnResultsHandler(webapp.RequestHandler):
         logging.debug(fn_name + "<Start>")
         logservice.flush()
 
-        try:
-            # DEBUG
-            # if self.request.cookies.has_key('auth_count'):
-                # logging.debug(fn_name + "Cookie: auth_count = " + str(self.request.cookies['auth_count']))
-            # else:
-                # logging.debug(fn_name + "No auth_count cookie found")
-            # logservice.flush()            
+        # try:
+            # headers = self.request.headers
+            # for k,v in headers.items():
+                # logging.debug(fn_name + "browser header: " + str(k) + " = " + str(v))
+                
+            # logging.debug(fn_name + "Cookies ==>")
+            # logging.debug(self.request.cookies)
+                
+        # except Exception, e:
+            # logging.exception(fn_name + "Exception retrieving request headers")
             
-            ok, user, credentials = _get_credentials()
+      
+        try:
+            ok, user, credentials, fail_msg, fail_reason = shared.get_credentials(self)
             if not ok:
                 # User not logged in, or no or invalid credentials
-                _redirect_for_auth(self, user)
+                shared.redirect_for_auth(self, user)
                 return
-                
+            
+            # User authentication is OK, so we are performing the user's action; 
+            # delete the cookie (set negative age)
+            shared.delete_cookie(self.response, 'actionId')
+            
             client_id, client_secret, user_agent, app_title, product_name, host_msg = shared.get_settings(self.request.host)
             
-            
-            # logging.debug(fn_name + "Resetting auth_count cookie to zero")
-            # logservice.flush()
-            _set_cookie(self.response, 'auth_count', '0', max_age=settings.AUTH_COUNT_COOKIE_EXPIRATION_TIME)
             user_email = user.email()
             is_test_user = shared.isTestUser(user_email)
             if self.request.host in settings.LIMITED_ACCESS_SERVERS:
@@ -825,7 +578,7 @@ class ReturnResultsHandler(webapp.RequestHandler):
                 include_hidden = tasks_backup_job.include_hidden
                 total_progress = tasks_backup_job.total_progress
                 
-            # Retrieve the data DB record for this user
+            # Retrieve the data DB record(s) for this user
             logging.debug(fn_name + "Retrieving details for " + str(user_email))
             
             tasklists_records = db.GqlQuery("SELECT * "
@@ -861,30 +614,10 @@ class ReturnResultsHandler(webapp.RequestHandler):
             tasklists = pickle.loads(rebuilt_pkl)
             rebuilt_pkl = None # Not needed, so release it
             
-
-
-            """
-              structure of tasklist
-              { 
-                "title" : tasklist.title,        # Name of this tasklist
-                "tasks"  : [ task ]              # List of task items in this tasklist
-              }
               
-              structure of task
-              {
-                "title" : title, # Free text
-                "status" : status, # "completed" | "needsAction"
-                "id" : id, # Used when determining parent-child relationships
-                "parent" : parent, # OPT: ID of the parent of this task (only if this is a sub-task)
-                "notes" : notes, # OPT: Free text
-                "due" : due, # OPT: Date due, e.g. 2012-01-30T00:00:00.000Z NOTE time = 0
-                "updated" : updated, # Timestamp, e.g., 2012-01-26T07:47:18.000Z
-                "completed" : completed # Timestamp, e.g., 2012-01-27T10:38:56.000Z
-              }
-            """
-              
-            # User chose which format to export as
-            export_format = self.request.get("format")
+            # User selected format to export as
+            # Note: If format == 'html_raw', we will display the web page rather than return a file (or send email)
+            export_format = self.request.get("export_format")
             
             # We pass the job_start_timestamp from the Progress page so that we can display it on the HTML page
             job_start_timestamp = self.request.get('job_start_timestamp')
@@ -1180,7 +913,7 @@ class ReturnResultsHandler(webapp.RequestHandler):
         # Use a template to convert all the tasks to the desired format 
         template_filename = "tasks_template_%s.txt" % export_format
         
-        path = os.path.join(os.path.dirname(__file__), _path_to_templates, template_filename)
+        path = os.path.join(os.path.dirname(__file__), constants.PATH_TO_TEMPLATES, template_filename)
         email_body = template.render(path, template_values)
 
         # if shared.isTestUser(user_email):
@@ -1246,7 +979,7 @@ class ReturnResultsHandler(webapp.RequestHandler):
         self.response.headers.add_header(
             "Content-Disposition", "attachment; filename=%s" % output_filename)
 
-        path = os.path.join(os.path.dirname(__file__), _path_to_templates, template_filename)
+        path = os.path.join(os.path.dirname(__file__), constants.PATH_TO_TEMPLATES, template_filename)
         if shared.isTestUser(template_values['user_email']):
           logging.debug(fn_name + "Writing %s format to %s" % (export_format, output_filename))
         else:
@@ -1274,7 +1007,7 @@ class ReturnResultsHandler(webapp.RequestHandler):
             "Content-Disposition", "attachment; filename=%s" % output_filename)
 
         
-        path = os.path.join(os.path.dirname(__file__), _path_to_templates, template_filename)
+        path = os.path.join(os.path.dirname(__file__), constants.PATH_TO_TEMPLATES, template_filename)
         if shared.isTestUser(template_values['user_email']):
           logging.debug(fn_name + "Writing %s format to %s" % (export_format, output_filename))
         else:
@@ -1302,7 +1035,7 @@ class ReturnResultsHandler(webapp.RequestHandler):
             "Content-Disposition", "attachment;filename=%s" % output_filename)
 
         
-        path = os.path.join(os.path.dirname(__file__), _path_to_templates, template_filename)
+        path = os.path.join(os.path.dirname(__file__), constants.PATH_TO_TEMPLATES, template_filename)
         if shared.isTestUser(template_values['user_email']):
           logging.debug(fn_name + "Writing %s format to %s" % (export_format, output_filename))
         else:
@@ -1634,7 +1367,7 @@ class InvalidCredentialsHandler(webapp.RequestHandler):
                 
             client_id, client_secret, user_agent, app_title, product_name, host_msg = shared.get_settings(self.request.host)
             
-            path = os.path.join(os.path.dirname(__file__), _path_to_templates, "invalid_credentials.html")
+            path = os.path.join(os.path.dirname(__file__), constants.PATH_TO_TEMPLATES, "invalid_credentials.html")
 
             template_values = {  'app_title' : app_title,
                                  'app_version' : appversion.version,
@@ -1655,7 +1388,7 @@ class InvalidCredentialsHandler(webapp.RequestHandler):
             self.response.out.write(template.render(path, template_values))
             # logging.debug(fn_name + "Writing cookie: Resetting auth_count cookie to zero")
             # logservice.flush()
-            _set_cookie(self.response, 'auth_count', '0', max_age=settings.AUTH_COUNT_COOKIE_EXPIRATION_TIME)
+            
             logging.debug(fn_name + "<End>")
             logservice.flush()
         except Exception, e:
@@ -1684,10 +1417,10 @@ class CompletedHandler(webapp.RequestHandler):
                 # logging.debug(fn_name + "No auth_count cookie found")
             # logservice.flush()            
                 
-            ok, user, credentials = _get_credentials()
+            ok, user, credentials, fail_msg, fail_reason = shared.get_credentials(self)
             if not ok:
                 # User not logged in, or no or invalid credentials
-                _redirect_for_auth(self, user)
+                shared.redirect_for_auth(self, user)
                 return
                 
                 
@@ -1695,14 +1428,14 @@ class CompletedHandler(webapp.RequestHandler):
 
             client_id, client_secret, user_agent, app_title, product_name, host_msg = shared.get_settings(self.request.host)
 
-            path = os.path.join(os.path.dirname(__file__), _path_to_templates, "completed.html")
+            path = os.path.join(os.path.dirname(__file__), constants.PATH_TO_TEMPLATES, "completed.html")
             if not credentials or credentials.invalid:
                 is_authorized = False
             else:
                 is_authorized = True
                 # logging.debug(fn_name + "Resetting auth_count cookie to zero")
                 # logservice.flush()
-                _set_cookie(self.response, 'auth_count', '0', max_age=settings.AUTH_COUNT_COOKIE_EXPIRATION_TIME)
+                
                 
             template_values = {'app_title' : app_title,
                                  'host_msg' : host_msg,
@@ -1727,148 +1460,114 @@ class CompletedHandler(webapp.RequestHandler):
 
       
       
-class AuthRedirectHandler(webapp.RequestHandler):
+class AuthHandler(webapp.RequestHandler):
     """Handler for /auth."""
 
     def get(self):
         """Handles GET requests for /auth."""
-        fn_name = "AuthRedirectHandler.get() "
+        fn_name = "AuthHandler.get() "
         
         logging.debug(fn_name + "<Start>" )
         logservice.flush()
         
         try:
-            # DEBUG
-            # if self.request.cookies.has_key('auth_count'):
-                # logging.debug(fn_name + "Cookie: auth_count = " + str(self.request.cookies['auth_count']))
-            # else:
-                # logging.debug(fn_name + "No auth_count cookie found")
-            # logservice.flush()            
                 
-            # Check how many times this has been called (without any other pages having been served)
-            if self.request.cookies.has_key('auth_count'):
-                auth_count = int(self.request.cookies['auth_count'])
-                logging.debug(fn_name + "auth_count = " + str(auth_count))
-            else:
-                logging.debug(fn_name + "No auth_count cookie found")
-                auth_count = 0
-                
-            ok, user, credentials = _get_credentials()
+            ok, user, credentials, fail_msg, fail_reason = shared.get_credentials(self)
             if ok:
                 logging.debug(fn_name + "User is authorised. Redirecting to " + settings.MAIN_PAGE_URL)
                 self.redirect(settings.MAIN_PAGE_URL)
-                return
-                
-
-            if not credentials: 
-                if auth_count > settings.MAX_NUM_AUTH_REQUESTS:
-                    # Redirect to Invalid Credentials page
-                    logging.warning(fn_name + "credentials is None after " + str(auth_count) + " retries, redirecting to " + 
-                        settings.INVALID_CREDENTIALS_URL)
-                    self.redirect(settings.INVALID_CREDENTIALS_URL + "?rc=NC&nr=" + str(auth_count))
-                else:
-                    # Try to authenticate (again)
-                    logging.debug(fn_name + "credentials is None, calling _redirect_for_auth()")
-                    _redirect_for_auth(self, user)
-            elif credentials.invalid:
-                if auth_count > settings.MAX_NUM_AUTH_REQUESTS:
-                    # Redirect to Invalid Credentials page
-                    logging.warning(fn_name + "credentials invalid after " + str(auth_count) + " retries, redirecting to " + 
-                        settings.INVALID_CREDENTIALS_URL)
-                    self.redirect(settings.INVALID_CREDENTIALS_URL + "?rc=IC&nr=" + str(auth_count))
-                else:
-                    # Try to authenticate (again)
-                    logging.debug(fn_name + "credentials invalid, calling _redirect_for_auth()")
-                    _redirect_for_auth(self, user)
+            else:
+                shared.redirect_for_auth(self, user)
+            
             logging.debug(fn_name + "<End>" )
             logservice.flush()
+            
+        except shared.DailyLimitExceededError, e:
+            logging.warning(fn_name + e.msg)
+            self.response.out.write(e.msg)
+            logging.debug(fn_name + "<End> (Daily Limit Exceeded)")
+            logservice.flush()
+            
         except Exception, e:
             logging.exception(fn_name + "Caught top-level exception")
             self.response.out.write("""Oops! Something went terribly wrong.<br />%s<br />Please report this error to <a href="http://code.google.com/p/tasks-backup/issues/list">code.google.com/p/tasks-backup/issues/list</a>""" % shared.get_exception_msg(e))
             logging.debug(fn_name + "<End> due to exception" )
             logservice.flush()
 
+            
     
-class OAuthHandler(webapp.RequestHandler):
+class OAuthCallbackHandler(webapp.RequestHandler):
     """Handler for /oauth2callback."""
 
     # TODO: Simplify - Compare with orig in GTP
     def get(self):
         """Handles GET requests for /oauth2callback."""
-        fn_name = "OAuthHandler.get() "
+        
+        fn_name = "OAuthCallbackHandler.get() "
+        
+        logging.debug(fn_name + "<Start>")
+        logservice.flush()
         
         try:
             if not self.request.get("code"):
-                logging.debug(fn_name + "No 'code', so redirecting to /")
+                logging.debug(fn_name + "No 'code', so redirecting to " + str(settings.WELCOME_PAGE_URL))
                 logservice.flush()
                 self.redirect(settings.WELCOME_PAGE_URL)
+                logging.debug(fn_name + "<End> (no code)")
+                logservice.flush()
                 return
+                
             user = users.get_current_user()
             logging.debug(fn_name + "Retrieving flow for " + str(user.user_id()))
             flow = pickle.loads(memcache.get(user.user_id()))
             if flow:
                 logging.debug(fn_name + "Got flow. Retrieving credentials")
                 error = False
-                retry_count = constants.NUM_API_RETRIES
+                retry_count = settings.NUM_API_TRIES
                 while retry_count > 0:
+                    retry_count = retry_count - 1
                     try:
                         credentials = flow.step2_exchange(self.request.params)
                         # Success!
                         error = False
                         break
+                        
                     except client.FlowExchangeError, e:
                         logging.warning(fn_name + "FlowExchangeError " + str(e))
-                        credentials = None
                         error = True
+                        credentials = None
+                        break
+                        
                     except Exception, e:
-                        # Retry for non-flow-related exceptions such as timeouts
-                        if retry_count > 0:
-                            logging.exception(fn_name + "Error retrieving credentials. " + 
-                                    str(retry_count) + " retries remaining")
-                            logservice.flush()
-                        else:
-                            logging.exception(fn_name + "Unable to retrieve credentials after 3 retries. Redirecting to " + settings.INVALID_CREDENTIALS_URL)
-                            logservice.flush()
-                            self.redirect(settings.INVALID_CREDENTIALS_URL + "?rc=EX&err=" + str(type(e)))
-                            return
-                    retry_count = retry_count - 1
+                        error = True
+                        credentials = None
+                        
+                    if retry_count > 0:
+                        logging.info(fn_name + "Error retrieving credentials. " + 
+                                str(retry_count) + " retries remaining: " + shared.get_exception_message(e))
+                        logservice.flush()
+                    else:
+                        logging.exception(fn_name + "Unable to retrieve credentials after 3 retries. Giving up")
+                        logservice.flush()
+                            
                     
                 appengine.StorageByKeyName(
                     model.Credentials, user.user_id(), "credentials").put(credentials)
+                    
                 if error:
                     # TODO: Redirect to retry or invalid_credentials page, with more meaningful message
-                    logging.warning(fn_name + "FlowExchangeError, redirecting to " + settings.WELCOME_PAGE_URL + "'/?msg=ACCOUNT_ERROR'")
+                    logging.warning(fn_name + "Error retrieving credentials from flow. Redirecting to " + settings.WELCOME_PAGE_URL + "'/?msg=ACCOUNT_ERROR'")
                     logservice.flush()
                     self.redirect(settings.WELCOME_PAGE_URL + "/?msg=ACCOUNT_ERROR")
+                    logging.debug(fn_name + "<End> (Error retrieving credentials)")
+                    logservice.flush()
                 else:
-                    # logging.debug(fn_name + "Retrieved credentials ==>")
-                    # shared.dump_obj(credentials)
-                    # logservice.flush()
-                    
-                    if not credentials:
-                        logging.debug(fn_name + "No credentials. Redirecting to " + settings.INVALID_CREDENTIALS_URL)
-                        # logging.debug(fn_name + "user ==>")
-                        # shared.dump_obj(user)
-                        logservice.flush()
-                        self.redirect(settings.INVALID_CREDENTIALS_URL + "?rc=NC")
-                    elif credentials.invalid:
-                        logging.warning(fn_name + "Invalid credentials. Redirecting to " + settings.INVALID_CREDENTIALS_URL)
-                        # logging.debug(fn_name + "user ==>")
-                        # shared.dump_obj(user)
-                        # logging.debug(fn_name + "credentials ==>")
-                        # shared.dump_obj(credentials)
-                        logservice.flush()
-                        self.redirect(settings.INVALID_CREDENTIALS_URL + "?rc=IC")
-                    else:
-                        logging.debug(fn_name + "Credentials valid. Redirecting to " + str(self.request.get("state")))
-                        logservice.flush()
-                        # logging.debug(fn_name + "Resetting auth_count cookie to zero")
-                        # logservice.flush()
-                        # _set_cookie(self.response, 'auth_count', '0', max_age=settings.AUTH_COUNT_COOKIE_EXPIRATION_TIME)
-                        
-                        # Redirect to the URL stored in the "state" param, when _redirect_for_auth was called
-                        # This should be the URL that the user was on when authorisation failed
-                        self.redirect(self.request.get("state"))
+                    # Redirect to the URL stored in the "state" param, when shared.redirect_for_auth was called
+                    # This should be the URL that the user was on when authorisation failed
+                    logging.debug(fn_name + "Success. Redirecting to " + str(self.request.get("state")))
+                    self.redirect(self.request.get("state"))
+                    logging.debug(fn_name + "<End>")
+                    logservice.flush()
                         
         except Exception, e:
             logging.exception(fn_name + "Caught top-level exception")
@@ -1891,8 +1590,8 @@ def real_main():
             (settings.PROGRESS_URL,                     ShowProgressHandler),
             (settings.INVALID_CREDENTIALS_URL,          InvalidCredentialsHandler),
             ("/completed",                              CompletedHandler),
-            ("/auth",                                   AuthRedirectHandler),
-            ("/oauth2callback",                         OAuthHandler),
+            ("/auth",                                   AuthHandler),
+            ("/oauth2callback",                         OAuthCallbackHandler),
         ], debug=False)
     util.run_wsgi_app(application)
     logging.debug("main(): <End>")

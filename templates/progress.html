@@ -1,6 +1,12 @@
 {% comment %}
+This is the Django template used by tasks-backup.py
 
-This is the Django template used by test-taskqueue.py
+Author: Julie Smith, 2012
+
+We store the user's selections in a cookie when a form is submitted. This is so that we can set the user's last 
+chosen options when we return to this page, especially if returning after re-authenticating, but also useful 
+when user returns from displaying tasks web page display.
+
 {% endcomment %}
 <!doctype html>
 <html>
@@ -23,7 +29,72 @@ This is the Django template used by test-taskqueue.py
         </script>
         
         <script type="text/javascript">
+            
+            // Store format and display selection (until user's browser session ends)
+            function storeSelections(actionId) {
+                createCookie('export_format', $('input[name=export_format]:checked').val(), 0); // Radio button
+                createCookie('due_selection', $('input[name=due_selection]:checked').val(), 0); // Radio button
+                createCookie('due_year', $('input[name=due_year]').val(), 0); // Hidden input
+                createCookie('due_month', $('input[name=due_month]').val(), 0); // Hidden input
+                createCookie('due_day', $('input[name=due_day]').val(), 0); // Hidden input
+                createCookie('display_invalid_tasks', $('input[name=display_invalid_tasks]:checked').val(), 0); // Checkbox
+                createCookie('display_completed_tasks', $('input[name=display_completed_tasks]:checked').val(), 0); // Checkbox
+                createCookie('dim_completed_tasks', $('input[name=dim_completed_tasks]:checked').val(), 0); // Checkbox
+                createCookie('display_completed_date_field', $('input[name=display_completed_date_field]:checked').val(), 0); // Checkbox
+                createCookie('display_due_date_field', $('input[name=display_due_date_field]:checked').val(), 0); // Checkbox
+                createCookie('display_updated_date_field', $('input[name=display_updated_date_field]:checked').val(), 0); // Checkbox
+                createCookie('actionId', actionId, 0)
+            }
+            
+            // Restore the user's previous selections
+            function restoreSelections() {
+                var efVal = readCookie('export_format');
+                if (efVal != null && efVal != '') {
+                    $('input:radio[name=export_format][value=' + efVal + ']').click(); // Radio button
+                }
+                var dsVal = readCookie('due_selection');
+                if (dsVal != null && dsVal != '') {
+                    $('input:radio[name=due_selection][value=' + dsVal + ']').click(); // Radio button
+                }
+                setDateFields(readCookie('due_day'), readCookie('due_month'), readCookie('due_year'));
+                $('input[name=display_invalid_tasks]').prop('checked', (readCookie('display_invalid_tasks')=='True')); // Checkbox
+                $('input[name=display_completed_tasks]').prop('checked', (readCookie('display_completed_tasks')=='True')); // Checkbox
+                $('input[name=dim_completed_tasks]').prop('checked', (readCookie('dim_completed_tasks')=='True')); // Checkbox
+                $('input[name=display_completed_date_field]').prop('checked', (readCookie('display_completed_date_field')=='True')); // Checkbox
+                $('input[name=display_due_date_field]').prop('checked', (readCookie('display_due_date_field')=='True')); // Checkbox
+                $('input[name=display_updated_date_field]').prop('checked', (readCookie('display_updated_date_field')=='True')); // Checkbox
+            }
+            
+            function createCookie(name,value,days) {
+                // From http://www.quirksmode.org/js/cookies.html
+                // If days = 0, the cookie is deleted when the user closes the browser. 
+                // If days < 0, the cookie is deleted immediately.
+                if (days) {
+                    var date = new Date();
+                    date.setTime(date.getTime()+(days*24*60*60*1000));
+                    var expires = "; expires="+date.toGMTString();
+                }
+                else var expires = "";
+                document.cookie = name+"="+value+expires+"; path=/";
+            }
 
+            function readCookie(name) {
+                // From http://www.quirksmode.org/js/cookies.html
+                var nameEQ = name + "=";
+                var ca = document.cookie.split(';');
+                for(var i=0;i < ca.length;i++) {
+                    var c = ca[i];
+                    while (c.charAt(0)==' ') c = c.substring(1,c.length);
+                    if (c.indexOf(nameEQ) == 0) return c.substring(nameEQ.length,c.length);
+                }
+                return null;
+            }
+
+            function eraseCookie(name) {
+                // From http://www.quirksmode.org/js/cookies.html
+                createCookie(name,"",-1);
+            }        
+        
             function disableDisplayHtmlButton() {
                 document.getElementById("display-tasks-button").value = "Building display page (this may take many minutes) ...";
                 document.getElementById("display-tasks-button").innerHTML = "Building display page (this may take many minutes) ...";
@@ -35,6 +106,7 @@ This is the Django template used by test-taskqueue.py
                 document.getElementById("retrieve-tasks-button").disabled = true;
             }
             
+            // Set sensible suboptions when user selects "display completed tasks"
             function changeCompletedSuboptions() {
                 if (document.getElementById("display_completed_tasks").checked) 
                 {
@@ -50,6 +122,8 @@ This is the Django template used by test-taskqueue.py
                 }
             }
             
+            // Uncheck "display completed tasks" is user selects a due date, as completed tasks 
+            // are not displayed when user selects only due tasks
             function changeCompletedOptions() {
                 if (document.getElementById("due_selection_any_due").checked ||
                     document.getElementById("due_selection_due_now").checked ||
@@ -61,10 +135,9 @@ This is the Django template used by test-taskqueue.py
                 }
                 document.getElementById("display_completed_tasks").checked = e;
                 changeCompletedSuboptions();
-//                document.getElementById("dim_completed_tasks").checked = e;
-//                document.getElementById("display_completed_date_field").checked = e;
-        }
+            }
             
+            // If a completed sub-option is selected, then "display completed tasks" must be selected
             function changeDisplayCompleted() {
                 if (document.getElementById("dim_completed_tasks").checked ||
                     document.getElementById("display_completed_date_field").checked) 
@@ -73,24 +146,60 @@ This is the Django template used by test-taskqueue.py
                 }
             }
             
+            // Set hidden date value fields, and display date in human-friendly format
             function setDateFields(day, month, year) {
-                document.getElementById("due_year").value = year;
-                document.getElementById("due_month").value = month + 1; // JS Months are 0-11
-                document.getElementById("due_day").value = day;
+                // Also called when a user clicks on a date in the calendar created by datetimepicker.js
+                // Each date cell created by GenCell() is a link to this javascript method, with the
+                // appropriate day, month, year values.
+                document.getElementById("due_year").value = Number(year);
+                document.getElementById("due_month").value = Number(month);
+                document.getElementById("due_day").value = Number(day);
                 yearStr = "0000" + year.toString();
                 yearStr = yearStr.substring(yearStr.length - 4);
-                monthStr = "00" + (month + 1).toString();
+                monthStr = "00" + month.toString();
                 monthStr = monthStr.substring(monthStr.length -2);
                 dayStr = "00" + day.toString();
                 dayStr = dayStr.substring(dayStr.length - 2);
                 document.getElementById("due_date").innerHTML = yearStr + "-" + monthStr + "-" + dayStr;
             }
             
+            
+            // Set the current date, which is used to filter due tasks.
             function setCurrentDueDate() {
-                // Set the current date, which is used when displaying current due tasks.
                 // We take the date from the browser, so that the due date is today in the user's current timezone is used
                 var today = new Date();
-                setDateFields(today.getDate(), today.getMonth(), today.getFullYear());
+                // JS month == 0..11, so add one to .getMonth()
+                setDateFields(today.getDate(), 1 + today.getMonth(), today.getFullYear());
+            }
+            
+            // Various actions to take when page is loaded. Actions depend on whether there are any previous settings stored in cookies.
+            function pageLoadActions() {
+                {% if status == "Export completed" %}
+                    var export_format = readCookie('export_format')
+                    if (export_format) 
+                    {
+                        // 'export_format' cookie exists, so use stored values
+                        restoreSelections();
+                        // Check if the user's selection was actioned in ReturnResultsHandler().
+                        // The actionId cookie is deleted in ReturnResultsHandler() if authentication is OK.
+                        // If authentication failed when the user's selection was submitted to /results, 
+                        // then the user's selection was NOT actioned, so we do it here.
+                        var actionId = readCookie('actionId');
+                        if (actionId) {
+                            eraseCookie('actionId');
+                            // Perform the action that the user selected
+                            $('#' + actionId).click();
+                        }
+                    }
+                    else 
+                    {
+                        // No stored values, so set up defaults
+                        changeCompletedSuboptions(); 
+                        changeCompletedOptions(); 
+                        changeDisplayCompleted(); 
+                        setCurrentDueDate();
+                    }
+                {% endif %}
             }
         
         </script>
@@ -109,7 +218,7 @@ This is the Django template used by test-taskqueue.py
         </script>
     </head>
 
-<body onload="changeCompletedSuboptions(); changeCompletedOptions(); changeDisplayCompleted(); setCurrentDueDate()" > 
+<body onload="pageLoadActions();" > 
     <div class="usertitle">
         Authorised user: {{ user_email }} <span class="logout-link">[ <a href="{{ logout_url }}">Log out</a> ]</span>
     </div>
@@ -220,7 +329,7 @@ This is the Django template used by test-taskqueue.py
     
     {% if status == "Export completed" %}
         <!-- Choose format to return backup data -->
-        <form method="POST" action="{{ results_url }}" >
+        <form method="POST" action="{{ results_url }}" onsubmit="storeSelections('retrieve-tasks-button');" >
         
 			<fieldset>
 				<legend>Export all tasks</legend>
@@ -254,7 +363,7 @@ This is the Django template used by test-taskqueue.py
 {% endcomment %}                        
 					<tr>
 						<td class="format-name">
-							<input type="radio" name="format" value="outlook" checked="checked" /> Outlook CSV<br />
+							<input id="format_outlook" type="radio" name="export_format" value="outlook" checked="checked" /> Outlook CSV<br />
 						</td>
 						<td>
 							CSV file suitable for importing into Outlook.
@@ -262,7 +371,7 @@ This is the Django template used by test-taskqueue.py
 					</tr>
 					<tr>
 						<td class="format-name">
-							<input type="radio" name="format" value="ics" /> iCal ICS<br />
+							<input id="format_ics" type="radio" name="export_format" value="ics" /> iCal ICS<br />
 						</td>
 						<td>
 							iCal .ICS file suitable for importing into many calendar applications.
@@ -270,7 +379,7 @@ This is the Django template used by test-taskqueue.py
 					</tr>
 					<tr>
 						<td class="format-name">
-							<input type="radio" name="format" value="raw" /> Raw CSV<br />
+							<input id="format_raw" type="radio" name="export_format" value="raw" /> Raw CSV<br />
 						</td>
 						<td>
 							CSV file containing almost all available properties for each task.
@@ -280,7 +389,7 @@ This is the Django template used by test-taskqueue.py
 					</tr>
 					<tr>
 						<td class="format-name">
-							<input type="radio" name="format" value="raw1" /> Raw CSV, formatted dates<br />
+							<input id="format_raw1" type="radio" name="export_format" value="raw1" /> Raw CSV, formatted dates<br />
 						</td>
 						<td>
 							Same as Raw CSV, but with date/timestamps formatted suitable for reading by Excel.
@@ -288,25 +397,25 @@ This is the Django template used by test-taskqueue.py
 					</tr>
 					<tr>
 						<td class="format-name">
-							<input type="radio" name="format" value="import_export" /> Import/Export CSV<br />
+							<input id="format_import_export" type="radio" name="export_format" value="import_export" /> Import/Export CSV<br />
 						</td>
 						<td>
-							CSV file containing just the data required to recreate tasks. See the <a href="/static/info.html#import_export_description">information page</a> for details.
-                                </div>
-                            </div>
+							CSV file containing just the data required to recreate tasks. 
+                            See the <a href="/static/info.html#import_export_description">information page</a> for details.
 						</td>
 					</tr>
                     <tr>
                         <td class="format-name">
-                            <input type="radio" name="format" value="py" /> Python<br />
+                            <input id="format_python" type="radio" name="export_format" value="py" /> Python<br />
                         </td>
                         <td>
-                            Python data structure. Contains all the properties stored by Google for each task. See the <a href="/static/info.html">information page</a> for details.
+                            Python data structure. Contains all the properties stored by Google for each task. 
+                            See the <a href="/static/info.html">information page</a> for details.
                         </td>
                     </tr>
 					<tr>
 						<td class="format-name">
-							<input type="radio" name="format" value="RTM" /> RTM email<br />
+							<input id="format_RTM" type="radio" name="export_format" value="RTM" /> RTM email<br />
 						</td>
 						<td>
 							Email tasks in Remember The Milk format.
@@ -327,8 +436,8 @@ This is the Django template used by test-taskqueue.py
                             </div>
 						</td>
 					</tr>
-					</table>
-					<br />
+                </table>
+				<br />
 
 				<button type="submit" id="retrieve-tasks-button" class="big-button" value="Retrieve tasks data">Retrieve tasks data</button>
 			</fieldset>
@@ -338,9 +447,9 @@ This is the Django template used by test-taskqueue.py
         </div>
         
 
-        <form method="POST" action="{{ results_url }}" onsubmit="disableDisplayHtmlButton();" >
+        <form method="POST" action="{{ results_url }}" onsubmit="storeSelections('display-tasks-button'); disableDisplayHtmlButton();" >
         
-            <input type="hidden" name="format" value="html_raw" />
+            <input type="hidden" name="export_format" value="html_raw" />
             <input type="hidden" name="job_start_timestamp" value="{{ job_start_timestamp }}" />
             
             <!-- These values are set by setDateFields(), which is originally called by setCurrentDueDate() on page load.
@@ -359,7 +468,11 @@ This is the Django template used by test-taskqueue.py
                 <div class="popupContent" id="help-display-content">
                     <img class="popupClose" src="/static/close.png" alt="Close">
                     <div class="clear medium-break">
-                        The resultant web page will contain all the tasks in all the task lists. There is no pretty formatting, so a page break may occur in the middle of a task.
+                        The resultant web page will contain all the tasks in all the task lists. 
+                        Tasks will be indented to display task/sub-task relationships.
+                    </div>
+                    <div class="medium-break">
+                        There is no pretty formatting, so a page break may occur in the middle of a task.
                     </div>
                     <div class="medium-break">
                         Note that the resultant printout can be MANY pages (especially when tasks have notes). 973 tasks in 7 tasklists resulted in 141 pages.
@@ -368,9 +481,14 @@ This is the Django template used by test-taskqueue.py
                 <div class="format-selection">
                     <div class="left-column">
                         <div class="selection-column-header">
-                            Filter by due date <span id="due_date" class="due_date" onclick="javascript:NewCal('due_date')" >0001-01-01</span>&nbsp;<button type="button" onclick="javascript:NewCal('due_date')" >Choose date <img src="/static/cal.gif" width="16" height="16" border="0" alt="Set due date filter"></button>&nbsp;or&nbsp;<button type="button" onclick="setCurrentDueDate()" >Use today</button>
+                            Filter by due date <span id="due_date" class="due_date" onclick="javascript:NewCal('due_date')" >0001-01-01</span>&nbsp;
+                            <button type="button" onclick="javascript:NewCal('due_date')" >
+                                Choose date&nbsp; 
+                                <img src="/static/cal.gif" width="16" height="16" border="0" alt="Set due date filter">
+                            </button>&nbsp;
+                            or&nbsp;<button type="button" onclick="setCurrentDueDate()" >Use today</button>
 	  		
-                            </div>
+                        </div>
                         <noscript>
                             <br />
                             <span class="take-note">Javascript must be enabled to determine current date, and to enable date to be set</span>
@@ -378,8 +496,8 @@ This is the Django template used by test-taskqueue.py
                         </input>
                         <ul class="format-selection">
                             <li>
-                                <input id="due_selection_all" type="radio" name="due_selection" value="all" 
-                                       onchange="changeCompletedOptions();" checked="yes" />
+                                <input id="due_selection_all" type="radio" name="due_selection" value="all"  checked="checked"
+                                       onchange="changeCompletedOptions();" />
                                 <label for="due_selection_all">All tasks</label>
                             </li>
                             <li>

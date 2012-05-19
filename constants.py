@@ -1,6 +1,6 @@
 # Any value, especially strings, that is referenced in more than one location.
 
-class JobStatus(object):
+class ExportJobStatus(object):
     # CAUTION: The Django progress.html template uses string literals when checking the status value. 
     # If these values are changed, then the progress.html must also be changed
     STARTING = 'Starting' # Job has been created (request places on task queue)
@@ -21,4 +21,5 @@ MAX_BLOB_SIZE = 1000000
 # Exceptions are usually due to DeadlineExceededError on individual API calls
 NUM_API_RETRIES = 3
 
-
+# Name of folder containg templates. Do not include path separator characters, as they are inserted by os.path.join()
+PATH_TO_TEMPLATES = "templates"

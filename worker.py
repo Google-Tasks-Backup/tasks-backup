@@ -91,7 +91,7 @@ class ProcessTasksWorker(webapp.RequestHandler):
                 logging.debug(fn_name + "Retrieved process tasks job for " + str(self.user_email))
                 logservice.flush()
                 
-                self.process_tasks_job.status = constants.JobStatus.INITIALISING
+                self.process_tasks_job.status = constants.ExportJobStatus.INITIALISING
                 self.process_tasks_job.job_progress_timestamp = datetime.datetime.now()
                 self.process_tasks_job.message = "Validating background job ..."
                 logging.debug(fn_name + "Job status: '" + str(self.process_tasks_job.status) + ", progress: " + 
@@ -104,7 +104,7 @@ class ProcessTasksWorker(webapp.RequestHandler):
                 if not user:
                     logging.error(fn_name + "No user object in DB record for " + str(self.user_email))
                     logservice.flush()
-                    self.process_tasks_job.status = constants.JobStatus.ERROR
+                    self.process_tasks_job.status = constants.ExportJobStatus.ERROR
                     self.process_tasks_job.message = ''
                     self.process_tasks_job.error_message = "Problem with user details. Please restart."
                     self.process_tasks_job.job_progress_timestamp = datetime.datetime.now()
@@ -120,7 +120,7 @@ class ProcessTasksWorker(webapp.RequestHandler):
                 if not self.credentials:
                     logging.error(fn_name + "No credentials in DB record for " + str(self.user_email))
                     logservice.flush()
-                    self.process_tasks_job.status = constants.JobStatus.ERROR
+                    self.process_tasks_job.status = constants.ExportJobStatus.ERROR
                     self.process_tasks_job.message = ''
                     self.process_tasks_job.error_message = "Problem with user self.credentials. Please restart."
                     self.process_tasks_job.job_progress_timestamp = datetime.datetime.now()
@@ -135,7 +135,7 @@ class ProcessTasksWorker(webapp.RequestHandler):
                 if self.credentials.invalid:
                     logging.error(fn_name + "Invalid credentials in DB record for " + str(self.user_email))
                     logservice.flush()
-                    self.process_tasks_job.status = constants.JobStatus.ERROR
+                    self.process_tasks_job.status = constants.ExportJobStatus.ERROR
                     self.process_tasks_job.message = ''
                     self.process_tasks_job.error_message = "Invalid self.credentials. Please restart and re-authenticate."
                     self.process_tasks_job.job_progress_timestamp = datetime.datetime.now()
@@ -201,7 +201,7 @@ class ProcessTasksWorker(webapp.RequestHandler):
             #     Add tasklist to tasklists collection
             # Use tasklists collection to return tasks backup to user
             
-            self.process_tasks_job.status = constants.JobStatus.BUILDING
+            self.process_tasks_job.status = constants.ExportJobStatus.BUILDING
             self.process_tasks_job.job_progress_timestamp = datetime.datetime.now()
             self.process_tasks_job.message = 'Retrieving tasks from server ...'
             logging.debug(fn_name + "Job status: '" + str(self.process_tasks_job.status) + ", progress: " + 
@@ -423,7 +423,7 @@ class ProcessTasksWorker(webapp.RequestHandler):
                 end_time = datetime.datetime.now()
                 process_time = end_time - start_time
                 proc_time_str = str(process_time.seconds) + "." + str(process_time.microseconds)[:3] + " seconds"
-                self.process_tasks_job.status = constants.JobStatus.EXPORT_COMPLETED
+                self.process_tasks_job.status = constants.ExportJobStatus.EXPORT_COMPLETED
                 self.process_tasks_job.job_progress_timestamp = datetime.datetime.now()
                 self.process_tasks_job.message = summary_msg + " in " + proc_time_str
                 logging.debug(fn_name + "Job status: '" + str(self.process_tasks_job.status) + ", progress: " + 
@@ -434,7 +434,7 @@ class ProcessTasksWorker(webapp.RequestHandler):
             except apiproxy_errors.RequestTooLargeError, e:
                 logging.exception(fn_name + "Error putting results in DB")
                 logservice.flush()
-                self.process_tasks_job.status = constants.JobStatus.ERROR
+                self.process_tasks_job.status = constants.ExportJobStatus.ERROR
                 self.process_tasks_job.message = ''
                 self.process_tasks_job.error_message = "Tasklists data is too large - Unable to store tasklists in DB: " + shared.get_exception_msg(e)
                 self.process_tasks_job.job_progress_timestamp = datetime.datetime.now()
@@ -447,7 +447,7 @@ class ProcessTasksWorker(webapp.RequestHandler):
             except Exception, e:
                 logging.exception(fn_name + "Error putting results in DB")
                 logservice.flush()
-                self.process_tasks_job.status = constants.JobStatus.ERROR
+                self.process_tasks_job.status = constants.ExportJobStatus.ERROR
                 self.process_tasks_job.message = ''
                 self.process_tasks_job.error_message = "Unable to store tasklists in DB: " + shared.get_exception_msg(e)
                 self.process_tasks_job.job_progress_timestamp = datetime.datetime.now()
@@ -464,7 +464,7 @@ class ProcessTasksWorker(webapp.RequestHandler):
         except urlfetch_errors.DeadlineExceededError, e:
             logging.exception(fn_name + "urlfetch_errors.DeadlineExceededError:")
             logservice.flush()
-            self.process_tasks_job.status = constants.JobStatus.ERROR
+            self.process_tasks_job.status = constants.ExportJobStatus.ERROR
             self.process_tasks_job.message = ''
             self.process_tasks_job.error_message = "urlfetch_errors.DeadlineExceededError: " + shared.get_exception_msg(e)
             self.process_tasks_job.job_progress_timestamp = datetime.datetime.now()
@@ -477,7 +477,7 @@ class ProcessTasksWorker(webapp.RequestHandler):
         except apiproxy_errors.DeadlineExceededError, e:
             logging.exception(fn_name + "apiproxy_errors.DeadlineExceededError:")
             logservice.flush()
-            self.process_tasks_job.status = constants.JobStatus.ERROR
+            self.process_tasks_job.status = constants.ExportJobStatus.ERROR
             self.process_tasks_job.message = ''
             self.process_tasks_job.error_message = "apiproxy_errors.DeadlineExceededError: " + shared.get_exception_msg(e)
             self.process_tasks_job.job_progress_timestamp = datetime.datetime.now()
@@ -490,7 +490,7 @@ class ProcessTasksWorker(webapp.RequestHandler):
         except DeadlineExceededError, e:
             logging.exception(fn_name + "DeadlineExceededError:")
             logservice.flush()
-            self.process_tasks_job.status = constants.JobStatus.ERROR
+            self.process_tasks_job.status = constants.ExportJobStatus.ERROR
             self.process_tasks_job.message = ''
             self.process_tasks_job.error_message = "DeadlineExceededError: " + shared.get_exception_msg(e)
             self.process_tasks_job.job_progress_timestamp = datetime.datetime.now()
@@ -503,7 +503,7 @@ class ProcessTasksWorker(webapp.RequestHandler):
         except Exception, e:
             logging.exception(fn_name + "Exception:") 
             logservice.flush()
-            self.process_tasks_job.status = constants.JobStatus.ERROR
+            self.process_tasks_job.status = constants.ExportJobStatus.ERROR
             self.process_tasks_job.message = ''
             self.process_tasks_job.error_message = shared.get_exception_msg(e)
             self.process_tasks_job.job_progress_timestamp = datetime.datetime.now()

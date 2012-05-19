@@ -217,7 +217,7 @@ function GenCell(pValue,pHighLight,pColor)//Generate table cell with value
 	
     // Set the JavaScript function to be called when user clicks a date
     PCellStr="<td "+vColor+" width="+CellWidth+" align='center'><font face='verdana' size='2'"+vHLstr1+
-        "<a href=\"javascript:winMain.setDateFields("+ PValue + ", " + Cal.Month + ", " + Cal.Year + ");window.close();\">"+
+        "<a href=\"javascript:winMain.setDateFields("+ PValue + ", " + (1+Cal.Month) + ", " + Cal.Year + ");window.close();\">"+
             PValue+"</a>"+vHLstr2+"</font></td>";
 
 	return PCellStr;
