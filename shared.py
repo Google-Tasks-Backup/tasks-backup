@@ -16,6 +16,9 @@
 #
 # Original Google Tasks Porter, modified by Julie Smith 2012
 
+# Shared functions
+# Can't use the name common, because there is already a module named common
+
 from apiclient.oauth2client import appengine
 from google.appengine.api import users
 from google.appengine.api import logservice # To flush logs
@@ -49,9 +52,6 @@ logservice.AUTOFLUSH_EVERY_SECONDS = 5
 logservice.AUTOFLUSH_EVERY_BYTES = None
 logservice.AUTOFLUSH_EVERY_LINES = 5
 logservice.AUTOFLUSH_ENABLED = True
-
-# Shared functions
-# Can't use the name common, because there is already a module named common
 
 class DailyLimitExceededError(Exception):
     """ Thrown by get_credentials() when HttpError indicates that daily limit has been exceeded """
@@ -92,18 +92,20 @@ def set_cookie(res, key, value='', max_age=None,
             cookies[key]['expires'] = max_age
     header_value = cookies[key].output(header='').lstrip()
     res.headers.add_header("Set-Cookie", header_value)
-    logging.debug(fn_name + "Writing cookie: " + str(key) + " = " + str(value))
+    logging.debug(fn_name + "Writing cookie: '" + str(key) + "' = '" + str(value) + "', max age = '" + str(max_age) + "'")
     logservice.flush()
         
         
 def delete_cookie(res, key):
+    logging.debug("Deleting cookie: " + str(key))
     set_cookie(res, key, '', -1)
     
     
-def _store_auth_retry_count(self, count):
+def __store_auth_retry_count(self, count):
     set_cookie(self.response, 'auth_retry_count', str(count), max_age=settings.AUTH_RETRY_COUNT_COOKIE_EXPIRATION_TIME)
     
-def _reset_auth_retry_count(self):
+    
+def __reset_auth_retry_count(self):
     set_cookie(self.response, 'auth_retry_count', '0', max_age=settings.AUTH_RETRY_COUNT_COOKIE_EXPIRATION_TIME)
     
     
@@ -162,7 +164,7 @@ def redirect_for_auth(self, user, redirect_url=None):
             auth_retry_count = int(self.request.cookies['auth_retry_count'])
         else:
             auth_retry_count = 0
-        _store_auth_retry_count(self, auth_retry_count + 1)
+        __store_auth_retry_count(self, auth_retry_count + 1)
 
         logging.debug(fn_name + "Redirecting to " + str(authorize_url))
         logservice.flush()
@@ -286,7 +288,7 @@ def get_credentials(self):
        
         if result:
             # TODO: Successfuly retrieved credentials, so reset auth_retry_count to 0
-            _reset_auth_retry_count(self)
+            __reset_auth_retry_count(self)
         else:
             logging.debug(fn_name + fail_msg)
             logservice.flush()

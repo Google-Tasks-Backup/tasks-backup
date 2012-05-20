@@ -273,7 +273,7 @@ class StartBackupHandler(webapp.RequestHandler):
 
             is_test_user = shared.isTestUser(user_email)
             if self.request.host in settings.LIMITED_ACCESS_SERVERS:
-                logging.debug(fn_name + "Running on limited-access server")
+                # logging.debug(fn_name + "Running on limited-access server")
                 if not is_test_user:
                     logging.info(fn_name + "Rejecting non-test user on limited access server")
                     self.response.out.write("<h2>This is a test server. Access is limited to test users.</h2>")
@@ -391,7 +391,7 @@ class ShowProgressHandler(webapp.RequestHandler):
                 
             user_email = user.email()
             if self.request.host in settings.LIMITED_ACCESS_SERVERS:
-                logging.debug(fn_name + "Running on limited-access server")
+                # logging.debug(fn_name + "Running on limited-access server")
                 if not shared.isTestUser(user_email):
                     logging.info(fn_name + "Rejecting non-test user on limited access server")
                     self.response.out.write("<h2>This is a test server. Access is limited to test users.</h2>")
@@ -558,7 +558,7 @@ class ReturnResultsHandler(webapp.RequestHandler):
             user_email = user.email()
             is_test_user = shared.isTestUser(user_email)
             if self.request.host in settings.LIMITED_ACCESS_SERVERS:
-                logging.debug(fn_name + "Running on limited-access server")
+                # logging.debug(fn_name + "Running on limited-access server")
                 if not is_test_user:
                     logging.info(fn_name + "Rejecting non-test user on limited access server")
                     self.response.out.write("<h2>This is a test server. Access is limited to test users.</h2>")
@@ -579,7 +579,7 @@ class ReturnResultsHandler(webapp.RequestHandler):
                 total_progress = tasks_backup_job.total_progress
                 
             # Retrieve the data DB record(s) for this user
-            logging.debug(fn_name + "Retrieving details for " + str(user_email))
+            #logging.debug(fn_name + "Retrieving details for " + str(user_email))
             
             tasklists_records = db.GqlQuery("SELECT * "
                                             "FROM TasklistsData "
@@ -603,13 +603,12 @@ class ReturnResultsHandler(webapp.RequestHandler):
                 self.response.set_status(412, "No data for this user. Please retry backup request.")
                 return
             
-            logging.debug(fn_name + "Reassembling tasks data from " + str(num_records) + " blobs")
             rebuilt_pkl = ""
             for tasklists_record in tasklists_records:
                 #logging.debug("Reassembling blob number " + str(tasklists_record.idx))
                 rebuilt_pkl = rebuilt_pkl + tasklists_record.pickled_tasks_data
                 
-            logging.debug(fn_name + "Reassembled " + str(len(rebuilt_pkl)) + " bytes")
+            logging.debug(fn_name + "Reassembled " + str(len(rebuilt_pkl)) + " bytes from " + str(num_records) + " blobs")
             
             tasklists = pickle.loads(rebuilt_pkl)
             rebuilt_pkl = None # Not needed, so release it
@@ -638,11 +637,11 @@ class ReturnResultsHandler(webapp.RequestHandler):
             output_filename_base = "tasks_%s_%s_%s" % (export_format, user_email, datetime.datetime.now().strftime("%Y-%m-%d"))
      
             if due_selection in ['due_now', 'overdue']:
-                # If user selected to display due or iverdue tasks, use this value to determine which tasks to display.
+                # If user selected to display due or overdue tasks, use this value to determine which tasks to display.
                 # Using value from user's browser, since that will be in user's current timezone. Server doesn't know user's current timesone.
-                logging.debug(fn_name + "User chose to only display tasks due, where due_year = " + str(self.request.get('due_year')) +
-                                ", due_month = " + str(self.request.get('due_month')) +
-                                ", due_day = " + str(self.request.get('due_day')))
+                # logging.debug(fn_name + "User chose to only display tasks due, where due_year = " + str(self.request.get('due_year')) +
+                                # ", due_month = " + str(self.request.get('due_month')) +
+                                # ", due_day = " + str(self.request.get('due_day')))
                 try:
                     due_date_limit = datetime.date(int(self.request.get('due_year')),
                                                 int(self.request.get('due_month')), 
@@ -650,9 +649,9 @@ class ReturnResultsHandler(webapp.RequestHandler):
                 except Exception, e:
                     due_date_limit = datetime.date(datetime.MINYEAR,1,1)
                     logging.exception(fn_name + "Error intepretting date from browser. Using " + str(due_date_limit))
-                logging.debug(fn_name + "due_selection = " + str(due_selection) + "due_date_limit = " + str(due_date_limit) )
             else:
                 due_date_limit = None
+            logging.debug(fn_name + "due_selection = '" + str(due_selection) + "', due_date_limit = " + str(due_date_limit) )
             
             num_completed_tasks = 0
             num_incomplete_tasks = 0
@@ -1059,6 +1058,9 @@ class ReturnResultsHandler(webapp.RequestHandler):
         
         fn_name = "WriteHtmlRaw() "
         
+        logging.debug(fn_name + "<Start>")
+        logservice.flush()
+        
         # User ID
         user_email = template_values.get('user_email')
         
@@ -1098,6 +1100,9 @@ class ReturnResultsHandler(webapp.RequestHandler):
         url_source_code = template_values.get('url_source_code')
         app_title = template_values.get('app_title')
         app_version = template_values.get('app_version')
+        
+        logging.debug(fn_name + "Writing HTML page")
+        logservice.flush()
         
         # self.response.out.write("""<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN">""")
         self.response.out.write("""<!doctype html>""")
