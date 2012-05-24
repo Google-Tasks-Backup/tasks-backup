@@ -426,7 +426,7 @@ class ProcessTasksWorker(webapp.RequestHandler):
                 self.process_tasks_job.status = constants.ExportJobStatus.EXPORT_COMPLETED
                 self.process_tasks_job.job_progress_timestamp = datetime.datetime.now()
                 self.process_tasks_job.message = summary_msg + " in " + proc_time_str
-                logging.debug(fn_name + "Export complete - Job status: '" + str(self.process_tasks_job.status) + "', progress: " + 
+                logging.debug(fn_name + "COMPLETED: Export complete - Job status: '" + str(self.process_tasks_job.status) + "', progress: " + 
                     str(self.process_tasks_job.total_progress) + ", msg: '" + 
                     str(self.process_tasks_job.message) + "', err msg: '" + str(self.process_tasks_job.error_message) + "'")
                 logservice.flush()

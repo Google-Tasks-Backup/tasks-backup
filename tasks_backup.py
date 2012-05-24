@@ -1380,6 +1380,7 @@ class InvalidCredentialsHandler(webapp.RequestHandler):
                                  'rc' : self.request.get('rc'),
                                  'nr' : self.request.get('nr'),
                                  'err' : self.request.get('err'),
+                                 'AUTH_RETRY_COUNT_COOKIE_EXPIRATION_TIME' : settings.AUTH_RETRY_COUNT_COOKIE_EXPIRATION_TIME,
                                  'host_msg' : host_msg,
                                  'url_main_page' : settings.MAIN_PAGE_URL,
                                  'url_home_page' : settings.MAIN_PAGE_URL,
