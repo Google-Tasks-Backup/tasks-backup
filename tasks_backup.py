@@ -21,6 +21,9 @@
 # Orig __author__ = "dwightguth@google.com (Dwight Guth)"
 __author__ = "julie.smith.1999@gmail.com (Julie Smith)"
 
+from google.appengine.dist import use_library
+use_library("django", "1.2")
+
 import logging
 import os
 import pickle
@@ -239,7 +242,7 @@ class StartBackupHandler(webapp.RequestHandler):
                 logservice.flush()
                 return
                 
-            self.start_export_job(tasks_backup_job)
+            self._start_backup(tasks_backup_job)
             
         except Exception, e:
             logging.exception(fn_name + "Caught top-level exception")
@@ -303,11 +306,22 @@ class StartBackupHandler(webapp.RequestHandler):
                                     ", include_completed = " + str(tasks_backup_job.include_completed) +
                                     ", include_deleted = " + str(tasks_backup_job.include_deleted))
             logservice.flush()
+
             
-            # Try to start the export job now.
-            # _start_backup() will attempt to retrieve the user's credentials. If that fails, then
-            # the this URL will be called again as a GET, and we retry _start_backup() then
-            self._start_backup(tasks_backup_job)
+            
+            # Forcing updated auth, so that worker has as much time as possible (i.e. one hour)
+            # This is to combat situations where person authorises (e.g. when they start), but then does something
+            # else for just under 1 hour before starting the backup. In that case, auth expires during the (max) 10 minutes 
+            # that the worker is running (causing AccessTokenRefreshError: invalid_grant)
+            # After authorisation, this URL will be called again as a GET, so we start the backup from the GET handler.
+            logging.debug(fn_name + "Forcing auth, to get the freshest possible authorisation token")
+            shared.redirect_for_auth(self, users.get_current_user())
+            
+            
+            # # Try to start the export job now.
+            # # _start_backup() will attempt to retrieve the user's credentials. If that fails, then
+            # # the this URL will be called again as a GET, and we retry _start_backup() then
+            # self._start_backup(tasks_backup_job)
                 
             logging.debug(fn_name + "<End>")
             logservice.flush()
@@ -322,6 +336,8 @@ class StartBackupHandler(webapp.RequestHandler):
     def _start_backup(self, tasks_backup_job):
     
         fn_name = "StartBackupHandler._start_backup(): "
+        logging.debug(fn_name + "<Start>")
+        logservice.flush()
     
         try:
             ok, user, credentials, fail_msg, fail_reason = shared.get_credentials(self)
@@ -338,7 +354,7 @@ class StartBackupHandler(webapp.RequestHandler):
             tasks_backup_job.put()
             
             # Add the request to the tasks queue, passing in the user's email so that the task can access the
-            # databse record
+            # database record
             q = taskqueue.Queue(settings.PROCESS_TASKS_REQUEST_QUEUE_NAME)
             t = taskqueue.Task(url=settings.WORKER_URL, params={settings.TASKS_QUEUE_KEY_NAME : user_email}, method='POST')
             logging.debug(fn_name + "Adding task to " + str(settings.PROCESS_TASKS_REQUEST_QUEUE_NAME) + 
@@ -359,6 +375,9 @@ class StartBackupHandler(webapp.RequestHandler):
             logging.debug(fn_name + "Redirecting to " + settings.PROGRESS_URL)
             logservice.flush()
             self.redirect(settings.PROGRESS_URL)
+            
+            logging.debug(fn_name + "<end>")
+            logservice.flush()
     
         except Exception, e:
             logging.exception(fn_name + "Caught top-level exception")
@@ -402,12 +421,13 @@ class ShowProgressHandler(webapp.RequestHandler):
             
             # Retrieve the DB record for this user
             tasks_backup_job = model.ProcessTasksJob.get_by_key_name(user_email)
-                
+            error_message = None 
             if tasks_backup_job is None:
                 logging.error(fn_name + "No DB record for " + user_email)
                 status = 'no-record'
                 progress = 0
                 job_start_timestamp = None
+                error_message = "No backup job found for " + str(user_email)
             else:            
                 # total_progress is only updated once all the tasks have been retrieved in a single tasklist.
                 # tasklist_progress is updated every settings.TASK_COUNT_UPDATE_INTERVAL seconds within the retrieval process
@@ -498,7 +518,7 @@ class ReturnResultsHandler(webapp.RequestHandler):
     """Handler to return results to user in the requested format """
     
     def get(self):
-        """ If user attempts to go direct to /results, we redirect to /progress so user can choose format.
+        """ If user attempts to go direct to /results, they come in a a GET request, so we redirect to /progress so user can choose format.
         
             This may also happen if credentials expire. The redirect_for_auth() method includes the current URL,
             but the OAuthHandler() can only redirect to a URL (not POST to it, because it no longer has the data).
@@ -629,13 +649,11 @@ class ReturnResultsHandler(webapp.RequestHandler):
             display_updated_date_field = (self.request.get('display_updated_date_field') == 'True')
             display_invalid_tasks = (self.request.get('display_invalid_tasks') == 'True')
             due_selection = self.request.get('due_selection')
-            
+            display_hidden_tasks = self.request.get('display_hidden_tasks')
+            display_deleted_tasks = self.request.get('display_deleted_tasks')
+                        
             logging.debug(fn_name + "Selected format = " + str(export_format))
 
-            # Filename format is "tasks_FORMAT_EMAILADDR_YYYY-MM-DD.EXT"
-            # CAUTION: Do not include characters that may not be valid on some filesystems (e.g., colon is not valid on Windows)
-            output_filename_base = "tasks_%s_%s_%s" % (export_format, user_email, datetime.datetime.now().strftime("%Y-%m-%d"))
-     
             if due_selection in ['due_now', 'overdue']:
                 # If user selected to display due or overdue tasks, use this value to determine which tasks to display.
                 # Using value from user's browser, since that will be in user's current timezone. Server doesn't know user's current timesone.
@@ -648,10 +666,11 @@ class ReturnResultsHandler(webapp.RequestHandler):
                                                 int(self.request.get('due_day'))) 
                 except Exception, e:
                     due_date_limit = datetime.date(datetime.MINYEAR,1,1)
-                    logging.exception(fn_name + "Error intepretting date from browser. Using " + str(due_date_limit))
+                    logging.exception(fn_name + "Error intepretting due date limit from browser. Using " + str(due_date_limit))
             else:
                 due_date_limit = None
-            logging.debug(fn_name + "due_selection = '" + str(due_selection) + "', due_date_limit = " + str(due_date_limit) )
+            if export_format == 'html_raw':
+                logging.debug(fn_name + "due_selection = '" + str(due_selection) + "', due_date_limit = " + str(due_date_limit) )
             
             num_completed_tasks = 0
             num_incomplete_tasks = 0
@@ -660,10 +679,25 @@ class ReturnResultsHandler(webapp.RequestHandler):
             num_hidden_tasks = 0
             num_deleted_tasks = 0
             
-            # Calculate and add 'depth' property
+            logging.debug(fn_name + "DEBUG: tasklists ==>")
+            logging.debug(tasklists)
+            # ---------------------------------------------------------------------------------------------
+            #    Calculate and add 'depth' property (and add/modify elements for html_raw if required)
+            # ---------------------------------------------------------------------------------------------
             for tasklist in tasklists:
-                tasks = tasklist[u'tasks']
+                # DEBUG
+                logging.debug(fn_name + "DEBUG: tasklist ==>")
+                logging.debug(tasklist)
                 
+                # If there are no tasks in a tasklist, Google returns a dictionary containing just 'title'
+                # That is, there is no 'tasks' element in the tasklist dictionary if there are no tasks.
+                tasks = tasklist.get(u'tasks')
+                if not tasks:
+                    # No tasks in tasklist
+                    if shared.isTestUser(user_email):
+                        logging.debug(fn_name + "Empty tasklist: '" + str(tasklist.get(u'title')) + "'")
+                    continue
+                    
                 num_tasks = len(tasks)
                 if num_tasks > 0: # Non-empty tasklist
                     task_idx = 0
@@ -743,9 +777,13 @@ class ReturnResultsHandler(webapp.RequestHandler):
                         for task in tasks:
                             display = True # Display by default
                             
-                            # TODO: Determine if task should be displayed
+                            # Determine if task should be displayed
                             if not display_completed_tasks and task[u'status'] == 'completed':
                                 # User chose not to display completed tasks
+                                display = False
+                            elif not display_hidden_tasks and task.get(u'hidden'):
+                                display = False
+                            elif not display_deleted_tasks and task.get(u'deleted'):
                                 display = False
                             else:
                                 if due_selection == "all":
@@ -766,6 +804,11 @@ class ReturnResultsHandler(webapp.RequestHandler):
                                                 tasklist_has_tasks_to_display = True
                                             elif due_selection == "overdue" and task[u'due'] < due_date_limit:
                                                 # Display only if task is due before selected due date (e.g. today)
+                                                display = True
+                                                tasklist_has_tasks_to_display = True
+                                        else:
+                                            if due_selection == "none":
+                                                # Display only if task is does not have a due date
                                                 display = True
                                                 tasklist_has_tasks_to_display = True
                                     except Exception, e:
@@ -806,11 +849,12 @@ class ReturnResultsHandler(webapp.RequestHandler):
                             
                             # Delete unused properties to reduce memory usage, to improve the likelihood of being able to 
                             # successfully render very big tasklists
-                            #     Unused properties: kind, id, etag, selfLink, parent, position, depth
+                            #     Unused properties: kind, id, etag, selfLink, parent, position, depth, parent_is_active
                             # 'kind', 'id', 'etag' are not used or displayed
                             # 'parent' is no longer needed, because we now use the indent property to display task/sub-task relationships
                             # 'position' is not needed because we rely on the fact that tasks are returned in position order
                             # 'depth' is no longer needed, because we use indent to determine how far in to render the task
+                            # 'parent_is_active' only used when building the tasklist
                             if task.has_key(u'kind'):
                                 del(task[u'kind'])
                             if task.has_key(u'id'):
@@ -825,10 +869,13 @@ class ReturnResultsHandler(webapp.RequestHandler):
                                 del(task[u'position'])
                             if task.has_key(u'depth'):
                                 del(task[u'depth'])
+                            if task.has_key(u'parent_is_active'):
+                                del(task[u'parent_is_active'])
 
                         if tasklist_has_tasks_to_display:
                             tasklist[u'tasklist_has_tasks_to_display'] = True
-                    
+            
+                
             template_values = {'app_title' : app_title,
                                'host_msg' : host_msg,
                                'product_name' : product_name,
@@ -865,19 +912,25 @@ class ReturnResultsHandler(webapp.RequestHandler):
                                'app_version' : appversion.version,
                                'upload_timestamp' : appversion.upload_timestamp}
             
+            # Filename format is "tasks_FORMAT_EMAILADDR_YYYY-MM-DD.EXT"
+            # CAUTION: Do not include characters that may not be valid on some filesystems (e.g., colon is not valid on Windows)
+            output_filename_base = "tasks_%s_%s_%s" % (export_format, user_email, datetime.datetime.now().strftime("%Y-%m-%d"))
+     
             # template file name format "tasks_template_FORMAT.EXT",
             #   where FORMAT = export_format (e.g., 'outlook')
             #     and EXT = the file type extension (e.g., 'csv')
             if export_format == 'ics':
-                self.WriteIcsUsingTemplate(template_values, export_format, output_filename_base)
+                self._write_ics_using_template(template_values, export_format, output_filename_base)
             elif export_format in ['outlook', 'raw', 'raw1', 'import_export']:
-                self.WriteCsvUsingTemplate(template_values, export_format, output_filename_base)
+                self._write_csv_using_template(template_values, export_format, output_filename_base)
             elif export_format == 'html_raw':
-                self.WriteHtmlRaw(template_values)
+                self._write_html_raw(template_values)
             elif export_format == 'RTM':
-                self.SendEmailUsingTemplate(template_values, export_format, user_email, output_filename_base)
+                self._send_email_using_template(template_values, export_format, user_email, output_filename_base)
             elif export_format == 'py':
-                self.WriteTextUsingTemplate(template_values, export_format, output_filename_base, 'py')
+                self._write_text_using_template(template_values, export_format, output_filename_base, 'py')
+            elif export_format == 'gtb':
+                self._write_gtbak_format(tasklists, export_format, output_filename_base)
             else:
                 logging.warning(fn_name + "Unsupported export format: %s" % export_format)
                 # TODO: Handle invalid export_format nicely - display message to user & go back to main page
@@ -889,12 +942,22 @@ class ReturnResultsHandler(webapp.RequestHandler):
             logservice.flush()
         except Exception, e:
             logging.exception(fn_name + "Caught top-level exception")
+            
+            self.response.headers["Content-Type"] = "text/html; charset=utf-8"
+            try:
+                # Clear "Content-Disposition" so user will see error in browser.
+                # If not removed, output goes to file (if error generated after "Content-Disposition" was set),
+                # and user would not see the error message!
+                del self.response.headers["Content-Disposition"]
+            except Exception, e:
+                logging.debug(fn_name + "Unable to delete 'Content-Disposition' from headers: " + shared.get_exception_msg(e))
+            self.response.clear() 
             self.response.out.write("""Oops! Something went terribly wrong.<br />%s<br />Please report this error to <a href="http://code.google.com/p/tasks-backup/issues/list">code.google.com/p/tasks-backup/issues/list</a>""" % shared.get_exception_msg(e))
             logging.debug(fn_name + "<End> due to exception" )
             logservice.flush()
 
         
-    def SendEmailUsingTemplate(self, template_values, export_format, user_email, output_filename_base):
+    def _send_email_using_template(self, template_values, export_format, user_email, output_filename_base):
         """ Send an email, formatted according to the specified .txt template file
             Currently supports export_format = 'RTM' (Remember The Milk)
         """
@@ -902,7 +965,7 @@ class ReturnResultsHandler(webapp.RequestHandler):
         #   TODO: Allow other formats
         #   TODO: Allow attachments (e.g. Outlook CSV) ???
         #   TODO: Improve subject line
-        fn_name = "SendEmailUsingTemplate(): "
+        fn_name = "_send_email_using_template(): "
 
         logging.debug(fn_name + "<Start>")
         logservice.flush()
@@ -934,7 +997,7 @@ class ReturnResultsHandler(webapp.RequestHandler):
                                        </br>
                                        Use your browser back button to return to the previous page.
                                     """)
-            logging.debug(fn_name + "<End> (due to exception)")
+            logging.debug(fn_name + "<End> (due to OverQuotaError)")
             logservice.flush()
             return
         except Exception, e:
@@ -963,11 +1026,11 @@ class ReturnResultsHandler(webapp.RequestHandler):
         logservice.flush()
 
 
-    def WriteIcsUsingTemplate(self, template_values, export_format, output_filename_base):
+    def _write_ics_using_template(self, template_values, export_format, output_filename_base):
         """ Write an ICS file according to the specified .ics template file
             Currently supports export_format = 'ics'
         """
-        fn_name = "WriteIcsUsingTemplate(): "
+        fn_name = "_write_ics_using_template(): "
 
         logging.debug(fn_name + "<Start>")
         logservice.flush()
@@ -990,11 +1053,11 @@ class ReturnResultsHandler(webapp.RequestHandler):
         logservice.flush()
         
 
-    def WriteCsvUsingTemplate(self, template_values, export_format, output_filename_base):
+    def _write_csv_using_template(self, template_values, export_format, output_filename_base):
         """ Write a CSV file according to the specified .csv template file
             Currently supports export_format = 'outlook', 'raw', 'raw1' and 'import_export'
         """
-        fn_name = "WriteCsvUsingTemplate(): "
+        fn_name = "_write_csv_using_template(): "
 
         logging.debug(fn_name + "<Start>")
         logservice.flush()
@@ -1018,11 +1081,11 @@ class ReturnResultsHandler(webapp.RequestHandler):
         logservice.flush()
 
 
-    def WriteTextUsingTemplate(self, template_values, export_format, output_filename_base, file_extension):
+    def _write_text_using_template(self, template_values, export_format, output_filename_base, file_extension):
         """ Write a TXT file according to the specified .txt template file
             Currently supports export_format = 'py' 
         """
-        fn_name = "WriteTextUsingTemplate(): "
+        fn_name = "_write_text_using_template(): "
 
         logging.debug(fn_name + "<Start>")
         logservice.flush()
@@ -1048,15 +1111,102 @@ class ReturnResultsHandler(webapp.RequestHandler):
         logging.debug(fn_name + "<End>")
         logservice.flush()
 
+        
+    def _write_gtbak_format(self, tasklists, export_format, output_filename_base):
+        fn_name = "_write_raw_file(): "
 
-    def WriteHtmlRaw(self, template_values):
+        logging.debug(fn_name + "<Start>")
+        logservice.flush()
+        
+        gtback_list = []
+        for tasklist in tasklists:
+            tasklist_name = tasklist[u'title']
+            tasks = tasklist.get(u'tasks')
+            if not tasks:
+                # Empty tasklist
+                continue
+            for task in tasks:
+                gtb_task = {}
+                # We create a new Task, which contains text fields formatted such that they can be processed by the same
+                # code that parses CSV files in import-tasks
+                # Fields supported in gtb_task;
+                #   "tasklist_name","title","notes","status","due","completed","deleted","hidden",depth
+                #       'due' and 'completed' are datetime object in tasklists, and must be converted to text
+                #       'deleted' and 'hidden' are Python boolean object, and must be converted to text
+                #       Other fields are passed through unchanged
+                
+                # Mandatory fields; "tasklist_name","title","status",depth
+                gtb_task[u'tasklist_name'] = tasklist_name
+                gtb_task[u'title'] = task.get(u'title')
+                gtb_task[u'status'] = task.get(u'status')
+                gtb_task[u'depth'] = task.get(u'depth')
+                
+                
+                # Optional fields; "notes","due","completed","deleted","hidden"
+                # Write date/time fields in same format as used by import_export CSV
+                notes = task.get(u'notes')
+                if notes:
+                    gtb_task[u'notes'] = notes
+                date_due = task.get(u'due')
+                if date_due:
+                    gtb_task[u'due'] = date_due.strftime("UTC %Y-%m-%d") # import-tasks requires a string
+                completed = task.get(u'completed')
+                if completed:
+                    gtb_task[u'completed'] = completed.strftime("UTC %Y-%m-%d %H:%M:%S") # import-tasks requires a string
+                deleted = task.get(u'deleted')
+                if deleted:
+                    gtb_task[u'deleted'] = 'True' # import-tasks requires a string
+                hidden = task.get(u'hidden')
+                if hidden:
+                    gtb_task[u'hidden'] = 'True' # import-tasks requires a string
+                    
+                # Add the task to the list of tasks to be exported
+                gtback_list.append(gtb_task)
+        self._write_raw_file(pickle.dumps(gtback_list), export_format, output_filename_base, 
+            'GTBak', "application/octet-stream", pickle.dumps('v1.0'))
+        
+        logging.debug(fn_name + "<End>")
+        logservice.flush()
+
+        
+    def _write_raw_file(self, file_content, export_format, output_filename_base, file_extension, content_type="text/plain", content_prefix=None):
+        """ Write file_content to a file.
+        
+            file_content            Contents to be written to file
+            export_format           Name of the format, used for logging
+            output_filename_base    The filename (minus the extension)
+            file_extension          The file extension. Should match the type of data in file_content
+            content_type            Used in the "Content-Type" to indicate the file type to the browser
+                                    Possibly useful values for Content-Type;  "text/plain" or "application/octet-stream"
+            content_prefix          [Optional] Content to be written to file BEFORE file_content
+                                    e.g. When content is pickled, prefix can be a pickled interface version identifier
+
+        """
+        fn_name = "_write_raw_file(): "
+
+        logging.debug(fn_name + "<Start>")
+        logservice.flush()
+        
+        output_filename = output_filename_base + "." + file_extension
+        self.response.headers["Content-Type"] = content_type
+        self.response.headers.add_header(
+            "Content-Disposition", "attachment;filename=%s" % output_filename)
+        logging.debug(fn_name + "Writing " + str(export_format) + " format file")
+        if content_prefix:
+            self.response.out.write(content_prefix)
+        self.response.out.write(file_content)
+        logging.debug(fn_name + "<End>")
+        logservice.flush()
+
+        
+    def _write_html_raw(self, template_values):
         """ Manually build an HTML representation of the user's tasks.
         
             This method creates the page manually, which uses significantly less memory than using Django templates.
             It is also faster, but does not support multi-line notes. Notes are displayed on a single line.
         """
         
-        fn_name = "WriteHtmlRaw() "
+        fn_name = "_write_html_raw() "
         
         logging.debug(fn_name + "<Start>")
         logservice.flush()
@@ -1106,28 +1256,26 @@ class ReturnResultsHandler(webapp.RequestHandler):
         
         # self.response.out.write("""<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN">""")
         self.response.out.write("""<!doctype html>""")
-        self.response.out.write("""<html>
-<head>
-    <title>""")
+        self.response.out.write("""<html> <head> <title>""")
         self.response.out.write(app_title)
         self.response.out.write(""" - List of tasks</title>
-<link rel="stylesheet" type="text/css" href="static/tasks_backup.css" />
-<script type="text/javascript">
+            <link rel="stylesheet" type="text/css" href="static/tasks_backup.css" />
+            <script type="text/javascript">
 
-  var _gaq = _gaq || [];
-  _gaq.push(['_setAccount', 'UA-30118203-1']);
-  _gaq.push(['_trackPageview']);
+              var _gaq = _gaq || [];
+              _gaq.push(['_setAccount', 'UA-30118203-1']);
+              _gaq.push(['_trackPageview']);
 
-  (function() {
-    var ga = document.createElement('script'); ga.type = 'text/javascript'; ga.async = true;
-    ga.src = ('https:' == document.location.protocol ? 'https://ssl' : 'http://www') + '.google-analytics.com/ga.js';
-    var s = document.getElementsByTagName('script')[0]; s.parentNode.insertBefore(ga, s);
-  })();
+              (function() {
+                var ga = document.createElement('script'); ga.type = 'text/javascript'; ga.async = true;
+                ga.src = ('https:' == document.location.protocol ? 'https://ssl' : 'http://www') + '.google-analytics.com/ga.js';
+                var s = document.getElementsByTagName('script')[0]; s.parentNode.insertBefore(ga, s);
+              })();
 
-</script>
-</head>
-<body>
-    <div class="usertitle">Authorised user: """)
+            </script>
+            </head>
+            <body>
+            <div class="usertitle">Authorised user: """)
     
         self.response.out.write(user_email)
         self.response.out.write(' <span class="logout-link">[ <a href="')
@@ -1273,13 +1421,13 @@ class ReturnResultsHandler(webapp.RequestHandler):
                                     
                         if task_due and display_due_date_field:
                             self.response.out.write("""<div class="task-attribute">
-<span class="fieldlabel">Due: </span>""")
+        <span class="fieldlabel">Due: </span>""")
                             self.response.out.write(task_due)        
                             self.response.out.write("""</div>""")
                                     
                         if task_updated and display_updated_date_field:
                             self.response.out.write("""<div class="task-attribute">
-<span class="fieldlabel">Updated:</span> """)
+        <span class="fieldlabel">Updated:</span> """)
                             self.response.out.write(task_updated)
                             self.response.out.write("""</div>""")
                             
@@ -1294,9 +1442,7 @@ class ReturnResultsHandler(webapp.RequestHandler):
                         # End of task details div
                         # End of task div
                         self.response.out.write("""</div>
-</div>
-""")
-                        
+        </div>""")                     
                     # End of tasks div
                     self.response.out.write("""</div>""")
                                            
@@ -1480,6 +1626,11 @@ class AuthHandler(webapp.RequestHandler):
                 
             ok, user, credentials, fail_msg, fail_reason = shared.get_credentials(self)
             if ok:
+                if shared.isTestUser(user.email()):
+                    logging.debug(fn_name + "Existing credentials for " + str(user.email()) + ", expires " + 
+                        str(credentials.token_expiry) + " UTC")
+                else:
+                    logging.debug(fn_name + "Existing credentials expire " + str(credentials.token_expiry) + " UTC")
                 logging.debug(fn_name + "User is authorised. Redirecting to " + settings.MAIN_PAGE_URL)
                 self.redirect(settings.MAIN_PAGE_URL)
             else:
@@ -1536,6 +1687,12 @@ class OAuthCallbackHandler(webapp.RequestHandler):
                         credentials = flow.step2_exchange(self.request.params)
                         # Success!
                         error = False
+                        
+                        if shared.isTestUser(user.email()):
+                            logging.debug(fn_name + "Retrieved credentials for " + str(user.email()) + ", expires " + 
+                                str(credentials.token_expiry) + " UTC")
+                        else:    
+                            logging.debug(fn_name + "Retrieved credentials, expires " + str(credentials.token_expiry) + " UTC")
                         break
                         
                     except client.FlowExchangeError, e:

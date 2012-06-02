@@ -147,12 +147,21 @@ def redirect_for_auth(self, user, redirect_url=None):
             # By default, return to the same page
             redirect_url = self.request.path_qs
             
+        # According to https://developers.google.com/accounts/docs/OAuth_ref#RequestToken
+        # xoauth_displayname is optional. 
+        #     (optional) String identifying the application. 
+        #     This string is displayed to end users on Google's authorization confirmation page. 
+        #     For registered applications, the value of this parameter overrides the name set during registration and 
+        #     also triggers a message to the user that the identity can't be verified. 
+        #     For unregistered applications, this parameter enables them to specify an application name, 
+        #     In the case of unregistered applications, if this parameter is not set, Google identifies the application 
+        #     using the URL value of oauth_callback; if neither parameter is set, Google uses the string "anonymous".
+        # It seems preferable to NOT supply xoauth_displayname, so that Google doesn't display "identity can't be verified" msg.
         flow = client.OAuth2WebServerFlow(
             client_id=client_id,
             client_secret=client_secret,
             scope="https://www.googleapis.com/auth/tasks",
             user_agent=user_agent,
-            xoauth_displayname=product_name,
             state=redirect_url)
 
         callback = self.request.relative_url("/oauth2callback")

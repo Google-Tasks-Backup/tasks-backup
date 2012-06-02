@@ -179,6 +179,7 @@ class ProcessTasksWorker(webapp.RequestHandler):
         include_completed = self.process_tasks_job.include_completed
         include_deleted = self.process_tasks_job.include_deleted
         
+        summary_msg = ''
         
         # Retrieve all tasks for the user
         try:

@@ -23,7 +23,11 @@
 #version: 7
 
 # ===== Private Alpha Test host and version ======
-application: js-tasks-test
+#application: js-tasks-test
+#version: 7
+
+# ===== 2nd Private Alpha Test host and version ======
+application: backup-tasks
 version: 7
 
 # ===== Local host ==========

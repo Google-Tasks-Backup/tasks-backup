@@ -202,7 +202,24 @@
     
     <a name="import_export_description"></a>
     <h2>Importing and exporting</h2>
-    <h3>Description of the Google Tasks Backup "Import/Export CSV" file format</h3>
+    
+    <div class="break">
+        Google Tasks Backup supports 2 different Import/Export formats; <span class="take-note">GTBak</span> and <span class="take-note">CSV</span>. 
+    </div>
+    
+    <h3>Import/Export GTBak format</h3>
+    <div class="break">
+        Files exported from Google Tasks Backup in the <span class="take-note">Import/Export GTBak</span> format have a filename format 
+        of <span class="fixed-font">tasks_gtb_XXXXXX.GTBak</span>, where <span class="fixed-font">XXXXXX</span> identifies 
+        the account name and export date. 
+    </div>
+    <div class="break">
+        The GTBak file uses Python <a href="http://docs.python.org/library/pickle.html">pickle serialisation</a> to ensure that no extended character information is lost or modified (which can happen with the CSV format). This format is not easily editable by humans.
+    </div>
+        The GTBak format is strongly recommended where tasks may contain international or extended characters, such as accents or special symbols.
+    <div class="break">
+    
+    <h3>Import/Export CSV format</h3>
     <div class="break">
         Files exported from Google Tasks Backup in the <span class="take-note">Import/Export CSV</span> format have a filename format 
         of <span class="fixed-font">tasks_import_export_XXXXXX.csv</span>, where <span class="fixed-font">XXXXXX</span> identifies 
@@ -210,10 +227,10 @@
     </div>
     <div class="break">
         The file is a standard Windows-format CSV (comma-separated-values) file, and includes 
-        all task properties required to recreate the task, including tasklist name and <span class="no-break">task/sub-task</span> relationship.
+        all task properties required to recreate the tasks, including tasklist name and <span class="no-break">task/sub-task</span> relationships.
     </div>
     <div class="break">
-        The file is a standard Windows-format CSV (comma-separated-values) file, and contains all the data that is needed to re-create the tasklists and tasks in a Google account. The import file must observe the following rules;
+        The file can be edited in a text editor such as <a href="http://notepad-plus-plus.org/">Notepad++</a> before being imported. It is not recommended to edit this file with a spreadsheet program, as programs such as Excel and OpenOffice Calc tend to corrupt the data. The import file must observe the following rules;
         <ul>
             <li>The first row is a header row, and contains the column names.</li>
             <li>Tasks must be grouped by tasklist.</li>

@@ -39,6 +39,8 @@ when user returns from displaying tasks web page display.
                 createCookie('due_day', $('input[name=due_day]').val(), 0); // Hidden input
                 createCookie('display_invalid_tasks', $('input[name=display_invalid_tasks]:checked').val(), 0); // Checkbox
                 createCookie('display_completed_tasks', $('input[name=display_completed_tasks]:checked').val(), 0); // Checkbox
+                createCookie('display_hidden_tasks', $('input[name=display_hidden_tasks]:checked').val(), 0); // Checkbox
+                createCookie('display_deleted_tasks', $('input[name=display_deleted_tasks]:checked').val(), 0); // Checkbox
                 createCookie('dim_completed_tasks', $('input[name=dim_completed_tasks]:checked').val(), 0); // Checkbox
                 createCookie('display_completed_date_field', $('input[name=display_completed_date_field]:checked').val(), 0); // Checkbox
                 createCookie('display_due_date_field', $('input[name=display_due_date_field]:checked').val(), 0); // Checkbox
@@ -61,6 +63,8 @@ when user returns from displaying tasks web page display.
                 $('input[name=display_completed_tasks]').prop('checked', (readCookie('display_completed_tasks')=='True')); // Checkbox
                 $('input[name=dim_completed_tasks]').prop('checked', (readCookie('dim_completed_tasks')=='True')); // Checkbox
                 $('input[name=display_completed_date_field]').prop('checked', (readCookie('display_completed_date_field')=='True')); // Checkbox
+                $('input[name=display_hidden_tasks]').prop('checked', (readCookie('display_hidden_tasks')=='True')); // Checkbox
+                $('input[name=display_deleted_tasks]').prop('checked', (readCookie('display_deleted_tasks')=='True')); // Checkbox
                 $('input[name=display_due_date_field]').prop('checked', (readCookie('display_due_date_field')=='True')); // Checkbox
                 $('input[name=display_updated_date_field]').prop('checked', (readCookie('display_updated_date_field')=='True')); // Checkbox
             }
@@ -336,31 +340,6 @@ when user returns from displaying tasks web page display.
 				<table  cellspacing="0" class="format-selection">
 					<!--<col width="20%">
 					<col width="80%">-->
-{% comment %}                        
-<!--
-					<tr>
-						<td>
-							CSV formatted for importing back into {{ app_title }} (e.g. as a backup, or when transferring tasks to another Google account).
-                            <img class="popupTrigger" id="help-import_export" src="/static/help.png" alt="Display help">
-                            <div class="popupContent" id="help-import_export-content">
-                                <img class="popupClose" border="0" src="/static/close.png" alt="Close">
-                                <div class="clear medium-break">
-                                    This format is used by <a class="take-note" href="http://import-tasks.appspot.com">Google Tasks Import</a>, which 
-                                    can be used to restore tasks. <span class="take-note">Google Tasks Import</span> can also be used to import tasks from a different account.
-                                </div>
-                                <div class="medium-break">
-                                    This format backs up everything except Task Links. 
-                                </div>
-                                <div class="comment medium-break ">
-                                    As far as I am aware, the only use for Task Links is when an email message is turned into a task; 
-                                    the link then refers to the original email message.
-                                    If tasks are restored into a different account, Task Links would not work (because they would refer to messages in another account).
-                                </div>
-                            </div>
-						</td>
-					</tr>
--->                        
-{% endcomment %}                        
 					<tr>
 						<td class="format-name">
 							<input id="format_outlook" type="radio" name="export_format" value="outlook" checked="checked" /> Outlook CSV<br />
@@ -395,6 +374,8 @@ when user returns from displaying tasks web page display.
 							Same as Raw CSV, but with date/timestamps formatted suitable for reading by Excel.
 						</td>
 					</tr>
+{% comment %}
+<!--
 					<tr>
 						<td class="format-name">
 							<input id="format_import_export" type="radio" name="export_format" value="import_export" /> Import/Export CSV<br />
@@ -402,6 +383,78 @@ when user returns from displaying tasks web page display.
 						<td>
 							CSV file containing just the data required to recreate tasks. 
                             See the <a href="/static/info.html#import_export_description">information page</a> for details.
+						</td>
+					</tr>
+-->
+{% endcomment %}
+					<tr>
+						<td class="format-name">
+							<input id="format_import_export" type="radio" name="export_format" value="import_export" /> Import/Export CSV<br />
+						</td>
+						<td>
+							CSV file containing just the data required to recreate tasks. 
+                            <img class="popupTrigger" id="help-import_export" src="/static/help.png" alt="Display help">
+                            <div class="popupContent" id="help-import_export-content">
+                                <img class="popupClose" border="0" src="/static/close.png" alt="Close">
+                                <div class="clear medium-break">
+                                    See the <a href="/static/info.html#import_export_description">information page</a> for details of the file format.
+                                </div>
+                                <div class="medium-break">
+                                    This format can be used by 
+                                    <a class="take-note" href="http://import-tasks.appspot.com">Google Tasks Import</a>, which 
+                                    can be used to import tasks into the same or a different Google account. 
+                                </div>
+                                <div class="medium-break">
+                                    The file can be edited in a text editor such as <a href="http://notepad-plus-plus.org/">Notepad++</a> before being imported. It is not recommended to edit this file with a spreadsheet program, as programs such as Excel and OpenOffice Calc tend to corrupt the data.
+                                </div>
+                                <div class="medium-break">
+                                    NOTE: The CSV format may lose or incorrectly interpret international or extended characters. To ensure maximum character integrity when importing tasks using  
+                                    <span class="take-note">Google Tasks Import</span>, use the GTBak format instead.
+                                </div>
+                                <div class="medium-break">
+                                    This format backs up everything except Task Links. 
+                                </div>
+                                <div class="comment medium-break ">
+                                    As far as I am aware, the only use for Task Links is when an email message is turned into a task; 
+                                    the link then refers to the original email message.
+                                    If tasks are restored into a different account, Task Links would not work (because they would refer to messages in another account).
+                                </div>
+                            </div>
+						</td>
+					</tr>
+                    
+					<tr>
+						<td class="format-name">
+							<input id="format_import_export" type="radio" name="export_format" value="gtb" /> Import/Export GTBak<br />
+						</td>
+						<td>
+							The GTBak format is designed to be used by 
+                            <a href="http://import-tasks.appspot.com">Import Google Tasks</a> to import tasks.
+                            Unlike the CSV format, this format retains international and extended characters.
+                            <img class="popupTrigger" id="help-gtb" src="/static/help.png" alt="Display help">
+                            <div class="popupContent" id="help-gtb-content">
+                                <img class="popupClose" border="0" src="/static/close.png" alt="Close">
+                                <div class="clear medium-break">
+                                    This format is used by 
+                                    <a class="take-note" href="http://import-tasks.appspot.com">Google Tasks Import</a>, which 
+                                    can be used to import tasks into the same or a different Google account.
+                                </div>
+                                <div class="medium-break">
+                                    Whereas the CSV format may lose international and extended characters, this format should retain all characters.
+                                </div>
+                                <div class="medium-break">
+                                    Unlike the CSV format, the GTBak format is not easily edited by the user. The file is encoded using Python 
+                                    <a href="http://docs.python.org/library/pickle.html">pickle serialisation</a> to ensure that no extended character information is lost or modified.
+                                </div>
+                                <div class="medium-break">
+                                    This format backs up everything except Task Links. 
+                                </div>
+                                <div class="comment medium-break ">
+                                    As far as I am aware, the only use for Task Links is when an email message is turned into a task; 
+                                    the link then refers to the original email message.
+                                    If tasks are restored into a different account, Task Links would not work (because they would refer to messages in another account).
+                                </div>
+                            </div>
 						</td>
 					</tr>
                     <tr>
@@ -515,6 +568,11 @@ when user returns from displaying tasks web page display.
                                        onchange="changeCompletedOptions();" />
                                 <label for="due_selection_all">Overdue only (due before selected data)</label>
                             </li>
+                            <li>
+                                <input id="due_selection_none" type="radio" name="due_selection" value="none" 
+                                       onchange="changeCompletedOptions();" />
+                                <label for="due_selection_none">No due date</label>
+                            </li>
                         </ul>
                         <div class="selection-column-header">Other task filters</div>
                         <ul class="format-selection">
@@ -581,6 +639,26 @@ when user returns from displaying tasks web page display.
                                 </ul>
                             </li>
                             {% endif %}
+                            {% if include_hidden %}
+                                <li>
+                                    <input type="checkbox" name="display_hidden_tasks" value="True" checked="checked" >
+                                        &nbsp;Display hidden tasks?
+                                    </input>
+                                </li>
+                            {% endif %}
+                            {% if include_deleted %}
+                                <li>
+                                    <input type="checkbox" name="display_deleted_tasks" value="True" checked="checked" >
+                                        &nbsp;Display deleted tasks?
+                                    </input>
+                                </li>
+                            {% endif %}
+                            
+                            
+                            
+                            
+                            
+                            
                             <li>
                                 <input type="checkbox" name="display_due_date_field" value="True" checked="checked" >
                                     &nbsp;Display due date field?
