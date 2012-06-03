@@ -227,8 +227,8 @@ class StartBackupHandler(webapp.RequestHandler):
             if tasks_backup_job is None:
                 logging.error(fn_name + "No DB record for " + user_email)
                 shared.serve_message_page("No export job found.",
-                    "If you believe this to be an error, please report this at the link below, otherwise",
-                    """<a href="/main">start an export</a>""")
+                    "If you believe this to be an error, please report this at the link below",
+                    show_custom_button=True, custom_button_text='Go to main menu')
                 logging.warning(fn_name + "<End> No DB record")
                 logservice.flush()
                 return
@@ -237,7 +237,8 @@ class StartBackupHandler(webapp.RequestHandler):
                 # The only time we should get here is if the credentials failed, and we were redirected after
                 # successfully authorising. In that case, the jab status should still be STARTING
                 shared.serve_message_page("Invalid job status: " + str(tasks_backup_job.status),
-                    "Please report this error (see link below)")
+                    "Please report this error (see link below)",
+                    show_custom_button=True, custom_button_text='Go to main menu')
                 logging.warning(fn_name + "<End> Invalid job status: " + str(tasks_backup_job.status))
                 logservice.flush()
                 return
@@ -1017,7 +1018,9 @@ class ReturnResultsHandler(webapp.RequestHandler):
         else:
           logging.debug(fn_name + "Email sent")
           
-        self.response.out.write("Email sent to %s </br>Use your browser back button to return to the previous page" % user_email)
+        # self.response.out.write("Email sent to %s </br>Use your browser back button to return to the previous page" % user_email)
+        shared.serve_message_page(self, "Email sent to " + str(user_email), 
+            show_back_button=True, back_button_text="Continue", show_heading_messages=False)
         
         #self.redirect("/completed")
         # logging.debug(fn_name + "Calling garbage collection")
@@ -1282,7 +1285,7 @@ class ReturnResultsHandler(webapp.RequestHandler):
         self.response.out.write(logout_url)
         self.response.out.write('">Log out</a> ]</span></div>')
         
-        self.response.out.write("""<div class="break"><button onclick="javascript:history.back(-1)" value="Back">Back</button></div>""")
+        self.response.out.write("""<div class="break"><button onclick="javascript:history.back(-1)" class="back-button"  value="Back">Back</button></div>""")
         
         num_tasklists = len(tasklists)
         if num_tasklists > 0:

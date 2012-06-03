@@ -16,7 +16,7 @@
 #
 # Original Google Tasks Porter, modified by Julie Smith 2012
 
-# Shared functions
+# This module contains code whis is common between classes, or between tasks-backup.py and worker.py
 # Can't use the name common, because there is already a module named common
 
 from apiclient.oauth2client import appengine
@@ -24,6 +24,8 @@ from google.appengine.api import users
 from google.appengine.api import logservice # To flush logs
 from google.appengine.ext import db
 from google.appengine.api import memcache
+from google.appengine.ext import webapp
+from google.appengine.ext.webapp import template
 
 from apiclient.oauth2client import client
 from apiclient import discovery
@@ -37,6 +39,7 @@ import httplib2
 import Cookie
 import cgi
 import sys
+import os
 import traceback
 import logging
 from google.appengine.api import logservice # To flush logs
@@ -46,6 +49,7 @@ import model
 # Project-specific settings, used by get_settings
 import settings
 import constants
+import appversion # appversion.version is set before the upload process to keep the version number consistent
 
 
 logservice.AUTOFLUSH_EVERY_SECONDS = 5
@@ -314,8 +318,20 @@ def get_credentials(self):
     return result, user, credentials, fail_msg, fail_reason
 
   
-def serve_message_page(self, msg1, msg2 = None, msg3 = None, show_back_button=True):
-    """ Serve message.html page to user with message, and (optionally) a Back button """
+def serve_message_page(self, msg1, msg2 = None, msg3 = None, 
+        show_back_button=False, 
+        back_button_text="Back to previous page",
+        show_custom_button=False, custom_button_text='Try again', custom_button_url=settings.MAIN_PAGE_URL,
+        show_heading_messages=True):
+    """ Serve message.html page to user with message, with an optional button (Back, or custom URL)
+    
+        msg1, msg2, msg3        Text to be displayed.msg2 and msg3 are option. Each msg is displayed in a separate div
+        show_back_button        If True, a [Back] button is displayed, to return to previous page
+        show_custom_button      If True, display button to jump to any URL. title set by custom_button_text
+        custom_button_text      Text label for custom button
+        custom_button_url       URL to go to when custom button is pressed
+        show_heading_messages   If True, display app_title and (optional) host_msg
+    """
     fn_name = "serve_message_page: "
 
     logging.debug(fn_name + "<Start>")
@@ -338,12 +354,13 @@ def serve_message_page(self, msg1, msg2 = None, msg3 = None, show_back_button=Tr
                            'msg1': msg1,
                            'msg2': msg2,
                            'msg3': msg3,
+                           'show_heading_messages' : show_heading_messages,
                            'show_back_button' : show_back_button,
-                           'url_home_page' : settings.MAIN_PAGE_URL,
+                           'back_button_text' : back_button_text,
+                           'show_custom_button' : show_custom_button,
+                           'custom_button_text' : custom_button_text,
+                           'custom_button_url' : custom_button_url,
                            'product_name' : product_name,
-                           'start_backup_url' : settings.START_BACKUP_URL,
-                           'url_main_page' : settings.MAIN_PAGE_URL,
-                           'logout_url': users.create_logout_url(settings.WELCOME_PAGE_URL),
                            'url_discussion_group' : settings.url_discussion_group,
                            'email_discussion_group' : settings.email_discussion_group,
                            'url_issues_page' : settings.url_issues_page,
