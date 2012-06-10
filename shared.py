@@ -496,6 +496,9 @@ def escape_html(text):
     """Ensure that text is properly escaped as valid HTML"""
     if text is None:
         return None
+    # From http://docs.python.org/howto/unicode.html
+    #   .encode('ascii', 'xmlcharrefreplace')
+    #   'xmlcharrefreplace' uses XML’s character references, e.g. &#40960;
     return cgi.escape(text).encode('ascii', 'xmlcharrefreplace').replace('\n','<br />')
     #return cgi.escape(text.decode('unicode_escape')).replace('\n', '<br />')
     #return "".join(html_escape_table.get(c,c) for c in text)

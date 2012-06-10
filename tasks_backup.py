@@ -265,7 +265,7 @@ class StartBackupHandler(webapp.RequestHandler):
         logservice.flush()
 
         try:
-            # Only get the user here. The credentials are retrieved within start_export_job()
+            # Only get the user here. The credentials are retrieved within _start_backup()
             # Don't need to check if user is logged in, because all pages (except '/') are set as secure in app.yaml
             user = users.get_current_user()
             user_email = user.email()
@@ -654,6 +654,11 @@ class ReturnResultsHandler(webapp.RequestHandler):
             display_deleted_tasks = self.request.get('display_deleted_tasks')
                         
             logging.debug(fn_name + "Selected format = " + str(export_format))
+            logging.debug(fn_name + "Options:" + 
+                "\n    display_completed_tasks = " + str(display_completed_tasks) +
+                "\n    display_hidden_tasks = " + str(display_hidden_tasks) +
+                "\n    display_deleted_tasks = " + str(display_deleted_tasks) +
+                "\n    display_invalid_tasks = " + str(display_invalid_tasks))
 
             if due_selection in ['due_now', 'overdue']:
                 # If user selected to display due or overdue tasks, use this value to determine which tasks to display.
@@ -676,9 +681,11 @@ class ReturnResultsHandler(webapp.RequestHandler):
             num_completed_tasks = 0
             num_incomplete_tasks = 0
             num_display_tasks = 0
-            num_invalid_tasks = 0
-            num_hidden_tasks = 0
-            num_deleted_tasks = 0
+            num_invalid_tasks_to_display = 0
+            num_hidden_tasks_to_display = 0
+            num_deleted_tasks_to_display = 0
+            total_num_invalid_tasks = 0
+            total_num_orphaned_hidden_or_deleted_tasks = 0
             
             logging.debug(fn_name + "DEBUG: tasklists ==>")
             logging.debug(tasklists)
@@ -686,9 +693,10 @@ class ReturnResultsHandler(webapp.RequestHandler):
             #    Calculate and add 'depth' property (and add/modify elements for html_raw if required)
             # ---------------------------------------------------------------------------------------------
             for tasklist in tasklists:
-                # DEBUG
-                logging.debug(fn_name + "DEBUG: tasklist ==>")
-                logging.debug(tasklist)
+                if shared.isTestUser(user_email):
+                    # DEBUG
+                    logging.debug(fn_name + "DEBUG: tasklist ==>")
+                    logging.debug(tasklist)
                 
                 # If there are no tasks in a tasklist, Google returns a dictionary containing just 'title'
                 # That is, there is no 'tasks' element in the tasklist dictionary if there are no tasks.
@@ -698,7 +706,7 @@ class ReturnResultsHandler(webapp.RequestHandler):
                     if shared.isTestUser(user_email):
                         logging.debug(fn_name + "Empty tasklist: '" + str(tasklist.get(u'title')) + "'")
                     continue
-                    
+                
                 num_tasks = len(tasks)
                 if num_tasks > 0: # Non-empty tasklist
                     task_idx = 0
@@ -718,8 +726,12 @@ class ReturnResultsHandler(webapp.RequestHandler):
                                     task[u'parent_is_active'] = possible_parent_is_active[idx]
                                 except Exception, e:
                                     logging.exception("idx = " + str(idx) + ", id = " + task[u'id'] + ", parent = " + task[u'parent'] + ", [" + task[u'title'] + "]")
-                                    logging(possible_parent_ids)
-                                    logging(possible_parent_is_active)
+                                    if shared.isTestUser(user_email):
+                                        # DEBUG
+                                        logging.debug(fn_name + "DEBUG: possible_parent_ids ==>")
+                                        logging(possible_parent_ids)
+                                        logging.debug(fn_name + "DEBUG: possible_parent_is_active ==>")
+                                        logging(possible_parent_is_active)
                                 depth = idx + 1
                                 
                                 
@@ -738,6 +750,7 @@ class ReturnResultsHandler(webapp.RequestHandler):
                                     # Can't calculate depth of hidden and deleted tasks, if parent doesn't exist.
                                     # This usually happens if parent is deleted whilst child is hidden or deleted (see below)
                                     depth = -1
+                                    total_num_orphaned_hidden_or_deleted_tasks = total_num_orphaned_hidden_or_deleted_tasks + 1
                                 else:
                                     # Non-deleted/hidden task with invalid parent.
                                     # This "orphan" non-hidden/deleted task has an unknown depth, since it's parent no longer exists. 
@@ -750,6 +763,7 @@ class ReturnResultsHandler(webapp.RequestHandler):
                                     # This task is NOT displayed in any view by Google!
                                     if display_invalid_tasks:
                                         depth = -99
+                                        total_num_invalid_tasks = total_num_invalid_tasks + 1
                                     else:
                                         # Remove the invalid task
                                         tasks.pop(task_idx)
@@ -768,6 +782,8 @@ class ReturnResultsHandler(webapp.RequestHandler):
                         
                         task[u'depth'] = depth
                         task_idx = task_idx + 1   
+                        
+                    
 
                     # Add extra properties for HTML view;
                     #    Add 'indent' property for HTML pages so that tasks can be correctly indented
@@ -828,13 +844,13 @@ class ReturnResultsHandler(webapp.RequestHandler):
                                     num_incomplete_tasks = num_incomplete_tasks + 1
                                 if task.get(u'depth', 0) < 0:
                                     task[u'invalid'] = True
-                                    num_invalid_tasks = num_invalid_tasks + 1
+                                    num_invalid_tasks_to_display = num_invalid_tasks_to_display + 1
                                     # logging.debug(fn_name + "Found invalid task ==>")
                                     # logging.debug(task)
                                 if task.get(u'hidden'):
-                                    num_hidden_tasks = num_hidden_tasks + 1
+                                    num_hidden_tasks_to_display = num_hidden_tasks_to_display + 1
                                 if task.get(u'deleted'):
-                                    num_deleted_tasks = num_deleted_tasks + 1
+                                    num_deleted_tasks_to_display = num_deleted_tasks_to_display + 1
                                     
                             try:
                                 depth = int(task[u'depth'])
@@ -876,6 +892,8 @@ class ReturnResultsHandler(webapp.RequestHandler):
                         if tasklist_has_tasks_to_display:
                             tasklist[u'tasklist_has_tasks_to_display'] = True
             
+            logging.debug(fn_name + "total_num_orphaned_hidden_or_deleted_tasks = " + str(total_num_orphaned_hidden_or_deleted_tasks))
+            logging.debug(fn_name + "total_num_invalid_tasks = " + str(total_num_invalid_tasks))
                 
             template_values = {'app_title' : app_title,
                                'host_msg' : host_msg,
@@ -888,9 +906,9 @@ class ReturnResultsHandler(webapp.RequestHandler):
                                'num_display_tasks' : num_display_tasks,
                                'num_completed_tasks' : num_completed_tasks,
                                'num_incomplete_tasks' : num_incomplete_tasks,
-                               'num_invalid_tasks' : num_invalid_tasks,
-                               'num_hidden_tasks' : num_hidden_tasks,
-                               'num_deleted_tasks' : num_deleted_tasks,
+                               'num_invalid_tasks_to_display' : num_invalid_tasks_to_display,
+                               'num_hidden_tasks_to_display' : num_hidden_tasks_to_display,
+                               'num_deleted_tasks_to_display' : num_deleted_tasks_to_display,
                                'display_completed_tasks' : display_completed_tasks, # Chosen at progress page
                                'dim_completed_tasks' : dim_completed_tasks, # Chosen at progress page
                                'due_selection' : due_selection, # Chosen at progress page
@@ -1225,9 +1243,9 @@ class ReturnResultsHandler(webapp.RequestHandler):
         num_display_tasks = template_values.get('num_display_tasks') # Number of tasks that will be displayed
         num_completed_tasks = template_values.get('num_completed_tasks') # Number of completed tasks that will be displayed
         num_incomplete_tasks = template_values.get('num_incomplete_tasks') # Number of incomplete tasks that will be displayed
-        num_invalid_tasks = template_values.get('num_invalid_tasks') # Number of invalid tasks that will be displayed
-        num_hidden_tasks = template_values.get('num_hidden_tasks') # Number of hidden tasks that will be displayed
-        num_deleted_tasks = template_values.get('num_deleted_tasks') # Number of deleted tasks that will be displayed
+        num_invalid_tasks_to_display = template_values.get('num_invalid_tasks_to_display') # Number of invalid tasks that will be displayed
+        num_hidden_tasks_to_display = template_values.get('num_hidden_tasks_to_display') # Number of hidden tasks that will be displayed
+        num_deleted_tasks_to_display = template_values.get('num_deleted_tasks_to_display') # Number of deleted tasks that will be displayed
         
         # Values chosen by user at start of backup
         include_completed = template_values.get('include_completed')
@@ -1318,17 +1336,17 @@ class ReturnResultsHandler(webapp.RequestHandler):
                 self.response.out.write("""<div class="comment">""" + str(num_completed_tasks) + """ completed tasks</div>""")
             self.response.out.write("""<div class="comment">""" + str(num_incomplete_tasks) + """ incomplete (needsAction) tasks</div>""")
                 
-            if include_hidden and num_hidden_tasks > 0:
+            if include_hidden and num_hidden_tasks_to_display > 0:
                 # User chose to retrieve hidden tasks (start page)
-                self.response.out.write("""<div class="comment">""" + str(num_hidden_tasks) + """ hidden tasks</div>""")
+                self.response.out.write("""<div class="comment">""" + str(num_hidden_tasks_to_display) + """ hidden tasks</div>""")
                     
-            if include_deleted and num_deleted_tasks > 0:
+            if include_deleted and num_deleted_tasks_to_display > 0:
                 # User chose to retrieve deleted tasks (start page)
-                self.response.out.write("""<div class="comment">""" + str(num_deleted_tasks) + """ deleted tasks</div>""")
+                self.response.out.write("""<div class="comment">""" + str(num_deleted_tasks_to_display) + """ deleted tasks</div>""")
                     
-            if display_invalid_tasks and num_invalid_tasks > 0:
+            if display_invalid_tasks and num_invalid_tasks_to_display > 0:
                 # User chose to display invalid tasks (progress page)
-                self.response.out.write("""<div class="comment">""" + str(num_invalid_tasks) + """ invalid/corrupted tasks</div>""")
+                self.response.out.write("""<div class="comment">""" + str(num_invalid_tasks_to_display) + """ invalid/corrupted tasks</div>""")
             self.response.out.write("""</div>""")
                     
             for tasklist in tasklists:
@@ -1710,7 +1728,7 @@ class OAuthCallbackHandler(webapp.RequestHandler):
                         
                     if retry_count > 0:
                         logging.info(fn_name + "Error retrieving credentials. " + 
-                                str(retry_count) + " retries remaining: " + shared.get_exception_message(e))
+                                str(retry_count) + " retries remaining: " + shared.get_exception_msg(e))
                         logservice.flush()
                     else:
                         logging.exception(fn_name + "Unable to retrieve credentials after 3 retries. Giving up")
