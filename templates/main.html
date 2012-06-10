@@ -84,6 +84,7 @@ This is the Django template for the landing page.
                                     &nbsp;Include completed tasks?
                                 </input>
                                 <img class="popupTrigger" id="help-completed" src="/static/help.png" alt="Display help">
+                                <img class="popupTrigger" id="help-completed" src="/static/warning.png" alt="Display warning">
                                 <div class="popupContent" id="help-completed-content">
                                     <img class="popupClose" border="0" src="/static/close.png" alt="Close">
                                     <div class="clear medium-break">
@@ -94,6 +95,16 @@ This is the Django template for the landing page.
                                     </div>
                                     <div class="medium-break">
                                         Leaving this unchecked can speed up retrieving tasks, and reduce the size of backup files.
+                                    </div>
+                                    <div class="medium-break">
+                                        <span style="color:red;">CAUTION:</span> It is possible for subtasks to end up in an invalid state,
+                                        where a completed tasks has incomplete subtasks. If completed tasks are not exported, then GTB will report those parentless subtasks as invalid.
+                                    </div>
+                                    <div class="medium-break">
+                                        Invalid tasks are not exported, but there is an option to display invalid tasks on the tasks display page.
+                                    </div>
+                                    <div class="medium-break">
+                                        See <a href="/static/info.html#Note4">Notes 4 and 5 on the information page</a> for details.
                                     </div>
                                 </div>
                             </td>
@@ -109,10 +120,26 @@ This is the Django template for the landing page.
                                     <img class="popupClose" border="0" src="/static/close.png" alt="Close">
                                     <img src="/static/warning_32.png" alt="Display warning">
                                     <ol class="help">
-                                        <li>When tasks are deleted, they are marked as <span class="take-note">deleted</span> and moved to the [Trash] view. </li>
-                                        <li>For most applications, exported data should not include deleted or hidden tasks.</li>
+                                        <li>
+                                            When tasks are deleted, they are marked as <span class="take-note">deleted</span> and moved to the [Trash] view. 
+                                        </li>
+                                        <li>
+                                            For most applications, exported data should not include deleted or hidden tasks.
+                                        </li>
                                         <li>
                                             <span style="color:red;">CAUTION:</span> The Outlook, iCalendar and RTM file formats do not support <span class="take-note">deleted</span> or <span class="take-note">hidden</span> tasks, so those programs will display deleted and/or hidden tasks as normal tasks.
+                                        </li>
+                                        <li>
+                                            <div class="medium-break">
+                                                <span style="color:red;">CAUTION:</span> It is possible for subtasks to end up in an invalid state,
+                                                where a subtask has a deleted parent. In this case, if deleted tasks are not exported, then GTB will report those parentless subtasks as invalid.
+                                            </div>
+                                            <div class="medium-break">
+                                                Invalid tasks are not exported, but there is an option to display invalid tasks on the tasks display page.
+                                            </div>
+                                            <div class="medium-break">
+                                                See <a href="/static/info.html#Note5">Note 5 on the information page</a> for details.
+                                            </div>
                                         </li>
                                     </ol>
                                 </div>
@@ -133,6 +160,18 @@ This is the Django template for the landing page.
                                         <li>For most applications, exported data should not include deleted or hidden tasks.</li>
                                         <li>
                                             <span style="color:red;">CAUTION:</span> The Outlook, iCalendar and RTM file formats do not support <span class="take-note">deleted</span> or <span class="take-note">hidden</span> tasks, so those programs will display deleted and/or hidden tasks as normal tasks.
+                                        </li>
+                                        <li>
+                                            <div class="medium-break">
+                                                <span style="color:red;">CAUTION:</span> It is possible for subtasks to end up in an invalid state,
+                                                where a subtask has a hidden parent. In this case, if hidden tasks are not exported, then GTB will report those parentless subtasks as invalid.
+                                            </div>
+                                            <div class="medium-break">
+                                                Invalid tasks are not exported, but there is an option to display invalid tasks on the tasks display page.
+                                            </div>
+                                            <div class="medium-break">
+                                                See <a href="/static/info.html#Note5">Note 5 on the information page</a> for details.
+                                            </div>
                                         </li>
                                     </ol>
                                 </div>

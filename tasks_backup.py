@@ -558,9 +558,11 @@ class ReturnResultsHandler(webapp.RequestHandler):
                 
             # logging.debug(fn_name + "Cookies ==>")
             # logging.debug(self.request.cookies)
+            # logservice.flush()
                 
         # except Exception, e:
             # logging.exception(fn_name + "Exception retrieving request headers")
+            # logservice.flush()
             
       
         try:
@@ -592,6 +594,7 @@ class ReturnResultsHandler(webapp.RequestHandler):
                 
             if tasks_backup_job is None:
                 logging.error(fn_name + "No tasks_backup_job record for " + user_email)
+                logservice.flush()
                 job_start_timestamp = None
             else:            
                 include_completed = tasks_backup_job.include_completed
@@ -601,6 +604,7 @@ class ReturnResultsHandler(webapp.RequestHandler):
                 
             # Retrieve the data DB record(s) for this user
             #logging.debug(fn_name + "Retrieving details for " + str(user_email))
+            #logservice.flush()
             
             tasklists_records = db.GqlQuery("SELECT * "
                                             "FROM TasklistsData "
@@ -630,6 +634,7 @@ class ReturnResultsHandler(webapp.RequestHandler):
                 rebuilt_pkl = rebuilt_pkl + tasklists_record.pickled_tasks_data
                 
             logging.debug(fn_name + "Reassembled " + str(len(rebuilt_pkl)) + " bytes from " + str(num_records) + " blobs")
+            logservice.flush()
             
             tasklists = pickle.loads(rebuilt_pkl)
             rebuilt_pkl = None # Not needed, so release it
@@ -649,16 +654,17 @@ class ReturnResultsHandler(webapp.RequestHandler):
             display_due_date_field = (self.request.get('display_due_date_field') == 'True')
             display_updated_date_field = (self.request.get('display_updated_date_field') == 'True')
             display_invalid_tasks = (self.request.get('display_invalid_tasks') == 'True')
+            display_hidden_tasks = (self.request.get('display_hidden_tasks') == 'True')
+            display_deleted_tasks = (self.request.get('display_deleted_tasks') == 'True')
             due_selection = self.request.get('due_selection')
-            display_hidden_tasks = self.request.get('display_hidden_tasks')
-            display_deleted_tasks = self.request.get('display_deleted_tasks')
                         
             logging.debug(fn_name + "Selected format = " + str(export_format))
-            logging.debug(fn_name + "Options:" + 
-                "\n    display_completed_tasks = " + str(display_completed_tasks) +
-                "\n    display_hidden_tasks = " + str(display_hidden_tasks) +
-                "\n    display_deleted_tasks = " + str(display_deleted_tasks) +
-                "\n    display_invalid_tasks = " + str(display_invalid_tasks))
+            logging.debug(fn_name + "Display options:" + 
+                "\n    completed = "+ str(display_completed_tasks) +
+                "\n    hidden    = "+ str(display_hidden_tasks) +
+                "\n    deleted   = "+ str(display_deleted_tasks) +
+                "\n    invalid   = "+ str(display_invalid_tasks))
+            logservice.flush()
 
             if due_selection in ['due_now', 'overdue']:
                 # If user selected to display due or overdue tasks, use this value to determine which tasks to display.
@@ -673,10 +679,12 @@ class ReturnResultsHandler(webapp.RequestHandler):
                 except Exception, e:
                     due_date_limit = datetime.date(datetime.MINYEAR,1,1)
                     logging.exception(fn_name + "Error intepretting due date limit from browser. Using " + str(due_date_limit))
+                    logservice.flush()
             else:
                 due_date_limit = None
             if export_format == 'html_raw':
                 logging.debug(fn_name + "due_selection = '" + str(due_selection) + "', due_date_limit = " + str(due_date_limit) )
+                logservice.flush()
             
             num_completed_tasks = 0
             num_incomplete_tasks = 0
@@ -684,19 +692,22 @@ class ReturnResultsHandler(webapp.RequestHandler):
             num_invalid_tasks_to_display = 0
             num_hidden_tasks_to_display = 0
             num_deleted_tasks_to_display = 0
+            num_not_displayed = 0
             total_num_invalid_tasks = 0
             total_num_orphaned_hidden_or_deleted_tasks = 0
             
-            logging.debug(fn_name + "DEBUG: tasklists ==>")
-            logging.debug(tasklists)
+            # logging.debug(fn_name + "DEBUG: tasklists ==>")
+            # logging.debug(tasklists)
+            # logservice.flush()
             # ---------------------------------------------------------------------------------------------
             #    Calculate and add 'depth' property (and add/modify elements for html_raw if required)
             # ---------------------------------------------------------------------------------------------
             for tasklist in tasklists:
-                if shared.isTestUser(user_email):
+                if shared.isTestUser(user_email) and settings.DUMP_DATA:
                     # DEBUG
                     logging.debug(fn_name + "DEBUG: tasklist ==>")
                     logging.debug(tasklist)
+                    logservice.flush()
                 
                 # If there are no tasks in a tasklist, Google returns a dictionary containing just 'title'
                 # That is, there is no 'tasks' element in the tasklist dictionary if there are no tasks.
@@ -705,6 +716,7 @@ class ReturnResultsHandler(webapp.RequestHandler):
                     # No tasks in tasklist
                     if shared.isTestUser(user_email):
                         logging.debug(fn_name + "Empty tasklist: '" + str(tasklist.get(u'title')) + "'")
+                        logservice.flush()
                     continue
                 
                 num_tasks = len(tasks)
@@ -725,13 +737,16 @@ class ReturnResultsHandler(webapp.RequestHandler):
                                 try:
                                     task[u'parent_is_active'] = possible_parent_is_active[idx]
                                 except Exception, e:
-                                    logging.exception("idx = " + str(idx) + ", id = " + task[u'id'] + ", parent = " + task[u'parent'] + ", [" + task[u'title'] + "]")
+                                    logging.exception("idx = " + str(idx) + ", id = " + task[u'id'] + ", parent = " + 
+                                        task[u'parent'] + ", [" + task[u'title'] + "]")
+                                    logservice.flush()
                                     if shared.isTestUser(user_email):
                                         # DEBUG
                                         logging.debug(fn_name + "DEBUG: possible_parent_ids ==>")
                                         logging(possible_parent_ids)
                                         logging.debug(fn_name + "DEBUG: possible_parent_is_active ==>")
                                         logging(possible_parent_is_active)
+                                        logservice.flush()
                                 depth = idx + 1
                                 
                                 
@@ -752,15 +767,19 @@ class ReturnResultsHandler(webapp.RequestHandler):
                                     depth = -1
                                     total_num_orphaned_hidden_or_deleted_tasks = total_num_orphaned_hidden_or_deleted_tasks + 1
                                 else:
-                                    # Non-deleted/hidden task with invalid parent.
-                                    # This "orphan" non-hidden/deleted task has an unknown depth, since it's parent no longer exists. 
-                                    # The parent task may have been deleted or moved.
-                                    # One way this can happen:
-                                    #       Start with A/B/C/D
-                                    #       Delete D
-                                    #       Delete C
-                                    #       Restore D from Trash
-                                    # This task is NOT displayed in any view by Google!
+                                    # Non-deleted/non-hidden task with invalid parent.
+                                    # This "orphan" non-hidden/non-deleted task has an unknown depth, since it's parent no longer exists,
+                                    # (or the completed parent was not exported - see below). 
+                                    # (1) The parent task may have been deleted or moved.
+                                    #       One way this can happen:
+                                    #           Start with A/B/C/D
+                                    #           Delete D
+                                    #           Delete C
+                                    #           Restore D from Trash
+                                    #     This task is NOT displayed in any view by Google!
+                                    # (2) This can also happen if a completed task has incomplete subtasks (which should not logically happen),
+                                    #     and the user choses not to import completed tasks. In that case the incomplete subtask's completed 
+                                    #     parent has not been imported, so GTB reports it as an orphaned (invalid) task.
                                     if display_invalid_tasks:
                                         depth = -99
                                         total_num_invalid_tasks = total_num_invalid_tasks + 1
@@ -790,6 +809,7 @@ class ReturnResultsHandler(webapp.RequestHandler):
                     #    Determine if task should be displayed, based on user selections
                     if export_format == 'html_raw':
                         #logging.debug(fn_name + "Setting metadata for " + export_format + " format")
+                        #logservice.flush()
                         tasklist_has_tasks_to_display = False
                         for task in tasks:
                             display = True # Display by default
@@ -798,6 +818,7 @@ class ReturnResultsHandler(webapp.RequestHandler):
                             if not display_completed_tasks and task[u'status'] == 'completed':
                                 # User chose not to display completed tasks
                                 display = False
+                                num_not_displayed = num_not_displayed + 1
                             elif not display_hidden_tasks and task.get(u'hidden'):
                                 display = False
                             elif not display_deleted_tasks and task.get(u'deleted'):
@@ -832,6 +853,7 @@ class ReturnResultsHandler(webapp.RequestHandler):
                                         logging.exception(fn_name + "Exception determining if task is due")
                                         logging.debug(fn_name + "Task ==>")
                                         logging.debug(task)
+                                        logservice.flush()
                             
                             task['display'] = display
                                 
@@ -847,6 +869,7 @@ class ReturnResultsHandler(webapp.RequestHandler):
                                     num_invalid_tasks_to_display = num_invalid_tasks_to_display + 1
                                     # logging.debug(fn_name + "Found invalid task ==>")
                                     # logging.debug(task)
+                                    # logservice.flush()
                                 if task.get(u'hidden'):
                                     num_hidden_tasks_to_display = num_hidden_tasks_to_display + 1
                                 if task.get(u'deleted'):
@@ -856,6 +879,7 @@ class ReturnResultsHandler(webapp.RequestHandler):
                                 depth = int(task[u'depth'])
                             except KeyError, e:
                                 logging.exception(fn_name + "Missing depth for " + task[u'id'] + ", " + task[u'title'])
+                                logservice.flush()
                                 task[u'depth'] = -2
                                 depth = 0
                             if depth < 0:
@@ -892,8 +916,11 @@ class ReturnResultsHandler(webapp.RequestHandler):
                         if tasklist_has_tasks_to_display:
                             tasklist[u'tasklist_has_tasks_to_display'] = True
             
+            logservice.flush()
             logging.debug(fn_name + "total_num_orphaned_hidden_or_deleted_tasks = " + str(total_num_orphaned_hidden_or_deleted_tasks))
             logging.debug(fn_name + "total_num_invalid_tasks = " + str(total_num_invalid_tasks))
+            logging.debug(fn_name + "num_not_displayed = " + str(num_not_displayed))
+            logservice.flush()
                 
             template_values = {'app_title' : app_title,
                                'host_msg' : host_msg,
@@ -1281,6 +1308,7 @@ class ReturnResultsHandler(webapp.RequestHandler):
         self.response.out.write(app_title)
         self.response.out.write(""" - List of tasks</title>
             <link rel="stylesheet" type="text/css" href="static/tasks_backup.css" />
+            <link rel="stylesheet" type="text/css" href="static/print.css" media="print" />
             <script type="text/javascript">
 
               var _gaq = _gaq || [];
@@ -1295,15 +1323,26 @@ class ReturnResultsHandler(webapp.RequestHandler):
 
             </script>
             </head>
-            <body>
-            <div class="usertitle">Authorised user: """)
+            <body>""")
+            
+        # Put the TOP anchor for the first tasklist at the top of the page, so the user can see that they are at the top,
+        # and also to ensure page heading and back button are visible.
+        # Put subsequent TOP anchors above the BOTTOM anchor of the previous tasklist, so that
+        # the "To top ..." link is visible when a user is traversing from bottom to top
+        self.response.out.write("""<a name="tl1_top"> </a>""")
+        self.response.out.write("""<div class="usertitle">Authorised user: """)
     
         self.response.out.write(user_email)
         self.response.out.write(' <span class="logout-link">[ <a href="')
         self.response.out.write(logout_url)
         self.response.out.write('">Log out</a> ]</span></div>')
         
-        self.response.out.write("""<div class="break"><button onclick="javascript:history.back(-1)" class="back-button"  value="Back">Back</button></div>""")
+        # self.response.out.write("""<div class="break noprint"><button onclick="javascript:history.back(-1)" class="back-button"  value="Back">Back</button></div>""")
+        
+        # Need to provide the specific URL of the progress page. We can't use history.back() because the user may have used 
+        # the next/previous tasklist links one or more times.
+        self.response.out.write("""<div class="break noprint"><button onclick="window.location.href = '%s'" class="back-button"  value="Back">Back</button></div>""" % settings.RESULTS_URL)
+        
         
         num_tasklists = len(tasklists)
         if num_tasklists > 0:
@@ -1348,28 +1387,31 @@ class ReturnResultsHandler(webapp.RequestHandler):
                 # User chose to display invalid tasks (progress page)
                 self.response.out.write("""<div class="comment">""" + str(num_invalid_tasks_to_display) + """ invalid/corrupted tasks</div>""")
             self.response.out.write("""</div>""")
-                    
+            
+            tl_num = 1
             for tasklist in tasklists:
-                if not tasklist.get('tasklist_has_tasks_to_display', False):
-                    # Skip tasklists that don't have any due tasks
-                    continue
-                    
-                num_tasks = len(tasklist)
-                if num_tasks > 0:
+                tasklist_title = tasklist.get(u'title')
+                if len(tasklist_title.strip()) == 0:
+                    tasklist_title = "<Unnamed Tasklist>"
+                tasklist_title = shared.escape_html(tasklist_title)
                 
-                    tasklist_title = tasklist.get(u'title')
-                    if len(tasklist_title.strip()) == 0:
-                        tasklist_title = "<Unnamed Tasklist>"
-                    tasklist_title = shared.escape_html(tasklist_title)
+                tasklist_has_tasks_to_display = tasklist.get('tasklist_has_tasks_to_display', False)
 
-                    tasks = tasklist.get(u'tasks')
-                    num_tasks = len(tasks)
-                    self.response.out.write("""<div class="tasklist"><div class="tasklistheading"><span class="tasklistname">""")
-                    self.response.out.write(tasklist_title)
-                    self.response.out.write("""</span> (""")
-                    self.response.out.write(num_tasks)
-                    self.response.out.write(""" tasks)</div>""")
-                                        
+                tasks = tasklist.get(u'tasks')
+                num_tasks = len(tasks)
+                
+                if num_tasklists > 1:
+                    # If there is more than one tasklist, display Next link
+                    self.response.out.write("""<div class="tasklist-link noprint"><a href="#tl%s_bottom">Next tasklist</a>&nbsp;&nbsp;&nbsp;&nbsp;<a href="#page_bottom">Bottom of page</a></div>""" % 
+                        tl_num)
+                    
+                self.response.out.write("""<div class="tasklist"><div class="tasklistheading"><span class="tasklistname">""")
+                self.response.out.write(tasklist_title)
+                self.response.out.write("""</span> (""")
+                self.response.out.write(num_tasks)
+                self.response.out.write(""" tasks)</div>""")
+                
+                if tasklist_has_tasks_to_display and num_tasks > 0:
                     self.response.out.write("""<div class="tasks">""")
                         
                     for task in tasks:
@@ -1441,14 +1483,12 @@ class ReturnResultsHandler(webapp.RequestHandler):
                             self.response.out.write("""</div>""")
                                     
                         if task_due and display_due_date_field:
-                            self.response.out.write("""<div class="task-attribute">
-        <span class="fieldlabel">Due: </span>""")
+                            self.response.out.write("""<div class="task-attribute"><span class="fieldlabel">Due: </span>""")
                             self.response.out.write(task_due)        
                             self.response.out.write("""</div>""")
                                     
                         if task_updated and display_updated_date_field:
-                            self.response.out.write("""<div class="task-attribute">
-        <span class="fieldlabel">Updated:</span> """)
+                            self.response.out.write("""<div class="task-attribute"><span class="fieldlabel">Updated:</span> """)
                             self.response.out.write(task_updated)
                             self.response.out.write("""</div>""")
                             
@@ -1463,18 +1503,30 @@ class ReturnResultsHandler(webapp.RequestHandler):
                         # End of task details div
                         # End of task div
                         self.response.out.write("""</div>
-        </div>""")                     
+                            </div>""")
+                            
                     # End of tasks div
                     self.response.out.write("""</div>""")
+                    
+                    # Put subsequent TOP anchor of the next tasklist above the BOTTOM anchor of this tasklist, so that
+                    # the "To top ..." link is visible when a user is traversing from bottom to top
+                    self.response.out.write("""<a name="tl%s_top"> </a>""" % (tl_num+1))
+                        
+                    self.response.out.write("""<a name="tl%s_bottom"> </a>""" % tl_num)
+                    self.response.out.write("""<div class="tasklist-link noprint"><a href="#tl%s_top">To top of %s tasklist</a>&nbsp;&nbsp;&nbsp;<a href="#tl1_top">Top of page</a></div>""" % 
+                        (tl_num, tasklist_title))
+                    tl_num = tl_num + 1
                                            
                 else:
                     self.response.out.write("""
                             <div class="tasklistheading"><span class="tasklistname">%s</span>
                             </div>
                             <div class="no-tasks">
-                                No tasks
+                                No tasks to display
                             </div>""" % tasklist_title)
-                    
+                
+                self.response.out.write("""<hr />""")
+                
             self.response.out.write("""
                     <div class="break">
                         NOTE: Due, Updated and Completed dates and times are UTC, because that is how Google stores them.
@@ -1486,6 +1538,7 @@ class ReturnResultsHandler(webapp.RequestHandler):
                         <h3>No tasklists found for %s</h3>
                     </div>""" % user_email)
 
+        self.response.out.write("""<a name="page_bottom"> </a>""")
         self.response.out.write("""
                 <div class="break footer">
                     Produced by %(app_title)s, version %(app_version)s

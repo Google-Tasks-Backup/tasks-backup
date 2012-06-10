@@ -530,8 +530,10 @@
                     <li>Restore D from Trash</li>
                 </ol>
                 Since task D's parent no longer exists, Google doesn't know where to put the task,
-                so it becomes an (invisible) orphan. The display page provides an option to attempt to identify and display 
-                invalid/corrupted tasks.
+                so it becomes an (invisible) orphan. 
+                <div class="small-break">
+                </div>
+                Invalid tasks are not exported to file or email, however the tasks display page provides an option to display invalid/corrupted tasks.
             </td>
         </tr>
         <tr>
@@ -546,10 +548,13 @@
                 <a href="https://mail.google.com/tasks/canvas?pli=1">mail.google.com/tasks/canvas?pli=1</a> takes care of that; marking a parent task complete automatically marks all it's subtasks complete. Some third party apps don't do that, thereby leaving a completed task with incompleted subtasks.
                 <div class="small-break">
                 </div>
-                If the user then clears completed tasks, the parent is removed, and the tasklists then contains sub-tasks that no longer have parents.
+                If the user then clears completed tasks, the completed parent is marked as hidden. If the user exports with hidden tasks excluded, then the exported sub-tasks no longer have parents.
                 <div class="small-break">
                 </div>
                 Simarly, if exporting tasks with the "Include completed tasks?" option unchecked, the completed parent task will not be exported, but the incomplete sub-tasks will, resulting in orphaned tasks which cannot be properly processed, because the sub-task's parent does not exist.
+                <div class="small-break">
+                </div>
+                Invalid tasks are not exported to file or email, however the tasks display page provides an option to display invalid/corrupted tasks.
             </td>
         </tr>
     </table>

@@ -1,0 +1,13 @@
+/*
+ * The classes in this file are only loaded when the page is printed (media="print").
+ * Add the "noprint" class to element that should not be printed.
+ *
+ * From http://haacked.com/archive/2006/03/13/CSSBasedPrintingTip.aspx
+ *   Add the following to the head section of the page.
+ *      <link rel="stylesheet" type="text/css" href="print.css" media="print" />
+ */
+
+.noprint
+{
+    display: none !important;
+}

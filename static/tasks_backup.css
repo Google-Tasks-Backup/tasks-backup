@@ -248,6 +248,13 @@ legend
   margin-bottom: 20px;
 }
 
+.tasklist-link {
+  text-align: right;
+  font-weight: bold;
+  padding-right: 10px;
+  margin-bottom: 6px;
+}
+
 .fieldlabel {
   font-weight: bold;
 }

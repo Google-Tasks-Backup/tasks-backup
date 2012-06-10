@@ -580,16 +580,16 @@ when user returns from displaying tasks web page display.
                                 <input type="checkbox" name="display_invalid_tasks" value="True" >
                                     &nbsp;Display invalid/corrupted tasks? 
                                     <img class="popupTrigger" id="help-invalid" src="/static/help.png" alt="Display help">
+                                    <img class="popupTrigger" id="help-invalid" src="/static/warning.png" alt="Display warning">
                                     <div class="popupContent" id="help-invalid-content">
                                         <img class="popupClose" src="/static/close.png" alt="Close">
                                         <div class="clear medium-break">
-                                            If checked, the application tries to identify and label potentially invalid tasks.
+                                            <span style="color:red;">CAUTION:</span>  It is possible for subtasks to end up in an invalid state, where a subtask's parent is missing, or may not be exported. GTB marks these tasks as invalid, and does not export them to file or email. Refer to <a href="/static/info.html#Note4">notes 4 and 5 on the information page</a> for more details.
                                         </div>
                                         <div class="clear medium-break">
-                                            Sometimes, tasks can become corrupted, leaving an invalid parent value. These tasks still exist in the Google Tasks database, although Google does not display them.
-                                        </div>
-                                        <div class="medium-break">
-                                            Refer to <a href="/static/info.html#notes">note 4 on the information page</a> for more details.
+                                            If this option is checked, invalid tasks will be displayed and labeled as 
+                                            <span class="no-break task-attribute-hidden-or-deleted dim">-&nbsp;Invalid&nbsp;-</span>
+                                            on the tasks display page. If this option is unchecked, invalid tasks will not be displayed.
                                         </div>
                                     </div>
                                 </input>
