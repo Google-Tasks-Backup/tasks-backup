@@ -420,6 +420,13 @@ class ShowProgressHandler(webapp.RequestHandler):
                     return
             
             
+            show_log_option = (user_email in settings.SHOW_LOG_OPTION_USERS)
+            # DEBUG:
+            # logging.debug(fn_name + "show_log_option = " + str(show_log_option))
+            # logging.debug(fn_name + "user_email = " + user_email)
+            # logging.debug(settings.SHOW_LOG_OPTION_USERS)
+            # logservice.flush()
+
             # Retrieve the DB record for this user
             tasks_backup_job = model.ProcessTasksJob.get_by_key_name(user_email)
             error_message = None 
@@ -496,6 +503,7 @@ class ShowProgressHandler(webapp.RequestHandler):
                                'display_technical_options' : shared.isTestUser(user_email),
                                'url_main_page' : settings.MAIN_PAGE_URL,
                                'results_url' : settings.RESULTS_URL,
+                               'show_log_option' : show_log_option,
                                'msg': self.request.get('msg'),
                                'logout_url': users.create_logout_url(settings.WELCOME_PAGE_URL),
                                'url_discussion_group' : settings.url_discussion_group,
@@ -665,7 +673,7 @@ class ReturnResultsHandler(webapp.RequestHandler):
                 "\n    deleted   = "+ str(display_deleted_tasks) +
                 "\n    invalid   = "+ str(display_invalid_tasks))
             logservice.flush()
-
+            
             if due_selection in ['due_now', 'overdue']:
                 # If user selected to display due or overdue tasks, use this value to determine which tasks to display.
                 # Using value from user's browser, since that will be in user's current timezone. Server doesn't know user's current timesone.
@@ -967,7 +975,7 @@ class ReturnResultsHandler(webapp.RequestHandler):
             #     and EXT = the file type extension (e.g., 'csv')
             if export_format == 'ics':
                 self._write_ics_using_template(template_values, export_format, output_filename_base)
-            elif export_format in ['outlook', 'raw', 'raw1', 'import_export']:
+            elif export_format in ['outlook', 'raw', 'raw1', 'log', 'import_export']:
                 self._write_csv_using_template(template_values, export_format, output_filename_base)
             elif export_format == 'html_raw':
                 self._write_html_raw(template_values)

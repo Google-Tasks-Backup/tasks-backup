@@ -563,6 +563,7 @@ class ProcessTasksWorker(webapp.RequestHandler):
         
         tasklist_dict = {} # Blank dictionary for this tasklist
         tasklist_dict[u'title'] = tasklist_title # Store the tasklist name in the dictionary
+        tasklist_dict[u'id'] = tasklist_id # Store the tasklist ID in the dictionary
         
         num_tasks = 0
 

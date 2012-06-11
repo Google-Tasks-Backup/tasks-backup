@@ -374,6 +374,16 @@ when user returns from displaying tasks web page display.
 							Same as Raw CSV, but with date/timestamps formatted suitable for reading by Excel.
 						</td>
 					</tr>
+{% if show_log_option %}                     
+					<tr>
+						<td class="format-name">
+							<input id="format_log" type="radio" name="export_format" value="log" /> Log file<br />
+						</td>
+						<td>
+							Data used to check task order
+						</td>
+					</tr>
+{% endif %}                    
 {% comment %}
 <!--
 					<tr>
