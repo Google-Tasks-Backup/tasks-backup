@@ -374,64 +374,6 @@ when user returns from displaying tasks web page display.
 							Same as Raw CSV, but with date/timestamps formatted suitable for reading by Excel.
 						</td>
 					</tr>
-{% if show_log_option %}                     
-					<tr>
-						<td class="format-name">
-							<input id="format_log" type="radio" name="export_format" value="log" /> Log file<br />
-						</td>
-						<td>
-							Data used to check task order
-						</td>
-					</tr>
-{% endif %}                    
-{% comment %}
-<!--
-					<tr>
-						<td class="format-name">
-							<input id="format_import_export" type="radio" name="export_format" value="import_export" /> Import/Export CSV<br />
-						</td>
-						<td>
-							CSV file containing just the data required to recreate tasks. 
-                            See the <a href="/static/info.html#import_export_description">information page</a> for details.
-						</td>
-					</tr>
--->
-{% endcomment %}
-					<tr>
-						<td class="format-name">
-							<input id="format_import_export" type="radio" name="export_format" value="import_export" /> Import/Export CSV<br />
-						</td>
-						<td>
-							CSV file containing just the data required to recreate tasks. 
-                            <img class="popupTrigger" id="help-import_export" src="/static/help.png" alt="Display help">
-                            <div class="popupContent" id="help-import_export-content">
-                                <img class="popupClose" border="0" src="/static/close.png" alt="Close">
-                                <div class="clear medium-break">
-                                    See the <a href="/static/info.html#import_export_description">information page</a> for details of the file format.
-                                </div>
-                                <div class="medium-break">
-                                    This format can be used by 
-                                    <a class="take-note" href="http://import-tasks.appspot.com">Google Tasks Import</a>, which 
-                                    can be used to import tasks into the same or a different Google account. 
-                                </div>
-                                <div class="medium-break">
-                                    The file can be edited in a text editor such as <a href="http://notepad-plus-plus.org/">Notepad++</a> before being imported. It is not recommended to edit this file with a spreadsheet program, as programs such as Excel and OpenOffice Calc tend to corrupt the data.
-                                </div>
-                                <div class="medium-break">
-                                    NOTE: The CSV format may lose or incorrectly interpret international or extended characters. To ensure maximum character integrity when importing tasks using  
-                                    <span class="take-note">Google Tasks Import</span>, use the GTBak format instead.
-                                </div>
-                                <div class="medium-break">
-                                    This format backs up everything except Task Links. 
-                                </div>
-                                <div class="comment medium-break ">
-                                    As far as I am aware, the only use for Task Links is when an email message is turned into a task; 
-                                    the link then refers to the original email message.
-                                    If tasks are restored into a different account, Task Links would not work (because they would refer to messages in another account).
-                                </div>
-                            </div>
-						</td>
-					</tr>
                     
 					<tr>
 						<td class="format-name">
@@ -467,6 +409,57 @@ when user returns from displaying tasks web page display.
                             </div>
 						</td>
 					</tr>
+
+					<tr>
+						<td class="format-name">
+							<input id="format_import_export" type="radio" name="export_format" value="import_export" /> Import/Export CSV&nbsp;
+                            <img class="popupTrigger" id="help-import_export_csv" src="/static/warning.png" alt="Display warning">
+                            <div class="popupContent" id="help-import_export_csv-content">
+                                <img class="popupClose" border="0" src="/static/close.png" alt="Close">
+                                <div class="clear medium-break force-normal-white-space">
+                                    <span class="take-note" style="color:red;">CAUTION:</span> The CSV format may lose or incorrectly interpret international 
+                                    or extended characters. To ensure maximum character integrity when importing tasks using  
+                                    <span class="take-note">Google Tasks Import</span>, use the <span class="take-note">GTBak</span> format instead.
+                                </div>
+                            </div>
+                            
+                            <br />
+						</td>
+						<td>
+							CSV file containing just the data required to recreate tasks. 
+                            <img class="popupTrigger" id="help-import_export" src="/static/help.png" alt="Display help">
+                            <div class="popupContent" id="help-import_export-content">
+                                <img class="popupClose" border="0" src="/static/close.png" alt="Close">
+                                <div class="clear medium-break">
+                                    See the <a href="/static/info.html#import_export_description">information page</a> for details of the file format.
+                                </div>
+                                <div class="medium-break">
+                                    This format can be used by 
+                                    <a class="take-note" href="http://import-tasks.appspot.com">Google Tasks Import</a>, which 
+                                    can be used to import tasks into the same or a different Google account. 
+                                </div>
+                                <div class="medium-break">
+                                    The file can be edited in a text editor such as <a href="http://notepad-plus-plus.org/">Notepad++</a>
+                                    before being imported. It is not recommended to edit this file with a spreadsheet program, 
+                                    as programs such as Excel and OpenOffice Calc tend to corrupt the data.
+                                </div>
+                                <div class="medium-break">
+                                    <span class="take-note" style="color:red;">CAUTION:</span> The CSV format may lose or incorrectly interpret international 
+                                    or extended characters. To ensure maximum character integrity when importing tasks using  
+                                    <span class="take-note">Google Tasks Import</span>, use the <span class="take-note">GTBak</span> format instead.
+                                </div>
+                                <div class="medium-break">
+                                    This format backs up everything except Task Links. 
+                                </div>
+                                <div class="comment medium-break ">
+                                    As far as I am aware, the only use for Task Links is when an email message is turned into a task; 
+                                    the link then refers to the original email message.
+                                    If tasks are restored into a different account, Task Links would not work (because they would refer to messages in another account).
+                                </div>
+                            </div>
+						</td>
+					</tr>
+                    
                     <tr>
                         <td class="format-name">
                             <input id="format_python" type="radio" name="export_format" value="py" /> Python<br />
@@ -476,6 +469,18 @@ when user returns from displaying tasks web page display.
                             See the <a href="/static/info.html">information page</a> for details.
                         </td>
                     </tr>
+                    
+{% if show_log_option %}                     
+					<tr>
+						<td class="format-name">
+							<input id="format_log" type="radio" name="export_format" value="log" /> Log file<br />
+						</td>
+						<td>
+							Data used to check task order
+						</td>
+					</tr>
+{% endif %}                    
+
 					<tr>
 						<td class="format-name">
 							<input id="format_RTM" type="radio" name="export_format" value="RTM" /> RTM email<br />

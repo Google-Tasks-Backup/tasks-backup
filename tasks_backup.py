@@ -711,11 +711,11 @@ class ReturnResultsHandler(webapp.RequestHandler):
             #    Calculate and add 'depth' property (and add/modify elements for html_raw if required)
             # ---------------------------------------------------------------------------------------------
             for tasklist in tasklists:
-                if shared.isTestUser(user_email) and settings.DUMP_DATA:
-                    # DEBUG
-                    logging.debug(fn_name + "DEBUG: tasklist ==>")
-                    logging.debug(tasklist)
-                    logservice.flush()
+                # if shared.isTestUser(user_email) and settings.DUMP_DATA:
+                    # # DEBUG
+                    # logging.debug(fn_name + "DEBUG: tasklist ==>")
+                    # logging.debug(tasklist)
+                    # logservice.flush()
                 
                 # If there are no tasks in a tasklist, Google returns a dictionary containing just 'title'
                 # That is, there is no 'tasks' element in the tasklist dictionary if there are no tasks.

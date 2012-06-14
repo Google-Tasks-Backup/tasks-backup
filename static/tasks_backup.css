@@ -350,6 +350,11 @@ td.format-name {
 	font-weight: bold;
 }
 
+.force-normal-white-space {
+	white-space: normal !important;
+    font-weight: normal;
+}
+
 span.due_date {
     border-style:solid;
     padding:3px;
