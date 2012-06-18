@@ -226,7 +226,7 @@ class StartBackupHandler(webapp.RequestHandler):
             # There should be a backup job record, and its status should be STARTING
             if tasks_backup_job is None:
                 logging.error(fn_name + "No DB record for " + user_email)
-                shared.serve_message_page("No export job found.",
+                shared.serve_message_page(self, "No export job found. Please start a backup from the main menu.",
                     "If you believe this to be an error, please report this at the link below",
                     show_custom_button=True, custom_button_text='Go to main menu')
                 logging.warning(fn_name + "<End> No DB record")
@@ -236,8 +236,8 @@ class StartBackupHandler(webapp.RequestHandler):
             if tasks_backup_job.status != constants.ExportJobStatus.STARTING:
                 # The only time we should get here is if the credentials failed, and we were redirected after
                 # successfully authorising. In that case, the jab status should still be STARTING
-                shared.serve_message_page("Invalid job status: " + str(tasks_backup_job.status),
-                    "Please report this error (see link below)",
+                shared.serve_message_page(self, "Job status: " + str(tasks_backup_job.status) + ". Please start a backup from the main menu.",
+                    "If you believe this to be an error, please report this at the link below",
                     show_custom_button=True, custom_button_text='Go to main menu')
                 logging.warning(fn_name + "<End> Invalid job status: " + str(tasks_backup_job.status))
                 logservice.flush()
