@@ -1,3 +1,20 @@
+#!/usr/bin/python2.5
+#
+# Copyright 2012 Julie Smith.  All Rights Reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+
 # Rename this file as settings.py and set the client ID and secrets values 
 # according to the values from https://code.google.com/apis/console/
 
@@ -88,16 +105,6 @@ RESULTS_URL = '/results'
 
 INVALID_CREDENTIALS_URL = '/invalidcredentials'
 
-GET_NEW_BLOBSTORE_URL = '/getnewblobstoreurl'
-
-BLOBSTORE_UPLOAD_URL = '/blobstoreupload'
-
-ADMIN_MANAGE_BLOBSTORE_URL = '/admin/blobstore/manage'
-
-ADMIN_DELETE_BLOBSTORE_URL = '/admin/blobstore/delete'
-
-ADMIN_BULK_DELETE_BLOBSTORE_URL = '/admin/blobstore/bulkdelete'
-
 WORKER_URL = '/worker'
 
 DB_KEY_TASKS_BACKUP_DATA = 'tasks_backup_data'
@@ -163,6 +170,9 @@ TEST_ACCOUNTS = ["Test1@gmail.com", "Test2@gmail.com", "Test3@gmail.com"]
 # If there is/are no limited-access servers, set this to an empty list []
 LIMITED_ACCESS_SERVERS = ['my-test-server.appspot.com']
 #LIMITED_ACCESS_SERVERS = []
+
+# Display log menu option on the Progress page if user is in SPECIAL_USERS
+SHOW_LOG_OPTION_USERS = ["Test.User@gmail.com", "another.user@gmail.com"]
 
 # Logs dumps of raw data for test users when True
 DUMP_DATA = False

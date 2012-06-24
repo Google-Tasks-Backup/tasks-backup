@@ -14,6 +14,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+# Extensively modified by Julie Smith 2012
+
 """Classes to represent Tasks data"""
 
 from apiclient.oauth2client import appengine
@@ -66,9 +68,43 @@ class ProcessTasksJob(db.Model):
 
     message = db.StringProperty(indexed=False, default='')
 
+    
 
 class TasklistsData(db.Model):
-        pickled_tasks_data = db.BlobProperty(indexed=False) # NOTE: Blob max size is just under 1MB
-        idx = db.IntegerProperty(default=0, indexed=True) # To reassemble in order        
+    pickled_tasks_data = db.BlobProperty(indexed=False) # NOTE: Blob max size is just under 1MB
+    idx = db.IntegerProperty(default=0, indexed=True) # To reassemble in order        
 
 
+    
+class UsageStats(db.Model):
+    """ Used to track GTB usage.
+    
+        user_hash and start_time together form a unique key
+        
+        In order for the stats to be useful, all 9 properties must be set.
+    """
+    
+    # ID is used so that total number of retrievals, retrievals per user, and number of users can be determined 
+    # To provide a measure of privacy, use hash to uniquely identify user, rather than the user's actual email address
+    # Note that there is a very small probability that multiple users may be hashed to the same value
+    user_hash  = db.IntegerProperty(indexed=True)
+    
+    # Time that data retrieval was started
+    start_time = db.DateTimeProperty(indexed=True)
+    
+    number_of_tasks = db.IntegerProperty(indexed=False)
+    
+    number_of_tasklists = db.IntegerProperty(indexed=False)
+    
+    # Each element in the list indicates the number of tasks in each tasklist 
+    tasks_per_tasklist = db.ListProperty(int, indexed=False)
+    
+    # User's data retrieval choices
+    include_completed = db.BooleanProperty(indexed=False)
+    include_deleted = db.BooleanProperty(indexed=False)
+    include_hidden = db.BooleanProperty(indexed=False)
+    
+    # The number of seconds taken to retrieve the tasks
+    processing_time = db.FloatProperty(indexed=False)
+    
+    

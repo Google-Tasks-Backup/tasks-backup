@@ -1,11 +1,30 @@
 {% comment %}
-This is the Django template used by tasks-backup.py
+Copyright 2012 Julie Smith.  All Rights Reserved.
 
-Author: Julie Smith, 2012
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+
+
+This is the Django template used by tasks-backup.py to display progress to the user, and once the backup is complete,
+to allow the user to choose what to do with the retrieved data (export as file, email, or display as a web page).
+
 
 We store the user's selections in a cookie when a form is submitted. This is so that we can set the user's last 
 chosen options when we return to this page, especially if returning after re-authenticating, but also useful 
 when user returns from displaying tasks web page display.
+
+Note that this page uses the include_completed, include_hidden and include_deleted variables to selectively include/exclude 
+the relevant parts of Javascript and HTML for those functions. Whether these options are available depends on
+the selections that the user made when they started the backup.
 
 {% endcomment %}
 <!doctype html>
@@ -38,12 +57,18 @@ when user returns from displaying tasks web page display.
                 createCookie('due_month', $('input[name=due_month]').val(), 0); // Hidden input
                 createCookie('due_day', $('input[name=due_day]').val(), 0); // Hidden input
                 createCookie('display_invalid_tasks', $('input[name=display_invalid_tasks]:checked').val(), 0); // Checkbox
-                createCookie('display_completed_tasks', $('input[name=display_completed_tasks]:checked').val(), 0); // Checkbox
-                createCookie('display_hidden_tasks', $('input[name=display_hidden_tasks]:checked').val(), 0); // Checkbox
-                createCookie('display_deleted_tasks', $('input[name=display_deleted_tasks]:checked').val(), 0); // Checkbox
-                createCookie('dim_completed_tasks', $('input[name=dim_completed_tasks]:checked').val(), 0); // Checkbox
-                createCookie('display_completed_date_field', $('input[name=display_completed_date_field]:checked').val(), 0); // Checkbox
                 createCookie('display_due_date_field', $('input[name=display_due_date_field]:checked').val(), 0); // Checkbox
+                {% if include_completed %}
+                    createCookie('display_completed_tasks', $('input[name=display_completed_tasks]:checked').val(), 0); // Checkbox
+                    createCookie('dim_completed_tasks', $('input[name=dim_completed_tasks]:checked').val(), 0); // Checkbox
+                    createCookie('display_completed_date_field', $('input[name=display_completed_date_field]:checked').val(), 0); // Checkbox
+                {% endif %}
+                {% if include_hidden %}
+                    createCookie('display_hidden_tasks', $('input[name=display_hidden_tasks]:checked').val(), 0); // Checkbox
+                {% endif %}
+                {% if include_deleted %}
+                    createCookie('display_deleted_tasks', $('input[name=display_deleted_tasks]:checked').val(), 0); // Checkbox
+                {% endif %}
                 createCookie('display_updated_date_field', $('input[name=display_updated_date_field]:checked').val(), 0); // Checkbox
                 createCookie('actionId', actionId, 0)
             }
@@ -60,11 +85,17 @@ when user returns from displaying tasks web page display.
                 }
                 setDateFields(readCookie('due_day'), readCookie('due_month'), readCookie('due_year'));
                 $('input[name=display_invalid_tasks]').prop('checked', (readCookie('display_invalid_tasks')=='True')); // Checkbox
-                $('input[name=display_completed_tasks]').prop('checked', (readCookie('display_completed_tasks')=='True')); // Checkbox
-                $('input[name=dim_completed_tasks]').prop('checked', (readCookie('dim_completed_tasks')=='True')); // Checkbox
-                $('input[name=display_completed_date_field]').prop('checked', (readCookie('display_completed_date_field')=='True')); // Checkbox
-                $('input[name=display_hidden_tasks]').prop('checked', (readCookie('display_hidden_tasks')=='True')); // Checkbox
-                $('input[name=display_deleted_tasks]').prop('checked', (readCookie('display_deleted_tasks')=='True')); // Checkbox
+                {% if include_completed %}
+                    $('input[name=display_completed_tasks]').prop('checked', (readCookie('display_completed_tasks')=='True')); // Checkbox
+                    $('input[name=dim_completed_tasks]').prop('checked', (readCookie('dim_completed_tasks')=='True')); // Checkbox
+                    $('input[name=display_completed_date_field]').prop('checked', (readCookie('display_completed_date_field')=='True')); // Checkbox
+                {% endif %}
+                {% if include_hidden %}
+                    $('input[name=display_hidden_tasks]').prop('checked', (readCookie('display_hidden_tasks')=='True')); // Checkbox
+                {% endif %}
+                {% if include_deleted %}
+                    $('input[name=display_deleted_tasks]').prop('checked', (readCookie('display_deleted_tasks')=='True')); // Checkbox
+                {% endif %}
                 $('input[name=display_due_date_field]').prop('checked', (readCookie('display_due_date_field')=='True')); // Checkbox
                 $('input[name=display_updated_date_field]').prop('checked', (readCookie('display_updated_date_field')=='True')); // Checkbox
             }
@@ -179,15 +210,17 @@ when user returns from displaying tasks web page display.
             // Various actions to take when page is loaded. Actions depend on whether there are any previous settings stored in cookies.
             function pageLoadActions() {
                 {% if status == "Export completed" %}
+                    // Check if there are any stored values, by retrieving the 'export_format' cookie, because we always save that cookie.
                     var export_format = readCookie('export_format')
                     if (export_format) 
                     {
-                        // 'export_format' cookie exists, so use stored values
+                        // 'export_format' cookie exists, so there are saved values that we should use
                         restoreSelections();
-                        // Check if the user's selection was actioned in ReturnResultsHandler().
-                        // The actionId cookie is deleted in ReturnResultsHandler() if authentication is OK.
-                        // If authentication failed when the user's selection was submitted to /results, 
-                        // then the user's selection was NOT actioned, so we do it here.
+                        // Check if the user's selection was actioned in ReturnResultsHandler.post() in tasks-backup.py
+                        //     If authentication is OK, the actionId cookie is deleted in ReturnResultsHandler.post()
+                        //         and the user's selection is actioned
+                        //     If authentication failed when the user's selection was submitted to /results, 
+                        //         then the user's selection was NOT actioned, so we do it here.
                         var actionId = readCookie('actionId');
                         if (actionId) {
                             eraseCookie('actionId');
@@ -198,9 +231,11 @@ when user returns from displaying tasks web page display.
                     else 
                     {
                         // No stored values, so set up defaults
-                        changeCompletedSuboptions(); 
-                        changeCompletedOptions(); 
-                        changeDisplayCompleted(); 
+                        {% if include_completed %}
+                            changeCompletedSuboptions(); 
+                            changeCompletedOptions(); 
+                            changeDisplayCompleted(); 
+                        {% endif %}
                         setCurrentDueDate();
                     }
                 {% endif %}
@@ -599,7 +634,7 @@ when user returns from displaying tasks web page display.
                                     <div class="popupContent" id="help-invalid-content">
                                         <img class="popupClose" src="/static/close.png" alt="Close">
                                         <div class="clear medium-break">
-                                            <span style="color:red;">CAUTION:</span>  It is possible for subtasks to end up in an invalid state, where a subtask's parent is missing, or may not be exported. GTB marks these tasks as invalid, and does not export them to file or email. Refer to <a href="/static/info.html#Note4">notes 4 and 5 on the information page</a> for more details.
+                                            <span style="color:red;">CAUTION:</span>  It is possible for subtasks to end up in an invalid state, where a subtask's parent is missing, or may not be exported. GTB marks these tasks as invalid, and does not export them to file or email. Refer to <a href="/static/info.html#note4">notes 4 and 5 on the information page</a> for more details.
                                         </div>
                                         <div class="clear medium-break">
                                             If this option is checked, invalid tasks will be displayed and labeled as 

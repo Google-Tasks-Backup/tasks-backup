@@ -3,3 +3,12 @@ indexes:
   ancestor: yes
   properties:
   - name: idx
+  
+- kind: UsageStats
+  ancestor: no
+  properties:
+  - name: start_time
+    direction: asc
+  - name: user_hash
+    direction: asc
+    

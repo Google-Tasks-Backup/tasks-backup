@@ -1,17 +1,24 @@
 
 2 Feb 2012, Julie Smith
 -----------------------
+In order to run Google Tasks Backup under your own account, you will need to 
+modify apps.yaml, and set the client ID and secrets values in the settings.py 
+file. There is a sample settings-dummy.py file which contains all the required 
+settings, with instructions on getting and inserting your own client ID and 
+secret values.
+
+There is a discussion group at groups.google.com/group/tasks-backup
+and issues list at code.google.com/p/tasks-backup/issues/list
+
 This project is based on google-tasks-porter by dwightguth@google.com
-
-It appears that google-tasks-porter stalled in the latter part of 2011.
-
-In 2012, Julie Smith modified google-tasks-porter to create tasks-backup,
-a simplified task exporter which does not use db.Model, as that was causing 
-the quota to be exceeded.
-
+It appears that google-tasks-porter stalled in the latter part of 2011. In
+2012, Julie Smith modified google-tasks-porter to create Google Tasks Backup,
+running at
+    tasks-backup.appspot.com
+    
 = = = = = = =
 
-Original README, as at 22 Jan 2012
+Original Google Tasks Porter README, as at 22 Jan 2012
 
 This project requires a module in the root directory named "settings" which
 defines the values of CLIENT_ID and CLIENT_SECRET on the module level as

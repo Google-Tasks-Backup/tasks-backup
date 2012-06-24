@@ -1,3 +1,26 @@
+#!/usr/bin/python2.5
+#
+# Copyright 2012 Julie Smith.  All Rights Reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+"""Worker to retrieve tasks from Google Tasks server.
+
+    This worker is started by a taskqueue from tasks_backup
+"""
+
+__author__ = "julie.smith.1999@gmail.com (Julie Smith)"
+
 import logging
 import os
 import pickle
@@ -24,8 +47,6 @@ from google.appengine.api import urlfetch_errors
 from google.appengine.api import mail
 from google.appengine.api.app_identity import get_application_id
 from google.appengine.api import logservice # To flush logs
-from google.appengine.ext import blobstore
-from google.appengine.ext.webapp import blobstore_handlers
 
 logservice.AUTOFLUSH_EVERY_SECONDS = 5
 logservice.AUTOFLUSH_EVERY_BYTES = None
@@ -432,6 +453,39 @@ class ProcessTasksWorker(webapp.RequestHandler):
                     str(self.process_tasks_job.message) + "', err msg: '" + str(self.process_tasks_job.error_message) + "'")
                 logservice.flush()
                 self.process_tasks_job.put()
+                
+                try:
+                    end_time = datetime.datetime.now()
+                    process_time = end_time - start_time
+                    processing_time = process_time.days * 3600*24 + process_time.seconds + process_time.microseconds / 1000000.0
+                    included_options_str = "Includes: Completed = %s, Deleted = %s, Hidden = %s" % (str(include_completed), str(include_deleted), str(include_hidden))
+                    
+                    logging.info(fn_name + "STATS for " + str(hash(self.user_email)) + " at " + str(start_time) +
+                        "\n    " + summary_msg + 
+                        "\n    " + breakdown_msg +
+                        "\n    " + proc_time_str +
+                        "\n    " + included_options_str)
+                    logservice.flush()
+                    
+                    usage_stats = model.UsageStats(
+                        user_hash = hash(self.user_email),
+                        number_of_tasks = self.process_tasks_job.total_progress,
+                        number_of_tasklists = total_num_tasklists,
+                        tasks_per_tasklist = tasks_per_list,
+                        include_completed = include_completed,
+                        include_deleted = include_deleted,
+                        include_hidden = include_hidden,
+                        start_time = start_time,
+                        processing_time = processing_time)
+                    usage_stats.put()
+                    logging.debug(fn_name + "Saved stats")
+                    logservice.flush()
+                
+                except Exception, e:
+                    logging.exception("Error saving stats")
+                    logservice.flush()
+                    # Don't bother doing anything else, because stats aren't critical
+                
             except apiproxy_errors.RequestTooLargeError, e:
                 logging.exception(fn_name + "Error putting results in DB")
                 logservice.flush()
@@ -457,10 +511,6 @@ class ProcessTasksWorker(webapp.RequestHandler):
                     str(self.process_tasks_job.message) + "', err msg: '" + str(self.process_tasks_job.error_message) + "'")
                 logservice.flush()
                 self.process_tasks_job.put()
-
-
-              
-              
 
         except urlfetch_errors.DeadlineExceededError, e:
             logging.exception(fn_name + "urlfetch_errors.DeadlineExceededError:")
@@ -514,28 +564,6 @@ class ProcessTasksWorker(webapp.RequestHandler):
             logservice.flush()
             self.process_tasks_job.put()
         
-        end_time = datetime.datetime.now()
-        process_time = end_time - start_time
-        proc_time_str = "Processing time = " + str(process_time.seconds) + "." + str(process_time.microseconds)[:3] + " seconds"
-        logging.debug(fn_name + proc_time_str)
-        logservice.flush()
-        
-        included_options_str = "Includes: Completed = %s, Deleted = %s, Hidden = %s" % (str(include_completed), str(include_deleted), str(include_hidden))
-        try:
-            # sender = "stats@" + os.environ['APPLICATION_ID'] + ".appspotmail.com"
-            sender = "stats@" + get_application_id() + ".appspotmail.com"
-            if self.is_test_user:
-                subject = "[" + get_application_id() + "] Retrieved tasks for " + str(hash(self.user_email)) + ", " + str(self.user_email)
-            else:
-                # Use a hash of the user's email address to generate a unique, but non-identifying, subject line
-                subject = "[" + get_application_id() + "] Retrieved tasks for " + str(hash(self.user_email))
-            #logging.debug(fn_name + "Send stats email from " + sender)
-            mail.send_mail(sender=sender,
-                to="Julie.Smith.1999@gmail.com",
-                subject=subject,
-                body=summary_msg + "\nStarted: %s UTC\nFinished: %s UTC\n%s\n%s\n%s" % (str(start_time), str(end_time), proc_time_str, breakdown_msg, included_options_str ))
-        except Exception, e:
-            logging.exception(fn_name + "Unable to send email")
 
         logging.debug(fn_name + "<End>")
         logservice.flush()
@@ -639,10 +667,15 @@ class ProcessTasksWorker(webapp.RequestHandler):
             
             # ------------------------------------------------------------------------------------------------
             # Fix date/time format for each task, so that the date/time values can be used in Django templates
-            # Convert the yyyy-mm-ddThh:mm:ss.dddZ format to a datetime object, and store that
+            # Convert the yyyy-mm-ddThh:mm:ss.dddZ format to a datetime object, and store that.
             # There have been occassional format errors in the 'completed' property, 
             # due to 'completed' value such as "-1701567-04-26T07:12:55.000Z"
-            # so if any date/timestamp value is invalid, set the property to a sensible default value
+            # According to http://docs.python.org/library/datetime.html
+            #       "The exact range of years for which strftime() works also varies across platforms. 
+            #        Regardless of platform, years before 1900 cannot be used."
+            # so if any date/timestamp value is invalid, set the property to '1900-01-01 00:00:00'
+            # NOTE: Sometimes a task has a completion date of '0000-01-01T00:00:00.000Z', which also cannot
+            # be converted to datetime, because the earliest allowable datetime year is 0001
             # ------------------------------------------------------------------------------------------------
             for t in tasks:
                 num_tasks = num_tasks + 1
@@ -653,8 +686,8 @@ class ProcessTasksWorker(webapp.RequestHandler):
                         new_due_date = datetime.datetime.strptime(date_due, "%Y-%m-%dT00:00:00.000Z").date()
                     except ValueError, e:
                         new_due_date = datetime.date(1900, 1, 1)
-                        logging.exception(fn_name + "Invalid 'due' timestamp format, so using " + str(new_due_date))
-                        logging.debug(fn_name + "Invalid value was " + str(date_due))
+                        logging.warning(fn_name + "Invalid 'due' timestamp (" + str(date_due) + "), so using " + str(new_due_date) + 
+                            ": " + shared.get_exception_msg(e))
                         logservice.flush()
                     t[u'due'] = new_due_date
                 
@@ -664,8 +697,8 @@ class ProcessTasksWorker(webapp.RequestHandler):
                         new_datetime_updated = datetime.datetime.strptime(datetime_updated, "%Y-%m-%dT%H:%M:%S.000Z")
                     except ValueError, e:
                         new_datetime_updated = datetime.datetime(1900, 1, 1, 0, 0, 0)
-                        logging.exception(fn_name + "Invalid 'updated' timestamp format, so using " + str(new_datetime_updated))
-                        logging.debug(fn_name + "Invalid value was " + str(datetime_updated))
+                        logging.warning(fn_name + "Invalid 'updated' timestamp (" + str(datetime_updated) + "), so using " + str(new_datetime_updated) + 
+                            ": " + shared.get_exception_msg(e))
                         logservice.flush()
                     t[u'updated'] = new_datetime_updated
                 
@@ -675,8 +708,8 @@ class ProcessTasksWorker(webapp.RequestHandler):
                         new_datetime_completed = datetime.datetime.strptime(datetime_completed, "%Y-%m-%dT%H:%M:%S.000Z")
                     except ValueError, e:
                         new_datetime_completed = datetime.datetime(1900, 1, 1, 0, 0, 0)
-                        logging.exception(fn_name + "Invalid 'completed' timestamp format, so using " + str(new_datetime_completed))
-                        logging.debug(fn_name + "Invalid value was " + str(datetime_completed))
+                        logging.warning(fn_name + "Invalid 'completed' timestamp (" + str(datetime_completed) + "), so using " + str(new_datetime_completed) + 
+                            ": " + shared.get_exception_msg(e))
                         logservice.flush()
                     t[u'completed'] = new_datetime_completed
                 

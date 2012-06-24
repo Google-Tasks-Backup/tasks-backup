@@ -14,7 +14,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# 27 Jan 2012, Google Tasks Backup (tasks-backup), based on Google Tasks Porter
+# 27 Jan 2012;
+# Google Tasks Backup (tasks-backup) created by Julie Smith, based on Google Tasks Porter
 
 """Main web application handler for Google Tasks Backup."""
 
@@ -47,8 +48,6 @@ from google.appengine.runtime import apiproxy_errors
 from google.appengine.runtime import DeadlineExceededError
 from google.appengine.api import urlfetch_errors
 from google.appengine.api import logservice # To flush logs
-from google.appengine.ext import blobstore
-from google.appengine.ext.webapp import blobstore_handlers
 
 logservice.AUTOFLUSH_EVERY_SECONDS = 5
 logservice.AUTOFLUSH_EVERY_BYTES = None
@@ -169,7 +168,6 @@ class WelcomeHandler(webapp.RequestHandler):
             template_values = {'app_title' : app_title,
                                'host_msg' : host_msg,
                                'url_home_page' : settings.MAIN_PAGE_URL,
-                               'new_blobstore_url' : settings.GET_NEW_BLOBSTORE_URL,
                                'product_name' : product_name,
                                'is_authorized': is_authorized,
                                'user_email' : user_email,
@@ -1406,8 +1404,11 @@ class ReturnResultsHandler(webapp.RequestHandler):
                 tasklist_has_tasks_to_display = tasklist.get('tasklist_has_tasks_to_display', False)
 
                 tasks = tasklist.get(u'tasks')
-                num_tasks = len(tasks)
-                
+                if tasks:
+                    num_tasks = len(tasks)
+                else:
+                    num_tasks = 0
+                    
                 if num_tasklists > 1:
                     # If there is more than one tasklist, display Next link
                     self.response.out.write("""<div class="tasklist-link noprint"><a href="#tl%s_bottom">Next tasklist</a>&nbsp;&nbsp;&nbsp;&nbsp;<a href="#page_bottom">Bottom of page</a></div>""" % 
@@ -1416,10 +1417,10 @@ class ReturnResultsHandler(webapp.RequestHandler):
                 self.response.out.write("""<div class="tasklist"><div class="tasklistheading"><span class="tasklistname">""")
                 self.response.out.write(tasklist_title)
                 self.response.out.write("""</span> (""")
-                self.response.out.write(num_tasks)
+                self.response.out.write(str(num_tasks))
                 self.response.out.write(""" tasks)</div>""")
                 
-                if tasklist_has_tasks_to_display and num_tasks > 0:
+                if num_tasks > 0 and tasklist_has_tasks_to_display:
                     self.response.out.write("""<div class="tasks">""")
                         
                     for task in tasks:
@@ -1527,11 +1528,9 @@ class ReturnResultsHandler(webapp.RequestHandler):
                                            
                 else:
                     self.response.out.write("""
-                            <div class="tasklistheading"><span class="tasklistname">%s</span>
-                            </div>
                             <div class="no-tasks">
                                 No tasks to display
-                            </div>""" % tasklist_title)
+                            </div>""")
                 
                 self.response.out.write("""<hr />""")
                 

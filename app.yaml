@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# 27 Jan 2012, Google Tasks Backup (tasks-backup), based on Google Tasks Porter
+# 27 Jan 2012, Modified by Julie Smith for Google Tasks Backup (tasks-backup), based on Google Tasks Porter
 
 # ===== Production host and version ======
 application: tasks-backup
@@ -76,7 +76,7 @@ handlers:
   secure: always
 
 - url: /admin/.*
-  script: tasks_backup.py
+  script: admin.py
   login: admin
   secure: always
 

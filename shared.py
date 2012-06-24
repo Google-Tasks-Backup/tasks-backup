@@ -14,7 +14,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
-# Original Google Tasks Porter, modified by Julie Smith 2012
+# Extensively modified by Julie Smith 2012
 
 # This module contains code whis is common between classes, or between tasks-backup.py and worker.py
 # Can't use the name common, because there is already a module named common
@@ -400,29 +400,6 @@ def get_exception_msg(e, maxTBlevel=5):
     return str(excName) + ": " + str(e)
          
 
-def delete_blobstore(blob_info):
-    fn_name = "delete_blobstore(): "
-    logging.debug(fn_name + "<Start>")
-    logservice.flush()
-    
-    if blob_info:
-        # -------------------------------------
-        #       Delete the Blobstore item
-        # -------------------------------------
-        try:
-            blob_info.delete()
-            logging.debug(fn_name + "Blobstore deleted")
-            logservice.flush()
-        except Exception, e:
-            logging.exception(fn_name + "Exception deleting " + file_name + ", key = " + blob_key)
-            logservice.flush()
-    else:
-        logging.warning(fn_name + "No blobstore to delete")
-        logservice.flush()
-
-    logging.debug(fn_name + "<End>")
-    logservice.flush()
-    
 
 def get_settings(hostname):
     """ Returns a tuple with hostname-specific settings
