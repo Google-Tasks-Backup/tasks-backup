@@ -203,6 +203,11 @@ legend
   margin-bottom: 20px !important;
 }
 
+.huge-break {
+  margin-top: 60px !important;
+  margin-bottom: 60px !important;
+}
+
 .small-break {
   margin-bottom: 6px !important;
 }

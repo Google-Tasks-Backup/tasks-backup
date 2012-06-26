@@ -281,82 +281,90 @@ the selections that the user made when they started the backup.
     {% endif %}
     
     {% if status == "no-record" %}
-        <div class="break">
-            No backup found for {{ user_email }}
-            <br />
-            Please click button to start a backup
-        <form method="GET" action="{{ url_home_page }}">
-            <button type="submit">Start backup</button>
-        </form>
-        </div>
-    {% endif %}
-    
-    
-    {% if status == "Starting" or status = "Initialising" or status == "Building" %}
-        <div class="break">
-            This page will auto-refresh every {{ refresh_interval }} seconds to indicate how many tasks have been retrieved so far.
-		</div>
-    {% endif %}
-    
-    {% if status == "Export completed" %}
-        <div class="break">
-            {{ job_msg }} <img class="popupTrigger" id="export-completed" src="/static/help.png" alt="Display help">
-            <div class="popupContent" id="export-completed-content">
-                <img class="popupClose" border="0" src="/static/close.png" alt="Close">
-                <div class="clear medium-break">
-                    Note that this backup is a snapshot of tasks as at {{ job_start_timestamp }} UTC 
-                    and will not reflect changes made after that time. 
-                    You will need to rerun <a href="{{ url_main_page }}" >{{ app_title }}</a>
-                    to create a new backup.
-                </div>
+        <div class="huge-break">
+            <div class="medium-break take-note-larger">
+                {% if job_msg %}
+                    {{ job_msg }}
+                {% else %}
+                    No backup found for {{ user_email }}
+                {% endif %}
             </div>
-            {% if include_completed %}
-                <br/>
-                <span class="comment">Includes completed tasks</span>
-            {% else %}
-                <br/>
-                <span class="comment">Excludes completed tasks</span>
-            {% endif %}
-            {% if include_hidden %}
-                <br/>
-                <span class="comment">Includes hidden tasks</span>
-            {% endif %}
-            {% if include_deleted %}
-                <br/>
-                <span class="comment">Includes deleted tasks</span>
-            {% endif %}
-		</div>
-    {% else %}
-        {% if status == "Starting" %}
             <div class="break">
-                Starting new backup job, please wait (this may take up to 2 minutes) ...
+                <button onclick="window.location.href = '{{ url_main_page }}'" class="back-button"  value="Go to Main Menu">Go to Main Menu</button>
+                <span class="take-note-larger"> to start a backup</span>
+            </div>
+            <div class="break">
+                If you believe this to be an error, please <a href="http:/{{ url_issues_page }}">create an error report</a>
+            </div>
+        </div>
+    {% else %}
+        
+        
+        {% if status == "Starting" or status = "Initialising" or status == "Building" %}
+            <div class="break">
+                This page will auto-refresh every {{ refresh_interval }} seconds to indicate how many tasks have been retrieved so far.
+            </div>
+        {% endif %}
+        
+        {% if status == "Export completed" %}
+            <div class="break">
+                {{ job_msg }} <img class="popupTrigger" id="export-completed" src="/static/help.png" alt="Display help">
+                <div class="popupContent" id="export-completed-content">
+                    <img class="popupClose" border="0" src="/static/close.png" alt="Close">
+                    <div class="clear medium-break">
+                        Note that this backup is a snapshot of tasks as at {{ job_start_timestamp }} UTC 
+                        and will not reflect changes made after that time. 
+                        You will need to rerun <a href="{{ url_main_page }}" >{{ app_title }}</a>
+                        to create a new backup.
+                    </div>
+                </div>
+                {% if include_completed %}
+                    <br/>
+                    <span class="comment">Includes completed tasks</span>
+                {% else %}
+                    <br/>
+                    <span class="comment">Excludes completed tasks</span>
+                {% endif %}
+                {% if include_hidden %}
+                    <br/>
+                    <span class="comment">Includes hidden tasks</span>
+                {% endif %}
+                {% if include_deleted %}
+                    <br/>
+                    <span class="comment">Includes deleted tasks</span>
+                {% endif %}
             </div>
         {% else %}
-            <div class="break">
-                Status = {{ status }}
-            </div>
-        {% endif %}
-        {% if progress > 0 %}
-            <div class="break">
-                Progress = {{ progress }}
-            </div>
-        {% endif %}
-        {% if job_msg %}
-            <div class="break">
-                {{ job_msg }}
-            </div>
+            {% if status == "Starting" %}
+                <div class="break">
+                    Starting new backup job, please wait (this may take up to 2 minutes) ...
+                </div>
+            {% else %}
+                <div class="break">
+                    Status = {{ status }}
+                </div>
+            {% endif %}
+            {% if progress > 0 %}
+                <div class="break">
+                    Progress = {{ progress }}
+                </div>
+            {% endif %}
+            {% if job_msg %}
+                <div class="break">
+                    {{ job_msg }}
+                </div>
+            {% endif %}
         {% endif %}
     {% endif %}
-    
-        
+
+            
     
     {% if error_message %}
         <br />
         <br />
         <br />
-        <br />
         <div class="take-note break">
-        {{ error_message }}
+            {{ error_message }}
         </div>
         <div class="break">
             Please report this error at <a href="http:/{{ url_issues_page }}">{{ url_issues_page }}</a>

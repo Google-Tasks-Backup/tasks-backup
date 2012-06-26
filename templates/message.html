@@ -96,13 +96,6 @@ This is the Django template for displaying messages to the user.
   
   <body>
   
-    {% if show_custom_button %}
-        <form>
-            <input type="button" class="back-button" onClick="window.location.href = '{{ custom_button_url }}'" 
-                value="{{ custom_button_text }}">
-        </form>
-    {% endif %}
-
     {% if show_heading_messages %}
         <h2>{{ app_title }}</h2>
     {% endif %}
@@ -121,6 +114,13 @@ This is the Django template for displaying messages to the user.
     
     <br />
     <br />
+    {% if show_custom_button %}
+        <form>
+            <input type="button" class="back-button" onClick="window.location.href = '{{ custom_button_url }}'" 
+                value="{{ custom_button_text }}">
+        </form>
+    {% endif %}
+
     <br />
 
     <div class="break take-note-larger">

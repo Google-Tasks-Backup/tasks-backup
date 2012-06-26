@@ -223,7 +223,7 @@ class StartBackupHandler(webapp.RequestHandler):
             
             # There should be a backup job record, and its status should be STARTING
             if tasks_backup_job is None:
-                logging.error(fn_name + "No DB record for " + user_email)
+                logging.warning(fn_name + "No DB record for " + user_email)
                 shared.serve_message_page(self, "No export job found. Please start a backup from the main menu.",
                     "If you believe this to be an error, please report this at the link below",
                     show_custom_button=True, custom_button_text='Go to main menu')
@@ -425,15 +425,24 @@ class ShowProgressHandler(webapp.RequestHandler):
             # logging.debug(settings.SHOW_LOG_OPTION_USERS)
             # logservice.flush()
 
+            status = None
+            error_message = None
+            progress = 0
+            job_start_timestamp = None
+            job_execution_time = None
+            include_completed = False
+            include_deleted = False
+            include_hidden = False
+            job_msg = ''
+            
             # Retrieve the DB record for this user
             tasks_backup_job = model.ProcessTasksJob.get_by_key_name(user_email)
-            error_message = None 
             if tasks_backup_job is None:
                 logging.error(fn_name + "No DB record for " + user_email)
                 status = 'no-record'
                 progress = 0
                 job_start_timestamp = None
-                error_message = "No backup job found for " + str(user_email)
+                job_msg = "No backup found for " + str(user_email)
             else:            
                 # total_progress is only updated once all the tasks have been retrieved in a single tasklist.
                 # tasklist_progress is updated every settings.TASK_COUNT_UPDATE_INTERVAL seconds within the retrieval process
@@ -1800,7 +1809,7 @@ class OAuthCallbackHandler(webapp.RequestHandler):
                     
                 if error:
                     # TODO: Redirect to retry or invalid_credentials page, with more meaningful message
-                    logging.warning(fn_name + "Error retrieving credentials from flow. Redirecting to " + settings.WELCOME_PAGE_URL + "'/?msg=ACCOUNT_ERROR'")
+                    logging.warning(fn_name + "Error retrieving credentials from flow. Redirecting to " + settings.WELCOME_PAGE_URL + "/?msg=ACCOUNT_ERROR")
                     logservice.flush()
                     self.redirect(settings.WELCOME_PAGE_URL + "/?msg=ACCOUNT_ERROR")
                     logging.debug(fn_name + "<End> (Error retrieving credentials)")

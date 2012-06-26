@@ -336,6 +336,8 @@
                 If the task has a due date, the date that the task is due, in the format <span class="fixed-font">"UTC YYYY-mm-dd"</span>
                 <br />
                 If the task does not have a due date, leave this field blank
+                <br />
+                <span class="take-note">The due date field must start with <span class="fixed-font">UTC </span>
             </td>
         </tr>
         <tr>
@@ -344,6 +346,8 @@
                 If the task has been completed, the date and time that the task was completed, in the format <span class="fixed-font">"UTC YYYY-mm-dd HH:MM:SS"</span>
                 <br />
                 If the task has not been completed, leave this field blank
+                <br />
+                <span class="take-note">The completed date-time field must start with <span class="fixed-font">UTC </span>
             </td>
         </tr>
         <tr>
@@ -380,17 +384,17 @@
     <div class="break fixed-font smaller-font">
         "tasklist_name","title","notes","status","due","completed","deleted","hidden",depth
         <br />
-        "My Tasklist","First task","This is a root task","needsAction","2012-08-23",,,,0
+        "My Tasklist","First task","This is a root task","needsAction","UTC 2012-08-23",,,,0
         <br />
-        "My Tasklist","First subtask","This is a subtask of the first task","needsAction","2012-08-19",,,,1
+        "My Tasklist","First subtask","This is a subtask of the first task","needsAction","UTC 2012-08-19",,,,1
         <br />
-        "My Tasklist","Second subtask","This is a subtask\nof the first subtask","needsAction","2012-04-21",,,,2
+        "My Tasklist","Second subtask","This is a subtask\nof the first subtask","needsAction","UTC 2012-04-21",,,,2
         <br />
         "My Tasklist","Third subtask","This is a subtask of the second subtask","needsAction",,,,,3
         <br />
-        "My Tasklist","Fourth subtask","This is a 2nd subtask of the first subtask","needsAction","2012-07-25",,,,1
+        "My Tasklist","Fourth subtask","This is a 2nd subtask of the first subtask","needsAction","UTC 2012-07-25",,,,1
         <br />
-        "My Tasklist","Second task","This is another ""root"" task","completed",,"2012-04-22 02:42:36",,,0
+        "My Tasklist","Second task","This is another ""root"" task","completed",,"UTC 2012-04-22 02:42:36",,,0
     </div>
     
     <div class="minor-heading">This is displayed in Google Tasks as;</div>
