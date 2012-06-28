@@ -7,7 +7,7 @@
  *      <link rel="stylesheet" type="text/css" href="print.css" media="print" />
  */
 
-.noprint
+.no-print
 {
     display: none !important;
 }

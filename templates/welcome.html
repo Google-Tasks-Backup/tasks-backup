@@ -73,21 +73,21 @@ Extensively modified by Julie Smith, 2012
 
     {% if msg == "ACCOUNT_ERROR" %}
         <div class="break">
-            <br />
-            <br />
-            <span class="take-note-larger break">
-                An error occurred authorizing your account. Please try again.
-            </span>
-            <br />
+            <div class="medium-break take-note-larger">
+                An error occurred authorizing your account.  
+            </div>
+            Possible reasons;
+            <ul>
+                <li> there is a server or communications problem, or </li>
+                <li> your Google Apps account is not authorised to access this application, or </li>
+                <li> your account is not currently in good standing with Google. </li>
+            </ul>
+            <div class="medium-break take-note-larger">
+                Please try again
+            </div>
             <div class="medium-break">
-                If this happens again, please <a href="http:/{{ url_issues_page }}">report the issue</a> so that we can try to fix it.
+                If this happens again, please <a href="http:/{{ url_issues_page }}">report the issue</a> so that we can try to fix it.  
             </div>
-            <div class="comment">
-                This may also happen because your Google Apps account is not authorised to access this application, or
-                your account is not currently in good standing with Google. 
-            </div>
-            <br />
-            <br />
         </div>
     {% endif %}
     

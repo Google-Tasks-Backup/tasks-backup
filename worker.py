@@ -361,27 +361,13 @@ class ProcessTasksWorker(webapp.RequestHandler):
                   
             # *** end while more_tasks_data_to_retrieve ***
             
-            # These values are also sent by email at the end of this method
-            summary_msg = "Retrieved %d tasks from %d tasklists" % (total_num_tasks, total_num_tasklists)
-            breakdown_msg = "Tasks per list: " + str(tasks_per_list)
-            logging.info(fn_name + summary_msg + " - " + breakdown_msg)
-            logservice.flush()
-            
             # ------------------------------------------------------
             #   Store the data, so we can return it to the user
             # ------------------------------------------------------
               
 
             """
-                Structure used in Django CSV templates
-                    {% for tasklist in tasklists %}
-                        {% for task in tasklist.tasks %}
-                        
-                Structure to pass to django
-                {
-                    "now": datetime.datetime.now(),  # Timestamp for the creation of this report/backup
-                    "tasklists": [ tasklist ]        # List of tasklist items
-                }
+                tasklists is a list of tasklist structures
 
                 structure of tasklist
                 { 
@@ -440,17 +426,23 @@ class ProcessTasksWorker(webapp.RequestHandler):
                     tasklist_rec.put()
                     
                 # logging.debug(fn_name + "Marking backup job complete")
-                
-                # Mark backup completed
                 end_time = datetime.datetime.now()
                 process_time = end_time - start_time
                 proc_time_str = str(process_time.seconds) + "." + str(process_time.microseconds)[:3] + " seconds"
+                
+                # Mark backup completed
+                summary_msg = "Retrieved %d tasks from %d tasklists" % (total_num_tasks, total_num_tasklists)
+                breakdown_msg = "Tasks per list: " + str(tasks_per_list)
+                
                 self.process_tasks_job.status = constants.ExportJobStatus.EXPORT_COMPLETED
                 self.process_tasks_job.job_progress_timestamp = datetime.datetime.now()
-                self.process_tasks_job.message = summary_msg + " in " + proc_time_str
-                logging.debug(fn_name + "COMPLETED: Export complete - Job status: '" + str(self.process_tasks_job.status) + "', progress: " + 
-                    str(self.process_tasks_job.total_progress) + ", msg: '" + 
-                    str(self.process_tasks_job.message) + "', err msg: '" + str(self.process_tasks_job.error_message) + "'")
+                # self.process_tasks_job.message = summary_msg + " in " + proc_time_str
+                self.process_tasks_job.message = summary_msg + " at " + \
+                    self.process_tasks_job.job_start_timestamp.strftime("%H:%M UTC, %a %d %b %Y")
+                # logging.debug(fn_name + "COMPLETED: Export complete - Job status: '" + str(self.process_tasks_job.status) + "', progress: " + 
+                    # str(self.process_tasks_job.total_progress) + ", msg: '" + 
+                    # str(self.process_tasks_job.message) + "', err msg: '" + str(self.process_tasks_job.error_message) + "'")
+                logging.info(fn_name + "COMPLETED: " + summary_msg + " for " + self.user_email + " in " + proc_time_str)
                 logservice.flush()
                 self.process_tasks_job.put()
                 
@@ -460,7 +452,7 @@ class ProcessTasksWorker(webapp.RequestHandler):
                     processing_time = process_time.days * 3600*24 + process_time.seconds + process_time.microseconds / 1000000.0
                     included_options_str = "Includes: Completed = %s, Deleted = %s, Hidden = %s" % (str(include_completed), str(include_deleted), str(include_hidden))
                     
-                    logging.info(fn_name + "STATS for " + str(hash(self.user_email)) + " at " + str(start_time) +
+                    logging.debug(fn_name + "STATS: Started at " + str(start_time) +
                         "\n    " + summary_msg + 
                         "\n    " + breakdown_msg +
                         "\n    " + proc_time_str +
@@ -487,7 +479,7 @@ class ProcessTasksWorker(webapp.RequestHandler):
                     # Don't bother doing anything else, because stats aren't critical
                 
             except apiproxy_errors.RequestTooLargeError, e:
-                logging.exception(fn_name + "Error putting results in DB")
+                logging.exception(fn_name + "Error putting results in DB - Request too large")
                 logservice.flush()
                 self.process_tasks_job.status = constants.ExportJobStatus.ERROR
                 self.process_tasks_job.message = ''

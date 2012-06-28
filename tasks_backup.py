@@ -391,6 +391,7 @@ class ShowProgressHandler(webapp.RequestHandler):
     
     def get(self):
         """Display the progress page, which includes a refresh meta-tag to recall this page every n seconds"""
+        
         fn_name = "ShowProgressHandler.get(): "
     
         logging.debug(fn_name + "<Start>")
@@ -693,7 +694,7 @@ class ReturnResultsHandler(webapp.RequestHandler):
                                                 int(self.request.get('due_day'))) 
                 except Exception, e:
                     due_date_limit = datetime.date(datetime.MINYEAR,1,1)
-                    logging.exception(fn_name + "Error intepretting due date limit from browser. Using " + str(due_date_limit))
+                    logging.exception(fn_name + "Error interpretting due date limit from browser. Using " + str(due_date_limit))
                     logservice.flush()
             else:
                 due_date_limit = None
@@ -1352,12 +1353,15 @@ class ReturnResultsHandler(webapp.RequestHandler):
         self.response.out.write(logout_url)
         self.response.out.write('">Log out</a> ]</span></div>')
         
-        # self.response.out.write("""<div class="break noprint"><button onclick="javascript:history.back(-1)" class="back-button"  value="Back">Back</button></div>""")
+        self.response.out.write("""<div class="break">""") # Div to contain Back and Print buttons on same row. Don't print buttons.
+        # self.response.out.write("""<div class="break no-print"><button onclick="javascript:history.back(-1)" class="back-button"  value="Back">Back</button></div>""")
         
         # Need to provide the specific URL of the progress page. We can't use history.back() because the user may have used 
         # the next/previous tasklist links one or more times.
-        self.response.out.write("""<div class="break noprint"><button onclick="window.location.href = '%s'" class="back-button"  value="Back">Back</button></div>""" % settings.RESULTS_URL)
-        
+        self.response.out.write("""<div class="no-print" style="float: left;"><button onclick="window.location.href = '%s'" class="back-button"  value="Back">Back</button></div>""" % settings.RESULTS_URL)
+        self.response.out.write("""<div class="no-print" style="float: right;"><button onclick="window.print()" class="back-button"  value="Print page">Print page</button></div>""")
+        self.response.out.write("""<div style="clear: both;"></div>""")
+        self.response.out.write("""</div>""") # Closing div to contain Back and Print buttons on same row
         
         num_tasklists = len(tasklists)
         if num_tasklists > 0:
@@ -1400,7 +1404,7 @@ class ReturnResultsHandler(webapp.RequestHandler):
                     
             if display_invalid_tasks and num_invalid_tasks_to_display > 0:
                 # User chose to display invalid tasks (progress page)
-                self.response.out.write("""<div class="comment">""" + str(num_invalid_tasks_to_display) + """ invalid/corrupted tasks</div>""")
+                self.response.out.write("""<div class="comment">""" + str(num_invalid_tasks_to_display) + """ parentless, invalid or corrupted tasks</div>""")
             self.response.out.write("""</div>""")
             
             tl_num = 1
@@ -1420,7 +1424,7 @@ class ReturnResultsHandler(webapp.RequestHandler):
                     
                 if num_tasklists > 1:
                     # If there is more than one tasklist, display Next link
-                    self.response.out.write("""<div class="tasklist-link noprint"><a href="#tl%s_bottom">Next tasklist</a>&nbsp;&nbsp;&nbsp;&nbsp;<a href="#page_bottom">Bottom of page</a></div>""" % 
+                    self.response.out.write("""<div class="tasklist-link no-print"><a href="#tl%s_bottom">Next tasklist</a>&nbsp;&nbsp;&nbsp;&nbsp;<a href="#page_bottom">Bottom of page</a></div>""" % 
                         tl_num)
                     
                 self.response.out.write("""<div class="tasklist"><div class="tasklistheading"><span class="tasklistname">""")
@@ -1531,7 +1535,7 @@ class ReturnResultsHandler(webapp.RequestHandler):
                     self.response.out.write("""<a name="tl%s_top"> </a>""" % (tl_num+1))
                         
                     self.response.out.write("""<a name="tl%s_bottom"> </a>""" % tl_num)
-                    self.response.out.write("""<div class="tasklist-link noprint"><a href="#tl%s_top">To top of %s tasklist</a>&nbsp;&nbsp;&nbsp;<a href="#tl1_top">Top of page</a></div>""" % 
+                    self.response.out.write("""<div class="tasklist-link no-print"><a href="#tl%s_top">To top of %s tasklist</a>&nbsp;&nbsp;&nbsp;<a href="#tl1_top">Top of page</a></div>""" % 
                         (tl_num, tasklist_title))
                     tl_num = tl_num + 1
                                            

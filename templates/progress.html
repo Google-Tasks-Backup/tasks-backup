@@ -312,7 +312,7 @@ the selections that the user made when they started the backup.
                 <div class="popupContent" id="export-completed-content">
                     <img class="popupClose" border="0" src="/static/close.png" alt="Close">
                     <div class="clear medium-break">
-                        Note that this backup is a snapshot of tasks as at {{ job_start_timestamp }} UTC 
+                        This backup is a snapshot of tasks as at {{ job_start_timestamp }} UTC 
                         and will not reflect changes made after that time. 
                         You will need to rerun <a href="{{ url_main_page }}" >{{ app_title }}</a>
                         to create a new backup.
@@ -636,7 +636,7 @@ the selections that the user made when they started the backup.
                         <ul class="format-selection">
                             <li>
                                 <input type="checkbox" name="display_invalid_tasks" value="True" >
-                                    &nbsp;Display invalid/corrupted tasks? 
+                                    &nbsp;Display parentless, invalid and corrupted tasks? 
                                     <img class="popupTrigger" id="help-invalid" src="/static/help.png" alt="Display help">
                                     <img class="popupTrigger" id="help-invalid" src="/static/warning.png" alt="Display warning">
                                     <div class="popupContent" id="help-invalid-content">
@@ -645,7 +645,7 @@ the selections that the user made when they started the backup.
                                             <span style="color:red;">CAUTION:</span>  It is possible for subtasks to end up in an invalid state, where a subtask's parent is missing, or may not be exported. GTB marks these tasks as invalid, and does not export them to file or email. Refer to <a href="/static/info.html#note4">notes 4 and 5 on the information page</a> for more details.
                                         </div>
                                         <div class="clear medium-break">
-                                            If this option is checked, invalid tasks will be displayed and labeled as 
+                                            If this option is checked, parentless tasks will be displayed and labeled as 
                                             <span class="no-break task-attribute-hidden-or-deleted dim">-&nbsp;Invalid&nbsp;-</span>
                                             on the tasks display page. If this option is unchecked, invalid tasks will not be displayed.
                                         </div>
