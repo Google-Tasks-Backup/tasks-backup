@@ -260,12 +260,18 @@ class ProcessTasksWorker(webapp.RequestHandler):
                         tasklists_data = self.tasklists_svc.list().execute()
                     # Successfully retrieved data, so break out of retry loop
                     break
+                    
                   except Exception, e:
                     retry_count = retry_count - 1
                     if retry_count > 0:
                         logging.warning(fn_name + "Error retrieving list of tasklists. " + 
                             str(retry_count) + " retries remaining")
                         logservice.flush()
+                        if retry_count <= 2:
+                            logging.debug(fn_name + "Sleeping for " + str(settings.WORKER_API_RETRY_SLEEP_DURATION) + 
+                                " seconds before retrying")
+                            logservice.flush()
+                            time.sleep(settings.WORKER_API_RETRY_SLEEP_DURATION)
                     else:
                         logging.exception(fn_name + "Still error retrieving list of tasklists after " + str(constants.NUM_API_RETRIES) + " retries. Giving up")
                         logservice.flush()
@@ -321,7 +327,9 @@ class ProcessTasksWorker(webapp.RequestHandler):
                         logging.debug(fn_name + "Process all the tasks in " + str(tasklist_title))
                         logservice.flush()
                             
-                    # Process all the tasks in this task list
+                    # =====================================================
+                    #       Process all the tasks in this task list
+                    # =====================================================
                     tasklist_dict, num_tasks = self.get_tasks_in_tasklist(tasklist_title, tasklist_id, 
                         include_hidden, include_completed, include_deleted)
                     # Track number of tasks per tasklist
@@ -620,12 +628,20 @@ class ProcessTasksWorker(webapp.RequestHandler):
                     showHidden=include_hidden, showCompleted=include_completed, showDeleted=include_deleted).execute()
               # Succeeded, so continue
               break
+              
             except Exception, e:
               retry_count = retry_count - 1
               if retry_count > 0:
                 logging.warning(fn_name + "Error retrieving tasks, " + 
                       str(retry_count) + " retries remaining")
                 logservice.flush()
+                # Last chances - sleep to give the server some extra time before re-requesting
+                if retry_count <= 2:
+                    logging.debug(fn_name + "Sleeping for " + str(settings.WORKER_API_RETRY_SLEEP_DURATION) + 
+                        " seconds before retrying")
+                    logservice.flush()
+                    time.sleep(settings.WORKER_API_RETRY_SLEEP_DURATION)
+                
               else:
                 logging.exception(fn_name + "Still error retrieving tasks for tasklist after " + str(constants.NUM_API_RETRIES) + " retries. Giving up")
                 logservice.flush()

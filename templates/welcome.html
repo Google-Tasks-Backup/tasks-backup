@@ -29,8 +29,8 @@ Extensively modified by Julie Smith, 2012
         <script type="text/javascript">
 
             function authorise() {
-                document.getElementById("authorise_button").value = "Authorising, please wait (this may take up to half a minute) ...";
-                document.getElementById("authorise_button").innerHTML = "Authorising, please wait (this may take up to half a minute) ...";
+                document.getElementById("authorise_button").value = "Authorising, please wait (this may take up to one minute) ...";
+                document.getElementById("authorise_button").innerHTML = "Authorising, please wait (this may take up to one minute) ...";
                 document.getElementById("authorise_button").disabled = true;
                 window.location.href = "/auth";
             }
@@ -73,6 +73,8 @@ Extensively modified by Julie Smith, 2012
 
     {% if msg == "ACCOUNT_ERROR" %}
         <div class="break">
+            <br />
+            <br />
             <div class="medium-break take-note-larger">
                 An error occurred authorizing your account.  
             </div>
@@ -85,9 +87,12 @@ Extensively modified by Julie Smith, 2012
             <div class="medium-break take-note-larger">
                 Please try again
             </div>
-            <div class="medium-break">
+            <div class="break">
                 If this happens again, please <a href="http:/{{ url_issues_page }}">report the issue</a> so that we can try to fix it.  
             </div>
+            <br />
+            <br />
+            <br />
         </div>
     {% endif %}
     

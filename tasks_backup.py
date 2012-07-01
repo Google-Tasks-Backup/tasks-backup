@@ -31,6 +31,7 @@ import pickle
 import sys
 import gc
 import cgi
+import time
 
 from apiclient import discovery
 from apiclient.oauth2client import appengine
@@ -49,6 +50,10 @@ from google.appengine.runtime import DeadlineExceededError
 from google.appengine.api import urlfetch_errors
 from google.appengine.api import logservice # To flush logs
 
+# Import from error so that we can process HttpError
+from apiclient import errors as apiclient_errors
+
+
 logservice.AUTOFLUSH_EVERY_SECONDS = 5
 logservice.AUTOFLUSH_EVERY_BYTES = None
 logservice.AUTOFLUSH_EVERY_LINES = 5
@@ -64,7 +69,7 @@ import csv
 import model
 import settings
 import appversion # appversion.version is set before the upload process to keep the version number consistent
-import shared # Code whis is common between tasks-backup.py and worker.py
+import shared # Code which is common between tasks-backup.py and worker.py
 import constants
 
   
@@ -132,7 +137,8 @@ class MainHandler(webapp.RequestHandler):
             logservice.flush()
         except Exception, e:
             logging.exception(fn_name + "Caught top-level exception")
-            self.response.out.write("""Oops! Something went terribly wrong.<br />%s<br />Please report this error to <a href="http://code.google.com/p/tasks-backup/issues/list">code.google.com/p/tasks-backup/issues/list</a>""" % shared.get_exception_msg(e))
+            self.response.out.write("""Oops! Something went terribly wrong.<br />%s<br />Please report this error to <a href="http://%s">%s</a>""" % 
+                ( shared.get_exception_msg(e), settings.url_issues_page, settings.url_issues_page))
             logging.debug(fn_name + "<End> due to exception" )
             logservice.flush()
     
@@ -187,7 +193,8 @@ class WelcomeHandler(webapp.RequestHandler):
             logservice.flush()
         except Exception, e:
             logging.exception(fn_name + "Caught top-level exception")
-            self.response.out.write("""Oops! Something went terribly wrong.<br />%s<br />Please report this error to <a href="http://code.google.com/p/tasks-backup/issues/list">code.google.com/p/tasks-backup/issues/list</a>""" % shared.get_exception_msg(e))
+            self.response.out.write("""Oops! Something went terribly wrong.<br />%s<br />Please report this error to <a href="http://%s">%s</a>""" % 
+                ( shared.get_exception_msg(e), settings.url_issues_page, settings.url_issues_page))
             logging.debug(fn_name + "<End> due to exception" )
             logservice.flush()
     
@@ -245,7 +252,8 @@ class StartBackupHandler(webapp.RequestHandler):
             
         except Exception, e:
             logging.exception(fn_name + "Caught top-level exception")
-            self.response.out.write("""Oops! Something went terribly wrong.<br />%s<br />Please report this error to <a href="http://code.google.com/p/tasks-backup/issues/list">code.google.com/p/tasks-backup/issues/list</a>""" % shared.get_exception_msg(e))
+            self.response.out.write("""Oops! Something went terribly wrong.<br />%s<br />Please report this error to <a href="http://%s">%s</a>""" % 
+                ( shared.get_exception_msg(e), settings.url_issues_page, settings.url_issues_page))
             logging.error(fn_name + "<End> due to exception" )
             logservice.flush()
 
@@ -327,7 +335,8 @@ class StartBackupHandler(webapp.RequestHandler):
             
         except Exception, e:
             logging.exception(fn_name + "Caught top-level exception")
-            self.response.out.write("""Oops! Something went terribly wrong.<br />%s<br />Please report this error to <a href="http://code.google.com/p/tasks-backup/issues/list">code.google.com/p/tasks-backup/issues/list</a>""" % shared.get_exception_msg(e))
+            self.response.out.write("""Oops! Something went terribly wrong.<br />%s<br />Please report this error to <a href="http://%s">%s</a>""" % 
+                ( shared.get_exception_msg(e), settings.url_issues_page, settings.url_issues_page))
             logging.debug(fn_name + "<End> due to exception" )
             logservice.flush()
 
@@ -380,7 +389,8 @@ class StartBackupHandler(webapp.RequestHandler):
     
         except Exception, e:
             logging.exception(fn_name + "Caught top-level exception")
-            self.response.out.write("""Oops! Something went terribly wrong.<br />%s<br />Please report this error to <a href="http://code.google.com/p/tasks-backup/issues/list">code.google.com/p/tasks-backup/issues/list</a>""" % shared.get_exception_msg(e))
+            self.response.out.write("""Oops! Something went terribly wrong.<br />%s<br />Please report this error to <a href="http://%s">%s</a>""" % 
+                ( shared.get_exception_msg(e), settings.url_issues_page, settings.url_issues_page))
             logging.debug(fn_name + "<End> due to exception" )
             logservice.flush()
     
@@ -525,7 +535,8 @@ class ShowProgressHandler(webapp.RequestHandler):
             logservice.flush()
         except Exception, e:
             logging.exception(fn_name + "Caught top-level exception")
-            self.response.out.write("""Oops! Something went terribly wrong.<br />%s<br />Please report this error to <a href="http://code.google.com/p/tasks-backup/issues/list">code.google.com/p/tasks-backup/issues/list</a>""" % shared.get_exception_msg(e))
+            self.response.out.write("""Oops! Something went terribly wrong.<br />%s<br />Please report this error to <a href="http://%s">%s</a>""" % 
+                ( shared.get_exception_msg(e), settings.url_issues_page, settings.url_issues_page))
             logging.debug(fn_name + "<End> due to exception" )
             logservice.flush()
         
@@ -556,7 +567,8 @@ class ReturnResultsHandler(webapp.RequestHandler):
             logservice.flush()
         except Exception, e:
             logging.exception(fn_name + "Caught top-level exception")
-            self.response.out.write("""Oops! Something went terribly wrong.<br />%s<br />Please report this error to <a href="http://code.google.com/p/tasks-backup/issues/list">code.google.com/p/tasks-backup/issues/list</a>""" % shared.get_exception_msg(e))
+            self.response.out.write("""Oops! Something went terribly wrong.<br />%s<br />Please report this error to <a href="http://%s">%s</a>""" % 
+                ( shared.get_exception_msg(e), settings.url_issues_page, settings.url_issues_page))
             logging.debug(fn_name + "<End> due to exception" )
             logservice.flush()
         
@@ -1014,7 +1026,8 @@ class ReturnResultsHandler(webapp.RequestHandler):
             except Exception, e:
                 logging.debug(fn_name + "Unable to delete 'Content-Disposition' from headers: " + shared.get_exception_msg(e))
             self.response.clear() 
-            self.response.out.write("""Oops! Something went terribly wrong.<br />%s<br />Please report this error to <a href="http://code.google.com/p/tasks-backup/issues/list">code.google.com/p/tasks-backup/issues/list</a>""" % shared.get_exception_msg(e))
+            self.response.out.write("""Oops! Something went terribly wrong.<br />%s<br />Please report this error to <a href="http://%s">%s</a>""" % 
+                ( shared.get_exception_msg(e), settings.url_issues_page, settings.url_issues_page))
             logging.debug(fn_name + "<End> due to exception" )
             logservice.flush()
 
@@ -1639,7 +1652,8 @@ class InvalidCredentialsHandler(webapp.RequestHandler):
             logservice.flush()
         except Exception, e:
             logging.exception(fn_name + "Caught top-level exception")
-            self.response.out.write("""Oops! Something went terribly wrong.<br />%s<br />Please report this error to <a href="http://code.google.com/p/tasks-backup/issues/list">code.google.com/p/tasks-backup/issues/list</a>""" % shared.get_exception_msg(e))
+            self.response.out.write("""Oops! Something went terribly wrong.<br />%s<br />Please report this error to <a href="http://%s">%s</a>""" % 
+                ( shared.get_exception_msg(e), settings.url_issues_page, settings.url_issues_page))
             logging.debug(fn_name + "<End> due to exception" )
             logservice.flush()
        
@@ -1700,7 +1714,8 @@ class CompletedHandler(webapp.RequestHandler):
             self.response.out.write(template.render(path, template_values))
         except Exception, e:
             logging.exception(fn_name + "Caught top-level exception")
-            self.response.out.write("""Oops! Something went terribly wrong.<br />%s<br />Please report this error to <a href="http://code.google.com/p/tasks-backup/issues/list">code.google.com/p/tasks-backup/issues/list</a>""" % shared.get_exception_msg(e))
+            self.response.out.write("""Oops! Something went terribly wrong.<br />%s<br />Please report this error to <a href="http://%s">%s</a>""" % 
+                ( shared.get_exception_msg(e), settings.url_issues_page, settings.url_issues_page))
             logging.debug(fn_name + "<End> due to exception" )
             logservice.flush()
 
@@ -1741,7 +1756,8 @@ class AuthHandler(webapp.RequestHandler):
             
         except Exception, e:
             logging.exception(fn_name + "Caught top-level exception")
-            self.response.out.write("""Oops! Something went terribly wrong.<br />%s<br />Please report this error to <a href="http://code.google.com/p/tasks-backup/issues/list">code.google.com/p/tasks-backup/issues/list</a>""" % shared.get_exception_msg(e))
+            self.response.out.write("""Oops! Something went terribly wrong.<br />%s<br />Please report this error to <a href="http://%s">%s</a>""" % 
+                ( shared.get_exception_msg(e), settings.url_issues_page, settings.url_issues_page))
             logging.debug(fn_name + "<End> due to exception" )
             logservice.flush()
 
@@ -1750,7 +1766,6 @@ class AuthHandler(webapp.RequestHandler):
 class OAuthCallbackHandler(webapp.RequestHandler):
     """Handler for /oauth2callback."""
 
-    # TODO: Simplify - Compare with orig in GTP
     def get(self):
         """Handles GET requests for /oauth2callback."""
         
@@ -1759,79 +1774,10 @@ class OAuthCallbackHandler(webapp.RequestHandler):
         logging.debug(fn_name + "<Start>")
         logservice.flush()
         
-        try:
-            if not self.request.get("code"):
-                logging.debug(fn_name + "No 'code', so redirecting to " + str(settings.WELCOME_PAGE_URL))
-                logservice.flush()
-                self.redirect(settings.WELCOME_PAGE_URL)
-                logging.debug(fn_name + "<End> (no code)")
-                logservice.flush()
-                return
-                
-            user = users.get_current_user()
-            logging.debug(fn_name + "Retrieving flow for " + str(user.user_id()))
-            flow = pickle.loads(memcache.get(user.user_id()))
-            if flow:
-                logging.debug(fn_name + "Got flow. Retrieving credentials")
-                error = False
-                retry_count = settings.NUM_API_TRIES
-                while retry_count > 0:
-                    retry_count = retry_count - 1
-                    try:
-                        credentials = flow.step2_exchange(self.request.params)
-                        # Success!
-                        error = False
-                        
-                        if shared.isTestUser(user.email()):
-                            logging.debug(fn_name + "Retrieved credentials for " + str(user.email()) + ", expires " + 
-                                str(credentials.token_expiry) + " UTC")
-                        else:    
-                            logging.debug(fn_name + "Retrieved credentials, expires " + str(credentials.token_expiry) + " UTC")
-                        break
-                        
-                    except client.FlowExchangeError, e:
-                        logging.warning(fn_name + "FlowExchangeError " + str(e))
-                        error = True
-                        credentials = None
-                        break
-                        
-                    except Exception, e:
-                        error = True
-                        credentials = None
-                        
-                    if retry_count > 0:
-                        logging.info(fn_name + "Error retrieving credentials. " + 
-                                str(retry_count) + " retries remaining: " + shared.get_exception_msg(e))
-                        logservice.flush()
-                    else:
-                        logging.exception(fn_name + "Unable to retrieve credentials after 3 retries. Giving up")
-                        logservice.flush()
-                            
-                    
-                appengine.StorageByKeyName(
-                    model.Credentials, user.user_id(), "credentials").put(credentials)
-                    
-                if error:
-                    # TODO: Redirect to retry or invalid_credentials page, with more meaningful message
-                    logging.warning(fn_name + "Error retrieving credentials from flow. Redirecting to " + settings.WELCOME_PAGE_URL + "/?msg=ACCOUNT_ERROR")
-                    logservice.flush()
-                    self.redirect(settings.WELCOME_PAGE_URL + "/?msg=ACCOUNT_ERROR")
-                    logging.debug(fn_name + "<End> (Error retrieving credentials)")
-                    logservice.flush()
-                else:
-                    # Redirect to the URL stored in the "state" param, when shared.redirect_for_auth was called
-                    # This should be the URL that the user was on when authorisation failed
-                    logging.debug(fn_name + "Success. Redirecting to " + str(self.request.get("state")))
-                    self.redirect(self.request.get("state"))
-                    logging.debug(fn_name + "<End>")
-                    logservice.flush()
-                        
-        except Exception, e:
-            logging.exception(fn_name + "Caught top-level exception")
-            self.response.out.write("""Oops! Something went terribly wrong.<br />%s<br />Please report this error to <a href="http://code.google.com/p/tasks-backup/issues/list">code.google.com/p/tasks-backup/issues/list</a>""" % shared.get_exception_msg(e))
-            logging.debug(fn_name + "<End> due to exception" )
-            logservice.flush()
-
+        shared.handle_auth_callback(self)
+        
+        logging.debug(fn_name + "<End>")
+        logservice.flush()
         
 
 def real_main():
@@ -1852,6 +1798,7 @@ def real_main():
         ], debug=False)
     util.run_wsgi_app(application)
     logging.debug("main(): <End>")
+    logservice.flush()
 
 def profile_main():
     # From https://developers.google.com/appengine/kb/commontasks#profiling
@@ -1868,6 +1815,7 @@ def profile_main():
     stats.print_callees()
     stats.print_callers()
     logging.info("Profile data:\n%s", stream.getvalue())
+    logservice.flush()
     
 main = real_main
 

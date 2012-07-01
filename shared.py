@@ -1,6 +1,6 @@
 #!/usr/bin/python2.5
 #
-# Copyright 2011 Google Inc.  All Rights Reserved.
+# Copyright 2012  Julie Smith.  All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -14,9 +14,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
-# Extensively modified by Julie Smith 2012
+# Portions of this code are from Dwight Guth's Google Tasks Porter
 
-# This module contains code whis is common between classes, or between tasks-backup.py and worker.py
+# This module contains code whis is common between classes, modules or related projects
 # Can't use the name common, because there is already a module named common
 
 from apiclient.oauth2client import appengine
@@ -34,7 +34,6 @@ from apiclient import discovery
 from apiclient import errors as apiclient_errors
 
 
-
 import httplib2
 import Cookie
 import cgi
@@ -42,11 +41,12 @@ import sys
 import os
 import traceback
 import logging
-from google.appengine.api import logservice # To flush logs
 import pickle
-import model
 
-# Project-specific settings, used by get_settings
+
+
+# Project-specific imports
+import model
 import settings
 import constants
 import appversion # appversion.version is set before the upload process to keep the version number consistent
@@ -185,7 +185,8 @@ def redirect_for_auth(self, user, redirect_url=None):
         
     except Exception, e:
         logging.exception(fn_name + "Caught top-level exception")
-        self.response.out.write("""Oops! Something went terribly wrong.<br />%s<br />Please report this error to <a href="http://code.google.com/p/tasks-backup/issues/list">code.google.com/p/tasks-backup/issues/list</a>""" % get_exception_msg(e))
+        self.response.out.write("""Oops! Something went terribly wrong.<br />%s<br />Please report this error to <a href="http://%s">%s</a>""" % 
+            ( get_exception_msg(e), settings.url_issues_page, settings.url_issues_page))
         logging.debug(fn_name + "<End> due to exception" )
         logservice.flush()
 
@@ -265,7 +266,7 @@ def get_credentials(self):
                     # break 
                     
                 except apiclient_errors.HttpError, e:
-                    logging.info(fn_name + "HttpError using credentials: " + get_exception_msg(e))
+                    #logging.info(fn_name + "HttpError using credentials: " + get_exception_msg(e))
                     if e._get_reason().lower() == "daily limit exceeded":
                         fail_reason = "Daily limit exceeded"
                         fail_msg = "HttpError: Daily limit exceeded using credentials."
@@ -277,26 +278,17 @@ def get_credentials(self):
                     result = False
                     
                 except Exception, e:
-                    logging.info(fn_name + "Exception using credentials: " + get_exception_msg(e))
+                    #logging.info(fn_name + "Exception using credentials: " + get_exception_msg(e))
                     fail_reason = "Credential use error"
-                    fail_msg = "System error: " + get_exception_msg(e)
+                    fail_msg = "Exception using credentials: " + get_exception_msg(e)
                     credentials = None
                     result = False
                         
-                    # retry_count = retry_count - 1
-                    # if retry_count > 0:
-                        # logging.debug(fn_name + "Error checking that credentials are valid, " + 
-                            # str(retry_count) + " retries remaining: " + get_exception_msg(e))
-                    # else:
-                        # logging.exception(fn_name + "Still errors checking that credentials are valid, even after " +
-                            # str(settings.NUM_API_TRIES) + " retries")
-                        # credentials = None
-                        # result = False
         else:
             # No credentials
             fail_msg = "No credentials"
             fail_reason = "Unable to retrieve credentials for user"
-            logging.debug(fn_name + fail_msg)
+            #logging.debug(fn_name + fail_msg)
             result = False
        
         if result:
@@ -372,7 +364,8 @@ def serve_message_page(self, msg1, msg2 = None, msg3 = None,
         logservice.flush()
     except Exception, e:
         logging.exception(fn_name + "Caught top-level exception")
-        self.response.out.write("""Oops! Something went terribly wrong.<br />%s<br />Please report this error to <a href="http://code.google.com/p/tasks-backup/issues/list">code.google.com/p/tasks-backup/issues/list</a>""" % get_exception_msg(e))
+        self.response.out.write("""Oops! Something went terribly wrong.<br />%s<br />Please report this error to <a href="http://%s">%s</a>""" % 
+            ( get_exception_msg(e), settings.url_issues_page, settings.url_issues_page))
         logging.debug(fn_name + "<End> due to exception" )
         logservice.flush()
     
@@ -475,7 +468,7 @@ def escape_html(text):
         return None
     # From http://docs.python.org/howto/unicode.html
     #   .encode('ascii', 'xmlcharrefreplace')
-    #   'xmlcharrefreplace' uses XML’s character references, e.g. &#40960;
+    #   'xmlcharrefreplace' uses XML's character references, e.g. &#40960;
     return cgi.escape(text).encode('ascii', 'xmlcharrefreplace').replace('\n','<br />')
     #return cgi.escape(text.decode('unicode_escape')).replace('\n', '<br />')
     #return "".join(html_escape_table.get(c,c) for c in text)
@@ -485,3 +478,180 @@ def escape_html(text):
 # def runningOnDev():
     # """ Returns true when running on local dev server. """
     # return os.environ['SERVER_SOFTWARE'].startswith('Dev')
+
+    
+def handle_auth_callback(self):
+    
+    fn_name = "handle_auth_callback() "
+        
+    logging.debug(fn_name + "<Start>")
+    logservice.flush()
+    
+    try:
+        if not self.request.get("code"):
+            logging.debug(fn_name + "No 'code', so redirecting to " + str(settings.WELCOME_PAGE_URL))
+            logservice.flush()
+            self.redirect(settings.WELCOME_PAGE_URL)
+            logging.debug(fn_name + "<End> (no code)")
+            logservice.flush()
+            return
+            
+        user = users.get_current_user()
+        logging.debug(fn_name + "Retrieving flow for " + str(user.user_id()))
+        flow = pickle.loads(memcache.get(user.user_id()))
+        if flow:
+            logging.debug(fn_name + "Got flow. Retrieving credentials")
+            error = False
+            retry_count = settings.NUM_API_TRIES
+            while retry_count > 0:
+                try:
+                    credentials = flow.step2_exchange(self.request.params)
+                    # Success!
+                    error = False
+                    
+                    if isTestUser(user.email()):
+                        logging.debug(fn_name + "Retrieved credentials for " + str(user.email()) + ", expires " + 
+                            str(credentials.token_expiry) + " UTC")
+                    else:    
+                        logging.debug(fn_name + "Retrieved credentials, expires " + str(credentials.token_expiry) + " UTC")
+                    break
+                    
+                except client.FlowExchangeError, e:
+                    logging.warning(fn_name + "FlowExchangeError: Giving up - " + get_exception_msg(e))
+                    error = True
+                    credentials = None
+                    break
+                    
+                except Exception, e:
+                    logging.warning(fn_name + "Exception: " + get_exception_msg(e))
+                    error = True
+                    credentials = None
+                    
+                retry_count = retry_count - 1
+
+                if retry_count > 0:
+                    logging.info(fn_name + "Error retrieving credentials. " + 
+                            str(retry_count) + " retries remaining")
+                    logservice.flush()
+                    # Last chances - sleep to give the server some extra time before re-requesting
+                    if retry_count <= 2:
+                        logging.debug(fn_name + "Sleeping for " + str(settings.FRONTEND_API_RETRY_SLEEP_DURATION) + 
+                            " seconds before retrying")
+                        logservice.flush()
+                        time.sleep(settings.FRONTEND_API_RETRY_SLEEP_DURATION)
+                                
+                else:
+                    logging.exception(fn_name + "Unable to retrieve credentials after " + str(settings.NUM_API_TRIES) + 
+                        " attempts. Giving up")
+                    logservice.flush()
+
+                        
+                
+            appengine.StorageByKeyName(
+                model.Credentials, user.user_id(), "credentials").put(credentials)
+                
+            if error:
+                # TODO: Redirect to retry or invalid_credentials page, with more meaningful message
+                logging.warning(fn_name + "Error retrieving credentials from flow. Redirecting to " + settings.WELCOME_PAGE_URL +
+                    "?msg=ACCOUNT_ERROR")
+                logservice.flush()
+                self.redirect(settings.WELCOME_PAGE_URL + "?msg=ACCOUNT_ERROR")
+                logging.debug(fn_name + "<End> (Error retrieving credentials)")
+                logservice.flush()
+            else:
+                # Redirect to the URL stored in the "state" param, when redirect_for_auth was called
+                # This should be the URL that the user was on when authorisation failed
+                logging.debug(fn_name + "Success. Redirecting to " + str(self.request.get("state")))
+                self.redirect(self.request.get("state"))
+                logging.debug(fn_name + "<End>")
+                logservice.flush()
+                    
+    except Exception, e:
+        logging.exception(fn_name + "Caught top-level exception")
+        self.response.out.write("""Oops! Something went terribly wrong.<br />%s<br />Please report this error to <a href="http://%s">%s</a>""" % 
+            ( get_exception_msg(e), settings.url_issues_page, settings.url_issues_page))
+        logging.debug(fn_name + "<End> due to exception" )
+        logservice.flush()
+
+        
+def get_task(tasks_svc, tasklist_id, task_id):
+    """ Retrieve specified task from specified tasklist.
+    
+        Returns the task if task exists.
+        
+        The get() throws an Exception if task does not exist
+    """
+
+    return tasks_svc.get(tasklist=tasklist_id, task=task_id).execute()
+    
+
+def get_task_safe(tasks_svc, tasklist_id, task_id):
+    """ Retrieve specified task from specified tasklist. 
+    
+        Returns None if task does not exist (404). 
+        
+        Throws exception on any other errors.
+        
+    """
+
+    fn_name = "task_exists: "
+    
+    try:
+        result = tasks_svc.get(tasklist=tasklist_id, task=task_id).execute()
+        
+        if result.get('kind') == 'tasks#task' and result.get('id') == task_id:
+            return result
+        else:
+            # DEBUG
+            logging.warning(fn_name + "DEBUG: Returned data does not appear to be a task, or ID doesn't match " + task_id + " ==>")
+            logging.debug(result)
+            return None
+
+    except apiclient_errors.HttpError, e:
+        # logging.debug(fn_name + "DEBUG: Status = [" + str(e.resp.status) + "]")
+        # 404 is expected if task does not exist
+        if e.resp.status == 404:
+            return None
+        else:
+            logging.exception(fn_name + "HttpError retrieving task, not a 404")
+            raise e
+        
+    except Exception, e:
+        logging.exception(fn_name + "Exception retrieving task")
+        raise e
+            
+        
+    
+
+def task_exists(tasks_svc, tasklist_id, task_id):
+    """ Returns True if specified task exists, else False. """
+    
+    fn_name = "task_exists: "
+    
+    try:
+        result = get_task(tasks_svc, tasklist_id, task_id)
+        if result.get('kind') == 'tasks#task' and result.get('id') == task_id:
+            return True
+        else:
+            # DEBUG
+            logging.debug(fn_name + "Returned data does not appear to be a task, or ID doesn't match " + task_id + " ==>")
+            logging.debug(result)
+            return False
+
+    except apiclient_errors.HttpError, e:
+        # logging.debug(fn_name + "Status = [" + str(e.resp.status) + "]")
+        # 404 is expected if task does not exist
+        if e.resp.status == 404:
+            return False
+        else:
+            logging.exception(fn_name + "HttpError retrieving task, not a 404")
+            raise e
+        
+    except Exception, e:
+        logging.exception(fn_name + "Exception retrieving task")
+        raise e
+            
+        
+        
+
+    

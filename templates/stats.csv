@@ -22,4 +22,4 @@ Use
 so that Excel doesn't interpret the hash as a number and truncate it as a 6-digit exponential number.    
 
 {% endcomment %}{% autoescape off %}"User hash","Start time (UTC)","Number of tasks","Number of tasklists","Processing time (seconds)","Include completed","Include deleted","Include hidden","Tasks per tasklist"{% for stat in stats %}
-="{{ stat.user_hash }}","{{ stat.start_time }}",{{ stat.number_of_tasks }},{{ stat.number_of_tasklists }},{{ stat.processing_time }},{{ stat.include_completed }},{{ stat.include_deleted }},{{ stat.include_hidden }}{% for num in stat.tasks_per_tasklist %},{{ num }}{% endfor %}{% endfor %}{% endautoescape %}
+="{{ stat.user_hash }}","{{ stat.start_time|date:"Y-m-d H:i:s" }}",{{ stat.number_of_tasks }},{{ stat.number_of_tasklists }},{{ stat.processing_time }},{{ stat.include_completed }},{{ stat.include_deleted }},{{ stat.include_hidden }}{% for num in stat.tasks_per_tasklist %},{{ num }}{% endfor %}{% endfor %}{% endautoescape %}
