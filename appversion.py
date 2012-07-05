@@ -6,5 +6,5 @@
 # Each time write_version.py is run;
 #   - revision (3rd part of 'version' string) is incemented by 1
 #   - 'upload_timestamp' is automatically generated
-version = 'beta 0.7.303'
-upload_timestamp = '2012-07-01 19:56'
+version = 'beta 0.7.311'
+upload_timestamp = '2012-07-05 20:00'

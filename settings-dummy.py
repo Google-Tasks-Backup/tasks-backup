@@ -14,6 +14,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+# Portions based on Dwight Guth's Google Tasks Porter
 
 # Rename this file as settings.py and set the client ID and secrets values 
 # according to the values from https://code.google.com/apis/console/
@@ -116,11 +117,23 @@ MAX_NUM_AUTH_RETRIES = 3
 # Number of times to try server actions
 # Exceptions are usually due to DeadlineExceededError on individual API calls
 # The first (NUM_API_TRIES - 2) retries are immediate. The app sleeps for 
-# API_RETRY_SLEEP_DURATION seconds before trying the 2nd last and last retries.
+# WORKER_API_RETRY_SLEEP_DURATION or FRONTEND_API_RETRY_SLEEP_DURATION seconds 
+# before trying the 2nd last and last retries.
 NUM_API_TRIES = 4
 
-# Number of seconds to sleep for the last 2 API retries
-API_RETRY_SLEEP_DURATION = 45
+# Number of seconds for worker to sleep for the last 2 API retries
+WORKER_API_RETRY_SLEEP_DURATION = 45
+
+
+# Number of seconds for frontend to sleep for the last API retries
+# The total amount of time allowed for a page response is 60 seconds. 
+# An API call times out after 5 seconds, so 4 API tries is up to 20 seconds
+# The API_RETRY_SLEEP_DURATION should be less than 
+# (60 - (NUM_API_TRIES - 2) * 5 - (2 * (5 + FRONTEND_API_RETRY_SLEEP_DURATION)))
+# i.e., if NUM_API_TRIES = 4, FRONTEND_API_RETRY_SLEEP_DURATION should be LESS than 20 sec
+FRONTEND_API_RETRY_SLEEP_DURATION = 18
+
+
 
 # Maximum number of seconds allowed between the start of a job, and when we give up.
 # i.e., display error message and stop refreshing progress.html

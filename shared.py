@@ -42,6 +42,7 @@ import os
 import traceback
 import logging
 import pickle
+import time
 
 
 
@@ -185,8 +186,7 @@ def redirect_for_auth(self, user, redirect_url=None):
         
     except Exception, e:
         logging.exception(fn_name + "Caught top-level exception")
-        self.response.out.write("""Oops! Something went terribly wrong.<br />%s<br />Please report this error to <a href="http://%s">%s</a>""" % 
-            ( get_exception_msg(e), settings.url_issues_page, settings.url_issues_page))
+        serve_outer_exception_message(self, e)
         logging.debug(fn_name + "<End> due to exception" )
         logservice.flush()
 
@@ -364,8 +364,7 @@ def serve_message_page(self, msg1, msg2 = None, msg3 = None,
         logservice.flush()
     except Exception, e:
         logging.exception(fn_name + "Caught top-level exception")
-        self.response.out.write("""Oops! Something went terribly wrong.<br />%s<br />Please report this error to <a href="http://%s">%s</a>""" % 
-            ( get_exception_msg(e), settings.url_issues_page, settings.url_issues_page))
+        serve_outer_exception_message(self, e)
         logging.debug(fn_name + "<End> due to exception" )
         logservice.flush()
     
@@ -568,8 +567,7 @@ def handle_auth_callback(self):
                     
     except Exception, e:
         logging.exception(fn_name + "Caught top-level exception")
-        self.response.out.write("""Oops! Something went terribly wrong.<br />%s<br />Please report this error to <a href="http://%s">%s</a>""" % 
-            ( get_exception_msg(e), settings.url_issues_page, settings.url_issues_page))
+        serve_outer_exception_message(self, e)
         logging.debug(fn_name + "<End> due to exception" )
         logservice.flush()
 
@@ -652,6 +650,14 @@ def task_exists(tasks_svc, tasklist_id, task_id):
         raise e
             
         
+def serve_outer_exception_message(self, e):
+    """ Display an Oops message when something goes very wrong. 
+    
+        This is called from the outer exception handler of major methods (such as get/post handlers)
+    """
+    
+    self.response.out.write("""Oops! Something went terribly wrong.<br />%s<br />Please report this error to <a href="http://%s">%s</a>""" % 
+        ( get_exception_msg(e), settings.url_issues_page, settings.url_issues_page))
         
 
     

@@ -137,8 +137,7 @@ class MainHandler(webapp.RequestHandler):
             logservice.flush()
         except Exception, e:
             logging.exception(fn_name + "Caught top-level exception")
-            self.response.out.write("""Oops! Something went terribly wrong.<br />%s<br />Please report this error to <a href="http://%s">%s</a>""" % 
-                ( shared.get_exception_msg(e), settings.url_issues_page, settings.url_issues_page))
+            shared.serve_outer_exception_message(self, e)
             logging.debug(fn_name + "<End> due to exception" )
             logservice.flush()
     
@@ -193,8 +192,7 @@ class WelcomeHandler(webapp.RequestHandler):
             logservice.flush()
         except Exception, e:
             logging.exception(fn_name + "Caught top-level exception")
-            self.response.out.write("""Oops! Something went terribly wrong.<br />%s<br />Please report this error to <a href="http://%s">%s</a>""" % 
-                ( shared.get_exception_msg(e), settings.url_issues_page, settings.url_issues_page))
+            shared.serve_outer_exception_message(self, e)
             logging.debug(fn_name + "<End> due to exception" )
             logservice.flush()
     
@@ -252,8 +250,7 @@ class StartBackupHandler(webapp.RequestHandler):
             
         except Exception, e:
             logging.exception(fn_name + "Caught top-level exception")
-            self.response.out.write("""Oops! Something went terribly wrong.<br />%s<br />Please report this error to <a href="http://%s">%s</a>""" % 
-                ( shared.get_exception_msg(e), settings.url_issues_page, settings.url_issues_page))
+            shared.serve_outer_exception_message(self, e)
             logging.error(fn_name + "<End> due to exception" )
             logservice.flush()
 
@@ -335,8 +332,7 @@ class StartBackupHandler(webapp.RequestHandler):
             
         except Exception, e:
             logging.exception(fn_name + "Caught top-level exception")
-            self.response.out.write("""Oops! Something went terribly wrong.<br />%s<br />Please report this error to <a href="http://%s">%s</a>""" % 
-                ( shared.get_exception_msg(e), settings.url_issues_page, settings.url_issues_page))
+            shared.serve_outer_exception_message(self, e)
             logging.debug(fn_name + "<End> due to exception" )
             logservice.flush()
 
@@ -389,8 +385,7 @@ class StartBackupHandler(webapp.RequestHandler):
     
         except Exception, e:
             logging.exception(fn_name + "Caught top-level exception")
-            self.response.out.write("""Oops! Something went terribly wrong.<br />%s<br />Please report this error to <a href="http://%s">%s</a>""" % 
-                ( shared.get_exception_msg(e), settings.url_issues_page, settings.url_issues_page))
+            shared.serve_outer_exception_message(self, e)
             logging.debug(fn_name + "<End> due to exception" )
             logservice.flush()
     
@@ -535,8 +530,7 @@ class ShowProgressHandler(webapp.RequestHandler):
             logservice.flush()
         except Exception, e:
             logging.exception(fn_name + "Caught top-level exception")
-            self.response.out.write("""Oops! Something went terribly wrong.<br />%s<br />Please report this error to <a href="http://%s">%s</a>""" % 
-                ( shared.get_exception_msg(e), settings.url_issues_page, settings.url_issues_page))
+            shared.serve_outer_exception_message(self, e)
             logging.debug(fn_name + "<End> due to exception" )
             logservice.flush()
         
@@ -567,8 +561,7 @@ class ReturnResultsHandler(webapp.RequestHandler):
             logservice.flush()
         except Exception, e:
             logging.exception(fn_name + "Caught top-level exception")
-            self.response.out.write("""Oops! Something went terribly wrong.<br />%s<br />Please report this error to <a href="http://%s">%s</a>""" % 
-                ( shared.get_exception_msg(e), settings.url_issues_page, settings.url_issues_page))
+            shared.serve_outer_exception_message(self, e)
             logging.debug(fn_name + "<End> due to exception" )
             logservice.flush()
         
@@ -768,13 +761,13 @@ class ReturnResultsHandler(webapp.RequestHandler):
                                     logging.exception("idx = " + str(idx) + ", id = " + task[u'id'] + ", parent = " + 
                                         task[u'parent'] + ", [" + task[u'title'] + "]")
                                     logservice.flush()
-                                    if shared.isTestUser(user_email):
-                                        # DEBUG
-                                        logging.debug(fn_name + "DEBUG: possible_parent_ids ==>")
-                                        logging(possible_parent_ids)
-                                        logging.debug(fn_name + "DEBUG: possible_parent_is_active ==>")
-                                        logging(possible_parent_is_active)
-                                        logservice.flush()
+                                    # if shared.isTestUser(user_email):
+                                        # # DEBUG
+                                        # logging.debug(fn_name + "DEBUG: possible_parent_ids ==>")
+                                        # logging(possible_parent_ids)
+                                        # logging.debug(fn_name + "DEBUG: possible_parent_is_active ==>")
+                                        # logging(possible_parent_is_active)
+                                        # logservice.flush()
                                 depth = idx + 1
                                 
                                 
@@ -808,7 +801,7 @@ class ReturnResultsHandler(webapp.RequestHandler):
                                     # (2) This can also happen if a completed task has incomplete subtasks (which should not logically happen),
                                     #     and the user choses not to import completed tasks. In that case the incomplete subtask's completed 
                                     #     parent has not been imported, so GTB reports it as an orphaned (invalid) task.
-                                    if display_invalid_tasks:
+                                    if display_invalid_tasks or export_format in ['raw', 'raw1', 'py', 'log']:
                                         depth = -99
                                         total_num_invalid_tasks = total_num_invalid_tasks + 1
                                     else:
@@ -879,6 +872,7 @@ class ReturnResultsHandler(webapp.RequestHandler):
                                                 tasklist_has_tasks_to_display = True
                                     except Exception, e:
                                         logging.exception(fn_name + "Exception determining if task is due")
+                                        # DEBUG:
                                         logging.debug(fn_name + "Task ==>")
                                         logging.debug(task)
                                         logservice.flush()
@@ -1026,8 +1020,7 @@ class ReturnResultsHandler(webapp.RequestHandler):
             except Exception, e:
                 logging.debug(fn_name + "Unable to delete 'Content-Disposition' from headers: " + shared.get_exception_msg(e))
             self.response.clear() 
-            self.response.out.write("""Oops! Something went terribly wrong.<br />%s<br />Please report this error to <a href="http://%s">%s</a>""" % 
-                ( shared.get_exception_msg(e), settings.url_issues_page, settings.url_issues_page))
+            shared.serve_outer_exception_message(self, e)
             logging.debug(fn_name + "<End> due to exception" )
             logservice.flush()
 
@@ -1652,8 +1645,7 @@ class InvalidCredentialsHandler(webapp.RequestHandler):
             logservice.flush()
         except Exception, e:
             logging.exception(fn_name + "Caught top-level exception")
-            self.response.out.write("""Oops! Something went terribly wrong.<br />%s<br />Please report this error to <a href="http://%s">%s</a>""" % 
-                ( shared.get_exception_msg(e), settings.url_issues_page, settings.url_issues_page))
+            shared.serve_outer_exception_message(self, e)
             logging.debug(fn_name + "<End> due to exception" )
             logservice.flush()
        
@@ -1714,8 +1706,7 @@ class CompletedHandler(webapp.RequestHandler):
             self.response.out.write(template.render(path, template_values))
         except Exception, e:
             logging.exception(fn_name + "Caught top-level exception")
-            self.response.out.write("""Oops! Something went terribly wrong.<br />%s<br />Please report this error to <a href="http://%s">%s</a>""" % 
-                ( shared.get_exception_msg(e), settings.url_issues_page, settings.url_issues_page))
+            shared.serve_outer_exception_message(self, e)
             logging.debug(fn_name + "<End> due to exception" )
             logservice.flush()
 
@@ -1756,8 +1747,7 @@ class AuthHandler(webapp.RequestHandler):
             
         except Exception, e:
             logging.exception(fn_name + "Caught top-level exception")
-            self.response.out.write("""Oops! Something went terribly wrong.<br />%s<br />Please report this error to <a href="http://%s">%s</a>""" % 
-                ( shared.get_exception_msg(e), settings.url_issues_page, settings.url_issues_page))
+            shared.serve_outer_exception_message(self, e)
             logging.debug(fn_name + "<End> due to exception" )
             logservice.flush()
 
