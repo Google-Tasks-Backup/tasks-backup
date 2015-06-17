@@ -37,7 +37,6 @@ the selections that the user made when they started the backup.
         <title>{{ app_title }}</title>
         <link rel="stylesheet" type="text/css" href="/static/tasks_backup.css" />
         <link rel="shortcut icon" type="image/x-icon" href="/static/favicon.ico" />
-        <link rel="icon" type="image/x-icon" href="/static/favicon.ico" />
         
         <script type="text/javascript" src="/static/jquery.js"></script>
         <script type="text/javascript" src="/static/popup.js"></script>
@@ -48,88 +47,103 @@ the selections that the user made when they started the backup.
         </script>
         
         <script type="text/javascript">
+        
+            {% include "inc_cookies.js" %}
             
-            // Store format and display selection (until user's browser session ends)
+            function saveSavedSelectedIndex(obj) {
+                if (typeof(obj) == "string") {
+                    // User passed in the name of the object
+                    obj = document.getElementById(obj);
+                }
+                if (obj.selectedIndex != obj._savedIndex) {
+                    // Save the value as a cookie
+                    setCookie(obj.id + "_idx", obj.selectedIndex, 3650);
+                    obj._savedIndex = obj.selectedIndex;
+                }
+            
+            }
+
+            function setSavedSelectedIndex(obj) {
+                if (typeof(obj) == "string") {
+                    // User passed in the name of the object
+                    obj = document.getElementById(obj);
+                }
+                var idx = getCookie(obj.id + "_idx");
+                if (idx) {
+                    document.getElementById(obj.id).selectedIndex = idx;
+                }
+            }
+
+            // Store the export format, timezone and display selections
             function storeSelections(actionId) {
-                createCookie('export_format', $('input[name=export_format]:checked').val(), 0); // Radio button
-                createCookie('due_selection', $('input[name=due_selection]:checked').val(), 0); // Radio button
-                createCookie('due_year', $('input[name=due_year]').val(), 0); // Hidden input
-                createCookie('due_month', $('input[name=due_month]').val(), 0); // Hidden input
-                createCookie('due_day', $('input[name=due_day]').val(), 0); // Hidden input
-                createCookie('display_invalid_tasks', $('input[name=display_invalid_tasks]:checked').val(), 0); // Checkbox
-                createCookie('display_due_date_field', $('input[name=display_due_date_field]:checked').val(), 0); // Checkbox
+                setCookie('export_format', $('input[name=export_format]:checked').val(), 3650); // Radio button
+                setCookie('due_selection', $('input[name=due_selection]:checked').val(), 3650); // Radio button
+                setCookie('due_year', $('input[name=due_year]').val(), 0); // Hidden input
+                setCookie('due_month', $('input[name=due_month]').val(), 0); // Hidden input
+                setCookie('due_day', $('input[name=due_day]').val(), 0); // Hidden input
+                setCookie('display_invalid_tasks', $('input[name=display_invalid_tasks]:checked').val(), 3650); // Checkbox
+                setCookie('display_due_date_field', $('input[name=display_due_date_field]:checked').val(), 3650); // Checkbox
                 {% if include_completed %}
-                    createCookie('display_completed_tasks', $('input[name=display_completed_tasks]:checked').val(), 0); // Checkbox
-                    createCookie('dim_completed_tasks', $('input[name=dim_completed_tasks]:checked').val(), 0); // Checkbox
-                    createCookie('display_completed_date_field', $('input[name=display_completed_date_field]:checked').val(), 0); // Checkbox
+                    setCookie('display_completed_tasks', $('input[name=display_completed_tasks]:checked').val(), 3650); // Checkbox
+                    setCookie('dim_completed_tasks', $('input[name=dim_completed_tasks]:checked').val(), 3650); // Checkbox
+                    setCookie('display_completed_date_field', $('input[name=display_completed_date_field]:checked').val(), 3650); // Checkbox
                 {% endif %}
                 {% if include_hidden %}
-                    createCookie('display_hidden_tasks', $('input[name=display_hidden_tasks]:checked').val(), 0); // Checkbox
+                    setCookie('display_hidden_tasks', $('input[name=display_hidden_tasks]:checked').val(), 3650); // Checkbox
                 {% endif %}
                 {% if include_deleted %}
-                    createCookie('display_deleted_tasks', $('input[name=display_deleted_tasks]:checked').val(), 0); // Checkbox
+                    setCookie('display_deleted_tasks', $('input[name=display_deleted_tasks]:checked').val(), 3650); // Checkbox
                 {% endif %}
-                createCookie('display_updated_date_field', $('input[name=display_updated_date_field]:checked').val(), 0); // Checkbox
-                createCookie('actionId', actionId, 0)
+                setCookie('display_updated_date_field', $('input[name=display_updated_date_field]:checked').val(), 3650); // Checkbox
+                setCookie('export_using_localtime', $('input[name=export_using_localtime]:checked').val(), 3650); // Checkbox
+                setCookie('display_using_localtime', $('input[name=display_using_localtime]:checked').val(), 3650); // Checkbox
+                saveSavedSelectedIndex('display_offset_hours');
+                saveSavedSelectedIndex('export_offset_hours');
+                
+                setCookie('actionId', actionId, 0)
             }
             
             // Restore the user's previous selections
             function restoreSelections() {
-                var efVal = readCookie('export_format');
+                var efVal = getCookie('export_format');
                 if (efVal != null && efVal != '') {
                     $('input:radio[name=export_format][value=' + efVal + ']').click(); // Radio button
                 }
-                var dsVal = readCookie('due_selection');
+                var dsVal = getCookie('due_selection');
                 if (dsVal != null && dsVal != '') {
                     $('input:radio[name=due_selection][value=' + dsVal + ']').click(); // Radio button
                 }
-                setDateFields(readCookie('due_day'), readCookie('due_month'), readCookie('due_year'));
-                $('input[name=display_invalid_tasks]').prop('checked', (readCookie('display_invalid_tasks')=='True')); // Checkbox
+                var due_year = getCookie('due_year');
+                var due_month = getCookie('due_month');
+                var due_day = getCookie('due_day');
+                if (due_year && due_month && due_day) {
+                    setDateFields(due_day, due_month, due_year);
+                } else {
+                    // No stored due date, so use today
+                    setCurrentDueDate();
+                }
+                $('input[name=display_invalid_tasks]').prop('checked', (getCookie('display_invalid_tasks')=='True')); // Checkbox
                 {% if include_completed %}
-                    $('input[name=display_completed_tasks]').prop('checked', (readCookie('display_completed_tasks')=='True')); // Checkbox
-                    $('input[name=dim_completed_tasks]').prop('checked', (readCookie('dim_completed_tasks')=='True')); // Checkbox
-                    $('input[name=display_completed_date_field]').prop('checked', (readCookie('display_completed_date_field')=='True')); // Checkbox
+                    $('input[name=display_completed_tasks]').prop('checked', (getCookie('display_completed_tasks')=='True')); // Checkbox
+                    $('input[name=dim_completed_tasks]').prop('checked', (getCookie('dim_completed_tasks')=='True')); // Checkbox
+                    $('input[name=display_completed_date_field]').prop('checked', (getCookie('display_completed_date_field')=='True')); // Checkbox
                 {% endif %}
                 {% if include_hidden %}
-                    $('input[name=display_hidden_tasks]').prop('checked', (readCookie('display_hidden_tasks')=='True')); // Checkbox
+                    $('input[name=display_hidden_tasks]').prop('checked', (getCookie('display_hidden_tasks')=='True')); // Checkbox
                 {% endif %}
                 {% if include_deleted %}
-                    $('input[name=display_deleted_tasks]').prop('checked', (readCookie('display_deleted_tasks')=='True')); // Checkbox
+                    $('input[name=display_deleted_tasks]').prop('checked', (getCookie('display_deleted_tasks')=='True')); // Checkbox
                 {% endif %}
-                $('input[name=display_due_date_field]').prop('checked', (readCookie('display_due_date_field')=='True')); // Checkbox
-                $('input[name=display_updated_date_field]').prop('checked', (readCookie('display_updated_date_field')=='True')); // Checkbox
+                $('input[name=display_due_date_field]').prop('checked', (getCookie('display_due_date_field')=='True')); // Checkbox
+                $('input[name=display_updated_date_field]').prop('checked', (getCookie('display_updated_date_field')=='True')); // Checkbox
+                $('input[name=export_using_localtime]').prop('checked', (getCookie('export_using_localtime')=='True')); // Checkbox
+                $('input[name=display_using_localtime]').prop('checked', (getCookie('display_using_localtime')=='True')); // Checkbox
+                
+                // Preselect the user's chosen timezones
+                setSavedSelectedIndex('display_offset_hours');
+                setSavedSelectedIndex('export_offset_hours');
             }
             
-            function createCookie(name,value,days) {
-                // From http://www.quirksmode.org/js/cookies.html
-                // If days = 0, the cookie is deleted when the user closes the browser. 
-                // If days < 0, the cookie is deleted immediately.
-                if (days) {
-                    var date = new Date();
-                    date.setTime(date.getTime()+(days*24*60*60*1000));
-                    var expires = "; expires="+date.toGMTString();
-                }
-                else var expires = "";
-                document.cookie = name+"="+value+expires+"; path=/";
-            }
-
-            function readCookie(name) {
-                // From http://www.quirksmode.org/js/cookies.html
-                var nameEQ = name + "=";
-                var ca = document.cookie.split(';');
-                for(var i=0;i < ca.length;i++) {
-                    var c = ca[i];
-                    while (c.charAt(0)==' ') c = c.substring(1,c.length);
-                    if (c.indexOf(nameEQ) == 0) return c.substring(nameEQ.length,c.length);
-                }
-                return null;
-            }
-
-            function eraseCookie(name) {
-                // From http://www.quirksmode.org/js/cookies.html
-                createCookie(name,"",-1);
-            }        
-        
             function disableDisplayHtmlButton() {
                 document.getElementById("display-tasks-button").value = "Building display page (this may take many minutes) ...";
                 document.getElementById("display-tasks-button").innerHTML = "Building display page (this may take many minutes) ...";
@@ -198,7 +212,6 @@ the selections that the user made when they started the backup.
                 document.getElementById("due_date").innerHTML = yearStr + "-" + monthStr + "-" + dayStr;
             }
             
-            
             // Set the current date, which is used to filter due tasks.
             function setCurrentDueDate() {
                 // We take the date from the browser, so that the due date is today in the user's current timezone is used
@@ -211,7 +224,7 @@ the selections that the user made when they started the backup.
             function pageLoadActions() {
                 {% if status == "Export completed" %}
                     // Check if there are any stored values, by retrieving the 'export_format' cookie, because we always save that cookie.
-                    var export_format = readCookie('export_format')
+                    var export_format = getCookie('export_format')
                     if (export_format) 
                     {
                         // 'export_format' cookie exists, so there are saved values that we should use
@@ -221,7 +234,7 @@ the selections that the user made when they started the backup.
                         //         and the user's selection is actioned
                         //     If authentication failed when the user's selection was submitted to /results, 
                         //         then the user's selection was NOT actioned, so we do it here.
-                        var actionId = readCookie('actionId');
+                        var actionId = getCookie('actionId');
                         if (actionId) {
                             eraseCookie('actionId');
                             // Perform the action that the user selected
@@ -240,27 +253,45 @@ the selections that the user made when they started the backup.
                     }
                 {% endif %}
             }
+            
+            // Check if the user has chosen a localtime offset for a potentially problematic export format (a format that expects UTC) 
+            function checkExportForm(frm) {
+            
+                if (frm.export_using_localtime.checked) {
+                    var exportFormatMessages = {
+                        'ics'           : "ICS format, because that format expects UTC date/times.",
+                        'gtb'           : "GTBak format, because it is designed to be imported into Google Tasks, which uses UTC date/times.",
+                        'import_export' : "Import/Export CSV format, because it is designed to be imported into Google Tasks, which uses UTC date/times."
+                    }
+                    
+                    var exportFomat = $('input[name=export_format]:checked').val();
+                    
+                    var exportFormatMessage = exportFormatMessages[exportFomat];
+                    if (exportFormatMessage) {
+                        var r=confirm("It is not advisable to adjust for local time when using the " + 
+                            exportFormatMessage + "\n\nAre you sure that you want to adjust for local time?");
+                        if (r==false) {
+                            // Don't submit the form
+                            return false;
+                        }
+                    }
+                }        
+                
+                // All OK
+                return true;
+            }
+            
         
         </script>
-        <script type="text/javascript">
-
-          var _gaq = _gaq || [];
-          _gaq.push(['_setAccount', 'UA-30118203-1']);
-          _gaq.push(['_trackPageview']);
-
-          (function() {
-            var ga = document.createElement('script'); ga.type = 'text/javascript'; ga.async = true;
-            ga.src = ('https:' == document.location.protocol ? 'https://ssl' : 'http://www') + '.google-analytics.com/ga.js';
-            var s = document.getElementsByTagName('script')[0]; s.parentNode.insertBefore(ga, s);
-          })();
-
-        </script>
+        {% include "inc_google_analytics.html" %}
     </head>
 
 <body onload="pageLoadActions();" > 
-    <div class="usertitle">
-        Authorised user: {{ user_email }} <span class="logout-link">[ <a href="{{ logout_url }}">Log out</a> ]</span>
-    </div>
+    {% include "inc_user_header.html" %}
+    
+    {% if display_link_to_production_server %}
+        {% include "inc_limited_access_server_msg.html" %}
+    {% endif %}
 
     <noscript>
         <br />
@@ -280,80 +311,59 @@ the selections that the user made when they started the backup.
 		</div>
     {% endif %}
     
-    {% if status == "no-record" %}
-        <div class="huge-break">
-            <div class="medium-break take-note-larger">
-                {% if job_msg %}
-                    {{ job_msg }}
-                {% else %}
-                    No backup found for {{ user_email }}
-                {% endif %}
+    {% if status == "Starting" or status = "Initialising" or status == "Building" %}
+        <div class="break">
+            This page will auto-refresh every {{ refresh_interval }} seconds to indicate how many tasks have been retrieved so far.
+        </div>
+    {% endif %}
+    
+    {% if status == "Export completed" %}
+        <div class="break">
+            {{ job_msg }} <img class="popupTrigger" id="export-completed" src="/static/help.png" alt="Display help">
+            <div class="popupContent" id="export-completed-content">
+                <img class="popupClose" border="0" src="/static/close.png" alt="Close">
+                <div class="clear medium-break">
+                    This backup is a snapshot of tasks as at {{ job_start_timestamp }} UTC 
+                    and will not reflect changes made after that time. 
+                    You will need to rerun <a href="{{ url_main_page }}" >{{ app_title }}</a>
+                    to create a new backup.
+                </div>
             </div>
-            <div class="break">
-                <button onclick="window.location.href = '{{ url_main_page }}'" class="back-button"  value="Go to Main Menu">Go to Main Menu</button>
-                <span class="take-note-larger"> to start a backup</span>
-            </div>
-            <div class="break">
-                If you believe this to be an error, please <a href="http:/{{ url_issues_page }}">create an error report</a>
-            </div>
+            {% if include_completed %}
+                <br/>
+                <span class="comment">Includes completed tasks</span>
+            {% else %}
+                <br/>
+                <span class="comment">Excludes completed tasks</span>
+            {% endif %}
+            {% if include_hidden %}
+                <br/>
+                <span class="comment">Includes hidden tasks</span>
+            {% endif %}
+            {% if include_deleted %}
+                <br/>
+                <span class="comment">Includes deleted tasks</span>
+            {% endif %}
         </div>
     {% else %}
-        
-        
-        {% if status == "Starting" or status = "Initialising" or status == "Building" %}
+        {% if status == "Starting" %}
             <div class="break">
-                This page will auto-refresh every {{ refresh_interval }} seconds to indicate how many tasks have been retrieved so far.
-            </div>
-        {% endif %}
-        
-        {% if status == "Export completed" %}
-            <div class="break">
-                {{ job_msg }} <img class="popupTrigger" id="export-completed" src="/static/help.png" alt="Display help">
-                <div class="popupContent" id="export-completed-content">
-                    <img class="popupClose" border="0" src="/static/close.png" alt="Close">
-                    <div class="clear medium-break">
-                        This backup is a snapshot of tasks as at {{ job_start_timestamp }} UTC 
-                        and will not reflect changes made after that time. 
-                        You will need to rerun <a href="{{ url_main_page }}" >{{ app_title }}</a>
-                        to create a new backup.
-                    </div>
-                </div>
-                {% if include_completed %}
-                    <br/>
-                    <span class="comment">Includes completed tasks</span>
-                {% else %}
-                    <br/>
-                    <span class="comment">Excludes completed tasks</span>
-                {% endif %}
-                {% if include_hidden %}
-                    <br/>
-                    <span class="comment">Includes hidden tasks</span>
-                {% endif %}
-                {% if include_deleted %}
-                    <br/>
-                    <span class="comment">Includes deleted tasks</span>
-                {% endif %}
+                Starting new backup job, please wait (this may take several minutes) ...
             </div>
         {% else %}
-            {% if status == "Starting" %}
-                <div class="break">
-                    Starting new backup job, please wait (this may take up to 2 minutes) ...
-                </div>
-            {% else %}
-                <div class="break">
-                    Status = {{ status }}
-                </div>
-            {% endif %}
-            {% if progress > 0 %}
-                <div class="break">
-                    Progress = {{ progress }}
-                </div>
-            {% endif %}
-            {% if job_msg %}
-                <div class="break">
-                    {{ job_msg }}
-                </div>
-            {% endif %}
+            <div class="break">
+                Status = {{ status }}
+            </div>
+        {% endif %}
+        {% if progress > 0 %}
+            <div class="break">
+                Progress = {{ progress }}
+            </div>
+        {% endif %}
+        {% if job_msg %}
+            <div class="break">
+                {{ job_msg }}
+            </div>
         {% endif %}
     {% endif %}
 
@@ -376,7 +386,7 @@ the selections that the user made when they started the backup.
     
     {% if status == "Export completed" %}
         <!-- Choose format to return backup data -->
-        <form method="POST" action="{{ results_url }}" onsubmit="storeSelections('retrieve-tasks-button');" >
+        <form method="POST" action="{{ results_url }}" onsubmit="storeSelections('retrieve-tasks-button'); return checkExportForm(this)" >
         
 			<fieldset>
 				<legend>Export all tasks</legend>
@@ -420,11 +430,30 @@ the selections that the user made when they started the backup.
                     
 					<tr>
 						<td class="format-name">
+							<input id="format_raw2" type="radio" name="export_format" value="raw2" /> Raw CSV, RFC3339 timestamps<br />
+						</td>
+						<td>
+							Same as Raw CSV, but also includes timestamps in RFC3339 format.
+                            <img class="popupTrigger" id="help-raw2" src="/static/help.png" alt="Display help">
+                            <div class="popupContent" id="help-raw2-content">
+                                <img class="popupClose" border="0" src="/static/close.png" alt="Close">
+                                <div class="clear medium-break">
+                                    In addition to yyyy-mm-dd format for 'due', 'completed' and 'updated' fields, this file also includes the timestamps in the original RFC-3339 format .
+                                </div>
+                                <div class="medium-break">
+                                    This format is primarily intended for debugging purposes.
+                                </div>
+                            </div>
+						</td>
+					</tr>
+                    
+					<tr>
+						<td class="format-name">
 							<input id="format_import_export" type="radio" name="export_format" value="gtb" /> Import/Export GTBak<br />
 						</td>
 						<td>
 							The GTBak format is designed to be used by 
-                            <a href="http://import-tasks.appspot.com">Import Google Tasks</a> to import tasks.
+                            <a href="http://import-tasks.appspot.com">Google Tasks Import</a> to import tasks.
                             Unlike the CSV format, this format retains international and extended characters.
                             <img class="popupTrigger" id="help-gtb" src="/static/help.png" alt="Display help">
                             <div class="popupContent" id="help-gtb-content">
@@ -547,10 +576,208 @@ the selections that the user made when they started the backup.
                             </div>
 						</td>
 					</tr>
+                    
+					<tr>
+						<td class="format-name">
+							<input id="format_spaced_text" type="radio" name="export_format" value="spaced_text" /> Spaced text file<br />
+						</td>
+						<td>
+							Text file which uses spaces to indent tasks, subtasks and notes.
+                            <img class="popupTrigger" id="help-spaced_text" src="/static/help.png" alt="Display help">
+                            <div class="popupContent" id="help-spaced_text-content">
+                                <img class="popupClose" src="/static/close.png" alt="Close">
+                                <div class="clear">
+                                    Spaced text file format;<br />
+                                    <ol>
+                                        <li>The tasklist name is not indented</li>
+                                        <li>Root-level tasks are indented by 2 spaces</li>
+                                        <li>The due date (if specified) is indented at the same level as the task name</li>
+                                        <li>Notes (if specified) are indented by a further 2 spacess</li>
+                                        <li>Sub-tasks are indented by additional 6 spaces per sub-task-level</li>
+                                    </ol>
+                                    
+                                </div>
+                                
+                                <div class="medium-break">
+                                    <u>For example;</u>
+                                </div>
+                                
+                                <div class="fixed-font take-note-larger">
+                                    <span class="take-note-larger">
+                                        ======================================<br />
+                                        Tasklist1 name<br />
+                                        --------------------------------------<br />
+                                        <br />
+                                        &nbsp;&nbsp;Task1 name<br />
+                                        &nbsp;&nbsp;DUE: yyyy-mm-dd<br />
+                                        &nbsp;&nbsp;&nbsp;&nbsp;Task1 notes line 1<br />
+                                        &nbsp;&nbsp;&nbsp;&nbsp;Task1 notes line 2<br />
+                                        <br />
+                                        &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Subtask1.1 name<br />
+                                        <br />
+                                        &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Subtask1.2 name<br />
+                                        <br />
+                                        &nbsp;&nbsp;x Task2 name<br />
+                                        &nbsp;&nbsp;&nbsp;&nbsp;Notes for task 2, which has been<br />
+                                        &nbsp;&nbsp;&nbsp;&nbsp;completed (indicated by the x)<br />
+                                        <br />
+                                        &nbsp;&nbsp;Task3 name<br />
+                                        &nbsp;&nbsp;&nbsp;&nbsp;Task3 notes<br />   
+                                        <br />
+                                        ======================================<br />
+                                        Tasklist2 name<br />
+                                        --------------------------------------<br />
+                                        <br />
+                                        &nbsp;&nbsp;Task1 name<br />
+                                        <br />
+                                        &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Subtask1.1 name<br />
+                                        &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;DUE: yyyy-mm-dd<br />
+                                        &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Subtask1.1 notes<br />
+                                        <br />
+                                        &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Subtask1.1.1 name<br />
+                                        <br />
+                                    </span>
+                                </div>
+                            </div>
+						</td>
+					</tr>
+                    
+					<tr>
+						<td class="format-name">
+							<input id="format_tabbed_text" type="radio" name="export_format" value="tabbed_text" /> Tabbed text file<br />
+						</td>
+						<td>
+							Text file which uses tabs to indent tasks, subtasks and notes.
+                            <img class="popupTrigger" id="help-tabbed_text" src="/static/help.png" alt="Display help">
+                            <div class="popupContent" id="help-tabbed_text-content">
+                                <img class="popupClose" src="/static/close.png" alt="Close">
+                                <div class="clear">
+                                    Tabbed text file format;<br />
+                                    <ol>
+                                        <li>The tasklist name is not indented</li>
+                                        <li>Root-level tasks are indented by 1 tab</li>
+                                        <li>The due date (if specified) is indented at the same level as the task name</li>
+                                        <li>Notes (if specified) are indented by 2 tabs</li>
+                                        <li>Sub-tasks are indented by an additional 2 tabs per sub-task-level</li>
+                                        <li>An odd number of indents indicates a task title, or due date</li>
+                                        <li>An even number of indents indicates a note</li>
+                                    </ol>
+                                    
+                                </div>
+                                
+                                <div class="medium-break">
+                                    <u>For example;</u>
+                                </div>
+                                
+                                <div class="fixed-font  take-note-larger">
+                                    ======================================<br />
+                                    <span class="take-note-larger">Tasklist1 name</span><br />
+                                    --------------------------------------<br />
+                                    <br />
+                                    <span class="take-note-smaller">&lt;tab&gt;</span><span class="take-note-larger">Task1 name</span><br />
+                                    <span class="take-note-smaller">&lt;tab&gt;</span><span class="take-note-larger">DUE:yyyy-mm-dd</span><br />
+                                    <span class="take-note-smaller">&lt;tab&gt;&lt;tab&gt;</span><span class="take-note-larger">Task1 notes line 1</span><br />
+                                    <span class="take-note-smaller">&lt;tab&gt;&lt;tab&gt;</span><span class="take-note-larger">Task1 notes line 2</span><br />
+                                    <br />
+                                    <span class="take-note-smaller">&lt;tab&gt;&lt;tab&gt;&lt;tab&gt;</span><span class="take-note-larger">Subtask1.1 name</span><br />
+                                    <br />
+                                    <span class="take-note-smaller">&lt;tab&gt;&lt;tab&gt;&lt;tab&gt;</span><span class="take-note-larger">Subtask1.2 name</span><br />
+                                    <br />
+                                    <span class="take-note-smaller">&lt;tab&gt;</span><span class="take-note-larger">x Task2 name</span><br />
+                                    <span class="take-note-smaller">&lt;tab&gt;&lt;tab&gt;</span><span class="take-note-larger">This is a completed task</span><br />
+                                    <br />
+                                    <span class="take-note-smaller">&lt;tab&gt;</span><span class="take-note-larger">Task3 name</span><br />
+                                    <span class="take-note-smaller">&lt;tab&gt;&lt;tab&gt;</span><span class="take-note-larger">Task3 notes</span><br />   
+                                    <br />
+                                    ======================================<br />
+                                    <span class="take-note-larger">Tasklist2 name</span><br />
+                                    --------------------------------------<br />
+                                    <br />
+                                    <span class="take-note-smaller">&lt;tab&gt;</span><span class="take-note-larger">Task1 name</span><br />
+                                    <br />
+                                    <span class="take-note-smaller">&lt;tab&gt;&lt;tab&gt;&lt;tab&gt;</span><span class="take-note-larger">Subtask1.1 name</span><br />
+                                    <span class="take-note-smaller">&lt;tab&gt;&lt;tab&gt;&lt;tab&gt;</span><span class="take-note-larger">DUE: yyyy-mm-dd</span><br />
+                                    <span class="take-note-smaller">&lt;tab&gt;&lt;tab&gt;&lt;tab&gt;&lt;tab&gt;</span><span class="take-note-larger">Subtask1.1 notes</span><br />
+                                    <br />
+                                    <span class="take-note-smaller">&lt;tab&gt;&lt;tab&gt;&lt;tab&gt;&lt;tab&gt;&lt;tab&gt;</span><span class="take-note-larger">Subtask1.1.1 name</span><br />
+                                    <br />
+                                </div>
+                            </div>
+						</td>
+					</tr>
+                    
+                    <tr>
+                        <td>
+                            <br />
+                            <div class="break">
+                                <input type="checkbox" name="export_using_localtime" id="export_using_localtime" value="True">
+                                    &nbsp;Adjust for local timezone?
+                                
+                                <img class="popupTrigger" id="help-timezone" src="/static/help.png" alt="Display help">
+                                <div class="popupContent" id="help-timezone-content">
+                                    <img class="popupClose" border="0" src="/static/close.png" alt="Close">
+                                    <div class="clear medium-break">
+                                        This option allows GTB to add or subtract the specified number of hours from the 'completed' and 'updated' fields, in an attempt to correct for the difference between the local time and the Google Tasks server time (which uses UTC).
+                                    </div>
+                                    <div class="break comment">
+                                        The Google Tasks server records the time that tasks are updated or completed using its own clock, which uses UTC (aka GMT). By default, GTB returns these values exactly as stored on the Google Tasks server.
+                                    </div>
+                                    <div>
+                                        This option is most useful when using the Outlook export format.
+                                    </div>
+                                    <div class="medium-break">
+                                        <span style="color:red;">CAUTION:</span> Using this option to adjust for local timezone may result in incorrect completed date/time
+                                        if the exported file expects UTC.
+                                    </div>
+                                    <div class="break comment">
+                                        For example;
+                                        <ul style="margin-top: 0px;">
+                                            <li>The <span class="take-note">ICS</span> format specifies times in UTC, so any applications using an ICS file will expect those date/times to be UTC (not local time).</li>
+                                            <li>The <span class="take-note">GTBak</span> and <span class="take-note">Import/Export CSV</span> formats are designed to be imported back into Google Tasks, which interpets all times as UTC. If the export file does not contain UTC date/times, the completed dates may be displayed incorrectly in Google Tasks.</li>
+                                        </ul>
+                                    </div>
+                                    <div class="medium-break">
+                                        The biggest impact of the difference between local time and UTC is that a task exported by GTB may appear to have been completed on the previous or next day when imported into another application (e.g. Outlook).
+                                    </div>
+                                    <div class="medium-break comment">
+                                        For example;
+                                        <ul style="margin-top: 0px;">
+                                            <li>
+                                                If a user in New York (UTC-5) marks a task complete after 7:00 pm, the task will appear to have been completed on the next day, because the Google Tasks server ticks over past midnight UTC at 7:00pm New York time.
+                                            </li>
+                                            <li>
+                                                If a user in Sydney (UTC+10) marks a task complete before 10:00 am, the task will appear to have been completed on the previous day, because the Google Tasks server doesn't tick over past midnight until 10:00 am Sydney time.
+                                            </li>
+                                        </ul>
+                                    </div>
+                                    <div class="medium-break">
+                                        This option provides a partial solution, as it allows GTB to add or subtract the specified number of hours from times stored on the Google Tasks server. This will not solve all time offset issues. 
+                                    </div>
+                                    <div class="medium-break comment">
+                                        For example;
+                                        <ul style="margin-top: 0px;">
+                                            <li>If you were in a different timezone when you completed a task, neither the server nor GTB knows that, so there is no way to report the local time that the task was completed.</li>
+                                            <li>GTB cannot compensate for daylight savings time. This means that if a task is completed during daylight savings time, and the export is run during standard time, there will be a one-hour window where tasks may still be reported as being completed on the next or previous day.</li>
+                                        </ul>
+                                    </div>
+                                    <div class="break">
+                                        So, in summary, selecting your timezone offset should reduce the number of tasks which appear to have been completed on the previous or next day, but will not entirely eliminate the issue.
+                                    </div>
+                                </div>
+                            </div>
+                        </td>
+                        <td>
+                            <select name="export_offset_hours" id="export_offset_hours"
+                                onclick="document.getElementById('export_using_localtime').checked = true;" 
+                                onkeypress="document.getElementById('export_using_localtime').checked = true;">
+                                {% include "inc_timezone_options.html" %}
+                            </select>
+                        </td>
+                    </tr>
                 </table>
-				<br />
+                <br />
 
-				<button type="submit" id="retrieve-tasks-button" class="big-button" value="Retrieve tasks data">Retrieve tasks data</button>
+				<button type="submit" id="retrieve-tasks-button" class="big-button" value="Export tasks data">Export tasks data</button>
 			</fieldset>
         </form>
         
@@ -604,7 +831,7 @@ the selections that the user made when they started the backup.
                             <br />
                             <span class="take-note">Javascript must be enabled to determine current date, and to enable date to be set</span>
                             </noscript>
-                        </input>
+                        
                         <ul class="format-selection">
                             <li>
                                 <input id="due_selection_all" type="radio" name="due_selection" value="all"  checked="checked"
@@ -650,7 +877,7 @@ the selections that the user made when they started the backup.
                                             on the tasks display page. If this option is unchecked, invalid tasks will not be displayed.
                                         </div>
                                     </div>
-                                </input>
+                                
                             </li>
                         </ul>
                     </div>
@@ -663,7 +890,7 @@ the selections that the user made when they started the backup.
                                 <input type="checkbox" id="display_completed_tasks" name="display_completed_tasks" value="True" 
                                        checked="checked"  onchange="changeCompletedSuboptions();">
                                     &nbsp;Display completed tasks?
-                                </input>
+                                
                             </li>
                             <li>
                                 <ul class="format-selection sub-list">
@@ -686,13 +913,13 @@ the selections that the user made when they started the backup.
                                             </div>
                                         </div>
                                     </div>
-                                    </input>
+                                    
                                 </li>
                                 <li>
                                     <input type="checkbox" id="display_completed_date_field" name="display_completed_date_field" value="True"  
                                            onchange="changeDisplayCompleted();" checked="checked" >
                                         &nbsp;Display completed date field?
-                                    </input>
+                                    
                                 </li>
                                 </ul>
                             </li>
@@ -701,45 +928,92 @@ the selections that the user made when they started the backup.
                                 <li>
                                     <input type="checkbox" name="display_hidden_tasks" value="True" checked="checked" >
                                         &nbsp;Display hidden tasks?
-                                    </input>
+                                    
                                 </li>
                             {% endif %}
                             {% if include_deleted %}
                                 <li>
                                     <input type="checkbox" name="display_deleted_tasks" value="True" checked="checked" >
                                         &nbsp;Display deleted tasks?
-                                    </input>
+                                    
                                 </li>
                             {% endif %}
-                            
-                            
-                            
-                            
                             
                             
                             <li>
                                 <input type="checkbox" name="display_due_date_field" value="True" checked="checked" >
                                     &nbsp;Display due date field?
-                                </input>
+                                
                             </li>
                             <li>
                                 <input type="checkbox" name="display_updated_date_field" value="True" >
                                     &nbsp;Display updated date field?
-                                </input>
+                                
                             </li>
                         </ul>
                     </div>
                 </div>
+                
 				<br />
                 
-                    <div class="take-note-para end-columns">
-                    {% if progress >= large_list_html_warning_limit %}
-                        <span class="take-note">CAUTION: You have a very large number of tasks. Attempting to display the tasks page may result in the server running out of memory and/or your browser timing out.
-                        </span>
-                        <br />
-                        You may wish to export your tasks first, before attempting to display the tasks page.
-                    {% endif %}
+                <div  class="break clear" style="margin-left: 15px">
+                    <input type="checkbox" name="display_using_localtime" id="display_using_localtime" value="True">
+                        &nbsp;Display times in local timezone?
+                    
+                    <img class="popupTrigger" id="help-display_local_time" src="/static/help.png" alt="Display help">
+                    <div class="popupContent" id="help-display_local_time-content">
+                        <img class="popupClose" border="0" src="/static/close.png" alt="Close">
+                        <div class="clear medium-break">
+                            This option allows GTB to display the 'completed' and 'updated' fields in your local timezone. If this option is unchecked, times will be displayed using the Google Tasks server time (which uses UTC).
+                        </div>
+                        <div class="break comment">
+                            The Google Tasks server records the time that tasks are updated or completed using its own clock, which uses UTC (aka GMT). If this option is unchecked, GTB displays the dates/times exactly as stored on the Google Tasks server.
+                        </div>
+                        <div class="medium-break">
+                            This option attempts to compensate for the difference between the user's local times and the server's UTC time.
+                        </div>
+                        <div class="medium-break comment">
+                            For example;
+                            <ul>
+                                <li>
+                                    If a user in New York (UTC-5) marks a task complete after 7:00 pm, the task will appear to have been completed on the next day, because the Google Tasks server ticks over midnight UTC at 7:00pm New York time.
+                                </li>
+                                <li>
+                                    If a user in Sydney (UTC+10) marks a task complete before 10:00 am, the task will appear to have been completed on the previous day, because the Google Tasks server ticks doesn't tick over midnight until 10:00 am Sydney time.
+                                </li>
+                            </ul>
+                        </div>
+                        <div class="medium-break">
+                            This option provides a partial solution, as it allows GTB to add or subtract the specified number of hours from times stored on the Google Tasks server. This will not solve all time offset issues. For example;
+                            <ul>
+                                <li>If you were in a different timezone when you completed a task, neither the server nor GTB knows that, so there is no way to display the local time that the task was completed.</li>
+                                <li>GTB cannot compensate for daylight savings time. This means that if a task is completed during daylight savings time, and this page is displayed during standard time, there will be a one-hour window where tasks may still be reported as being completed on the next or previous day.</li>
+                            </ul>
+                        </div>
+                        <div class="break">
+                            So, in summary, selecting your timezone offset should reduce the number of tasks which appear to have been completed on the previous or next day, but will not entirely eliminate the issue.
+                        </div>
                     </div>
+
+                    &nbsp;&nbsp;
+
+                    <select name="display_offset_hours" id="display_offset_hours"
+                        onclick="document.getElementById('display_using_localtime').checked = true;"
+                        onkeypress="document.getElementById('display_using_localtime').checked = true;">
+                        
+                        {% include "inc_timezone_options.html" %}
+                        
+                    </select>											
+                </div>
+                
+                <div class="take-note-para end-columns">
+                {% if progress >= large_list_html_warning_limit %}
+                    <span class="take-note">CAUTION: You have a very large number of tasks. Attempting to display the tasks page may result in the server running out of memory and/or your browser timing out.
+                    </span>
+                    <br />
+                    You may wish to export your tasks first, before attempting to display the tasks page.
+                {% endif %}
+                </div>
 				<button id="display-tasks-button" type="submit" class="big-button" >Display tasks page</button>
 			</fieldset>
         </form>
@@ -749,22 +1023,7 @@ the selections that the user made when they started the backup.
     {% endif %}
 
 
-	<div class="project-footer">
-        <div class="break">
-            Version {{ app_version }} ({{ upload_timestamp }})
-        </div>
-        
-		<div class="break">
-			Questions or comments? Go to <a href="http://{{ url_discussion_group }}">{{ url_discussion_group }}</a>
-			or email <a href="mailto:{{ email_discussion_group }}">{{ email_discussion_group }}</a>
-		</div>
-		<div class="break">
-			Please report bugs or suggest improvements at <a href="http:/{{ url_issues_page }}">{{ url_issues_page }}</a>
-		</div>
-		<div class="break">
-			Source code for this project is at <a href="http://{{ url_source_code }}">{{ url_source_code }}</a>
-		</div>
-	</div>
+    {% include "inc_project_footer.html" %}
 
 	<div class="backgroundPopup"></div>
 

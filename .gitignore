@@ -1,0 +1,32 @@
+######################################################
+## Project-specific files which may contain secrets ##
+######################################################
+
+settings.py
+host_settings.py
+
+
+#############
+## Windows detritus
+#############
+
+# Windows image file caches
+Thumbs.db
+ehthumbs.db
+
+# Folder config file
+Desktop.ini
+
+# Recycle Bin used on file shares
+$RECYCLE.BIN/
+
+*.bak
+
+#############
+## Python
+#############
+
+*.py[cod]
+
+
+app-dummy.yaml

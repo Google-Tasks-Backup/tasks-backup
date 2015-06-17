@@ -5,8 +5,10 @@
 <html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en">
     <head>
         <title>Information about Google Tasks</title>
-        <link rel="stylesheet" type="text/css" href="/static/tasks_backup.css" />
         <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+        <link rel="shortcut icon" type="image/x-icon" href="/static/favicon.ico" />
+        <link rel="stylesheet" type="text/css" href="/static/tasks_backup.css" />
+        <meta name="keywords" content="Google Tasks Backup, Google Tasks, Backup Google Tasks">
         <script type="text/javascript">
             // Copyright 2001 Idocs.com      
             // Distribute this script freely, but keep this notice in place
@@ -220,7 +222,7 @@
         <span class="take-note">The GTBak format is strongly recommended</span>, especially where tasks may contain international or extended characters, such as accents or special symbols.
     </div>
     
-    <h3>Import/Export CSV format</h3>
+    <a name="import_export_csv"><h3>Import/Export CSV format</h3></a>
     <div class="break">
         Files exported from Google Tasks Backup in the <span class="take-note">Import/Export CSV</span> format have a filename format 
         of <span class="fixed-font">tasks_import_export_XXXXXX.csv</span>, where <span class="fixed-font">XXXXXX</span> identifies 
@@ -233,16 +235,22 @@
     <div class="break">
         The file can be edited in a text editor such as <a href="http://notepad-plus-plus.org/">Notepad++</a> before being imported. It is not recommended to edit this file with a spreadsheet program, as programs such as Excel and OpenOffice Calc tend to corrupt the data. The import file must observe the following rules;
         <ul>
+            <li>
+                Each task entry is on a single line.
+                <ul>
+                    <li>Each line is terminated with Windows-style CR/LF line ending.</li>
+                    <li>Multi-line notes are supported by using <span class="fixed-font">\n</span> to indicate a line break within the notes field.</li>
+                </ul>
+            </li>
             <li>The first row is a header row, and contains the column names.</li>
-            <li>Tasks must be grouped by tasklist.</li>
-            <li>Tasks must appear in the file in the order that they should appear in the standard "My Order" view in Google Tasks. See the <a href="#import_example">example</a> below.</li>
+            <li>Tasksare grouped by tasklist.</li>
+            <li>Tasks appear in the file in the order that they appear in the standard "My Order" view in Google Tasks. See the <a href="#import_example">example</a> below.</li>
             <li>Task state must be consistent. Refer to <a href="#Table2">Table 2</a> for valid states.</li>
             <li>All fields except depth are double-quote delimited strings.</li>
-            <li>Double-quotes within text must be escaped (i.e., replace the single <span class="fixed-font">"</span> with <span class="fixed-font">""</span>)</li>
+            <li>Double-quotes within text are escaped (i.e., replace the single <span class="fixed-font">"</span> with <span class="fixed-font">""</span>)</li>
             <li>There must be no spaces between fields and the comma separators.</li>
-            <li>Multi-line text is allowed in the notes field, by using <span class="fixed-font">\n</span> as the line break.</li>
             <li>A blank field may be indicated by <span class="fixed-font">""</span> (empty string) or by having no space between consecutive commas.</li>
-            <li>Dates and times are UTC, and must be formatted as indicated in <a href="#Table1">Table 1</a><br />
+            <li>Dates and times are UTC, and must be formatted as indicated in <a href="#Table2">Table 2</a><br />
                 <span class="italic">Note that the "UTC " prefix on date fields serves two purposes. It reminds the user that the fields are UTC, and it prevents spreadsheet programs such as Excel and OpenOffice Calc from rewriting date and time formatting.</span></li>
             <li>Editing the CSV file with spreadsheet programs such as Excel or Open Office Calc is not recommended;</li>
                 <ul>

@@ -1,4 +1,4 @@
-#!/usr/bin/python2.5
+# -*- coding: utf-8 -*-
 #
 # Copyright 2012  Julie Smith.  All Rights Reserved.
 #
@@ -19,7 +19,18 @@
 # This module contains code whis is common between classes, modules or related projects
 # Can't use the name common, because there is already a module named common
 
-from apiclient.oauth2client import appengine
+
+# Fix for DeadlineExceeded, because "Pre-Call Hooks to UrlFetch Not Working"
+#     Based on code from https://groups.google.com/forum/#!msg/google-appengine/OANTefJvn0A/uRKKHnCKr7QJ
+from google.appengine.api import urlfetch
+real_fetch = urlfetch.fetch
+def fetch_with_deadline(url, *args, **argv):
+    argv['deadline'] = settings.URL_FETCH_TIMEOUT
+    return real_fetch(url, *args, **argv)
+urlfetch.fetch = fetch_with_deadline
+
+
+from oauth2client import appengine
 from google.appengine.api import users
 from google.appengine.api import logservice # To flush logs
 from google.appengine.ext import db
@@ -27,12 +38,14 @@ from google.appengine.api import memcache
 from google.appengine.ext import webapp
 from google.appengine.ext.webapp import template
 
-from apiclient.oauth2client import client
+from oauth2client import client
 from apiclient import discovery
 
 # Import from error so that we can process HttpError
 from apiclient import errors as apiclient_errors
+from google.appengine.api import urlfetch_errors
 
+import unicodedata
 
 import httplib2
 import Cookie
@@ -43,7 +56,8 @@ import traceback
 import logging
 import pickle
 import time
-
+import datetime
+from urlparse import urljoin
 
 
 # Project-specific imports
@@ -51,6 +65,7 @@ import model
 import settings
 import constants
 import appversion # appversion.version is set before the upload process to keep the version number consistent
+import host_settings
 
 
 logservice.AUTOFLUSH_EVERY_SECONDS = 5
@@ -106,269 +121,6 @@ def delete_cookie(res, key):
     set_cookie(res, key, '', -1)
     
     
-def __store_auth_retry_count(self, count):
-    set_cookie(self.response, 'auth_retry_count', str(count), max_age=settings.AUTH_RETRY_COUNT_COOKIE_EXPIRATION_TIME)
-    
-    
-def __reset_auth_retry_count(self):
-    set_cookie(self.response, 'auth_retry_count', '0', max_age=settings.AUTH_RETRY_COUNT_COOKIE_EXPIRATION_TIME)
-    
-    
-def redirect_for_auth(self, user, redirect_url=None):
-    """Redirects the webapp response to authenticate the user with OAuth2.
-    
-        Args:
-            redirect_url        [OPTIONAL] The URL to return to once authorised. 
-                                Usually unused (left as None), so that the URL of the calling page is used
-    
-        Uses the 'state' parameter to store redirect_url. 
-        The handler for /oauth2callback can therefore redirect the user back to the page they
-        were on when get_credentials() failed (or to the specified redirect_url).
-    """
-
-    fn_name = "redirect_for_auth(): "
-    
-    try:
-        client_id, client_secret, user_agent, app_title, product_name, host_msg = get_settings(self.request.host)
-        
-        
-        # Check how many times this has been called (without credentials having been successfully retrieved)
-        if self.request.cookies.has_key('auth_retry_count'):
-            auth_retry_count = int(self.request.cookies['auth_retry_count'])
-            logging.debug(fn_name + "auth_retry_count = " + str(auth_retry_count))
-            if auth_retry_count > settings.MAX_NUM_AUTH_RETRIES:
-                # Exceeded maximum number of retries, so don't try again.
-                # Redirect user to invalid credentials page
-                logging.warning(fn_name + "Not re-authorising, because there have already been " + str(auth_retry_count) + 
-                    " attempts. Redirecting to " + settings.INVALID_CREDENTIALS_URL)
-                self.redirect(settings.INVALID_CREDENTIALS_URL + "?rc=NC&nr=" + str(auth_retry_count))
-                return
-        else:
-            logging.debug(fn_name + "No auth_retry_count cookie found. Probably means last authorisation was more than " +
-                str(settings.AUTH_RETRY_COUNT_COOKIE_EXPIRATION_TIME) + " seconds ago")
-            auth_retry_count = 0
-                
-        if not redirect_url:
-            # By default, return to the same page
-            redirect_url = self.request.path_qs
-            
-        # According to https://developers.google.com/accounts/docs/OAuth_ref#RequestToken
-        # xoauth_displayname is optional. 
-        #     (optional) String identifying the application. 
-        #     This string is displayed to end users on Google's authorization confirmation page. 
-        #     For registered applications, the value of this parameter overrides the name set during registration and 
-        #     also triggers a message to the user that the identity can't be verified. 
-        #     For unregistered applications, this parameter enables them to specify an application name, 
-        #     In the case of unregistered applications, if this parameter is not set, Google identifies the application 
-        #     using the URL value of oauth_callback; if neither parameter is set, Google uses the string "anonymous".
-        # It seems preferable to NOT supply xoauth_displayname, so that Google doesn't display "identity can't be verified" msg.
-        flow = client.OAuth2WebServerFlow(
-            client_id=client_id,
-            client_secret=client_secret,
-            scope="https://www.googleapis.com/auth/tasks",
-            user_agent=user_agent,
-            state=redirect_url)
-
-        callback = self.request.relative_url("/oauth2callback")
-        authorize_url = flow.step1_get_authorize_url(callback)
-        memcache.set(user.user_id(), pickle.dumps(flow))
-        
-        # Keep track of how many times we've called the authorise URL
-        if self.request.cookies.has_key('auth_retry_count'):
-            auth_retry_count = int(self.request.cookies['auth_retry_count'])
-        else:
-            auth_retry_count = 0
-        __store_auth_retry_count(self, auth_retry_count + 1)
-
-        logging.debug(fn_name + "Redirecting to " + str(authorize_url))
-        logservice.flush()
-        self.redirect(authorize_url)
-        
-    except Exception, e:
-        logging.exception(fn_name + "Caught top-level exception")
-        serve_outer_exception_message(self, e)
-        logging.debug(fn_name + "<End> due to exception" )
-        logservice.flush()
-
-  
-def get_credentials(self):
-    """ Retrieve credentials for the user
-            
-        Returns:
-            result              True if we have valid credentials for the user
-            user                User object for current user
-            credentials         Credentials object for current user. None if no credentials.
-            fail_msg            If result==False, message suitabale for displaying to user
-            fail_reason         If result==False, cause of the failure. Can be one of
-                                    "User not logged on"
-                                    "No credentials"
-                                    "Invalid credentials"
-                                    "Credential use error" (Unspecified error when attempting to use credentials)
-                                    "Credential use HTTP error" (Returned an HTTP error when attempting to use credentials)
-            
-            
-        If no credentials, or credentials are invalid, the calling method can call redirect_for_auth(self, user), 
-        which sets the redirect URL back to the calling page. That is, user is redirected to calling page after authorising.
-        
-    """    
-        
-    fn_name = "get_credentials(): "
-    
-    user = None
-    fail_msg = ''
-    fail_reason = ''
-    credentials = None
-    result = False
-    try:
-        user = users.get_current_user()
-
-        if user is None:
-            # User is not logged in, so there can be no credentials.
-            fail_msg = "User is not logged in"
-            fail_reason = "User not logged on"
-            logging.debug(fn_name + fail_msg)
-            logservice.flush()
-            return False, None, None, fail_msg, fail_reason
-            
-        credentials = appengine.StorageByKeyName(
-            model.Credentials, user.user_id(), "credentials").get()
-            
-        result = False
-        
-        if credentials:
-            if credentials.invalid:
-                # We have credentials, but they are invalid
-                fail_msg = "Invalid credentials for this user"
-                fail_reason = "Invalid credentials"
-                result = False
-            else:
-                #logging.debug(fn_name + "Calling tasklists service to confirm valid credentials")
-                # so it turns out that the method that checks if the credentials are okay
-                # doesn't give the correct answer unless you try to refresh it.  So we do that
-                # here in order to make sure that the credentials are valid before being
-                # passed to a worker.  Obviously if the user revokes the credentials after
-                # this point we will continue to get an error, but we can't stop that.
-                
-                # Credentials are possibly valid, but need to be confirmed by refreshing
-                # Try multiple times, just in case call to server fails due to external probs (e.g., timeout)
-                # retry_count = settings.NUM_API_TRIES
-                # while retry_count > 0:
-                try:
-                    http = httplib2.Http()
-                    http = credentials.authorize(http)
-                    service = discovery.build("tasks", "v1", http)
-                    tasklists_svc = service.tasklists()
-                    tasklists_list = tasklists_svc.list().execute()
-                    # Successfully used credentials, everything is OK, so break out of while loop 
-                    fail_msg = ''
-                    fail_reason = ''
-                    result = True
-                    # break 
-                    
-                except apiclient_errors.HttpError, e:
-                    #logging.info(fn_name + "HttpError using credentials: " + get_exception_msg(e))
-                    if e._get_reason().lower() == "daily limit exceeded":
-                        fail_reason = "Daily limit exceeded"
-                        fail_msg = "HttpError: Daily limit exceeded using credentials."
-                    else:
-                        fail_reason = "Credential use HTTP error"
-                        fail_msg = "Error accessing tasks service: " + e._get_reason()
-                    result = False
-                    credentials = None
-                    result = False
-                    
-                except Exception, e:
-                    #logging.info(fn_name + "Exception using credentials: " + get_exception_msg(e))
-                    fail_reason = "Credential use error"
-                    fail_msg = "Exception using credentials: " + get_exception_msg(e)
-                    credentials = None
-                    result = False
-                        
-        else:
-            # No credentials
-            fail_msg = "No credentials"
-            fail_reason = "Unable to retrieve credentials for user"
-            #logging.debug(fn_name + fail_msg)
-            result = False
-       
-        if result:
-            # TODO: Successfuly retrieved credentials, so reset auth_retry_count to 0
-            __reset_auth_retry_count(self)
-        else:
-            logging.debug(fn_name + fail_msg)
-            logservice.flush()
-                
-    except Exception, e:
-        logging.exception(fn_name + "Caught top-level exception")
-        logging.debug(fn_name + "<End> due to exception" )
-        raise e
-        
-    if fail_reason == "Daily limit exceeded":
-        # Will be caught in calling method's outer try-except
-        raise DailyLimitExceededError()
-        
-    return result, user, credentials, fail_msg, fail_reason
-
-  
-def serve_message_page(self, msg1, msg2 = None, msg3 = None, 
-        show_back_button=False, 
-        back_button_text="Back to previous page",
-        show_custom_button=False, custom_button_text='Try again', custom_button_url=settings.MAIN_PAGE_URL,
-        show_heading_messages=True):
-    """ Serve message.html page to user with message, with an optional button (Back, or custom URL)
-    
-        msg1, msg2, msg3        Text to be displayed.msg2 and msg3 are option. Each msg is displayed in a separate div
-        show_back_button        If True, a [Back] button is displayed, to return to previous page
-        show_custom_button      If True, display button to jump to any URL. title set by custom_button_text
-        custom_button_text      Text label for custom button
-        custom_button_url       URL to go to when custom button is pressed
-        show_heading_messages   If True, display app_title and (optional) host_msg
-    """
-    fn_name = "serve_message_page: "
-
-    logging.debug(fn_name + "<Start>")
-    logservice.flush()
-    
-    try:
-        client_id, client_secret, user_agent, app_title, product_name, host_msg = get_settings(self.request.host)
-
-        if msg1:
-            logging.debug(fn_name + "Msg1: " + msg1)
-        if msg2:
-            logging.debug(fn_name + "Msg2: " + msg2)
-        if msg3:
-            logging.debug(fn_name + "Msg3: " + msg3)
-            
-        path = os.path.join(os.path.dirname(__file__), constants.PATH_TO_TEMPLATES, "message.html")
-          
-        template_values = {'app_title' : app_title,
-                           'host_msg' : host_msg,
-                           'msg1': msg1,
-                           'msg2': msg2,
-                           'msg3': msg3,
-                           'show_heading_messages' : show_heading_messages,
-                           'show_back_button' : show_back_button,
-                           'back_button_text' : back_button_text,
-                           'show_custom_button' : show_custom_button,
-                           'custom_button_text' : custom_button_text,
-                           'custom_button_url' : custom_button_url,
-                           'product_name' : product_name,
-                           'url_discussion_group' : settings.url_discussion_group,
-                           'email_discussion_group' : settings.email_discussion_group,
-                           'url_issues_page' : settings.url_issues_page,
-                           'url_source_code' : settings.url_source_code,
-                           'app_version' : appversion.version,
-                           'upload_timestamp' : appversion.upload_timestamp}
-        self.response.out.write(template.render(path, template_values))
-        logging.debug(fn_name + "<End>" )
-        logservice.flush()
-    except Exception, e:
-        logging.exception(fn_name + "Caught top-level exception")
-        serve_outer_exception_message(self, e)
-        logging.debug(fn_name + "<End> due to exception" )
-        logservice.flush()
-    
-
 def format_exception_info(maxTBlevel=5):
     cla, exc, trbk = sys.exc_info()
     excName = cla.__name__
@@ -386,68 +138,50 @@ def get_exception_name(maxTBlevel=5):
     return str(excName)
          
 
-def get_exception_msg(e, maxTBlevel=5):
-    cla, exc, trbk = sys.exc_info()
-    excName = cla.__name__
-    return str(excName) + ": " + str(e)
-         
-
-
-def get_settings(hostname):
-    """ Returns a tuple with hostname-specific settings
-    args
-        hostname         -- Name of the host on which this particular app instance is running,
-                        as returned by self.request.host
-    returns
-        client_id        -- The OAuth client ID for app instance running on this particular host
-        client_secret    -- The OAuth client secret for app instance running on this particular host
-        user_agent       -- The user agent string for app instance running on this particular host
-        app_title        -- The page title string for app instance running on this particular host
-        product_name     -- The name displayed on the "Authorised Access to your Google account" page
-        host_msg         -- An optional message which is displayed on some web pages, 
-                        for app instance running on this particular host
+# def get_exception_msg(e, maxTBlevel=5):
+    # cla, exc, trbk = sys.exc_info()
+    # excName = cla.__name__
+    # return str(excName) + ": " + str(e)
+           
+def get_exception_msg(e = None):
+    """ Return string containing exception type and message
+    
+        args:
+            e       [OPTIONAL] An exception type
+            
+        If e is specified, and is of an Exception type, this method returns a 
+        string in the format "Type: Msg" 
+        
+        If e is not specified, or cannot be parsed, "Type: Msg" is
+        returned for the most recent exception
     """
-
-    if hostname.lower().startswith("www."):
-        # If user accessed the service using www.XXXXXX.appspot.com, strip the "www." so we can match settings
-        hostname = hostname[4:]
         
-    if settings.client_ids.has_key(hostname):
-        client_id = settings.client_ids[hostname]
+    # Store current exception msg, in case building msg for e causes an exception
+    cla, exc, trbk = sys.exc_info()
+    if cla:
+        excName = cla.__name__
+        ex_msg = unicode(excName) + ": " + unicode(exc.message)
     else:
-        client_id = None
-        raise KeyError("No ID entry in settings module for host = %s\nPlease check the address" % hostname)
-  
-    if settings.client_secrets.has_key(hostname):
-        client_secret = settings.client_secrets[hostname]
+        ex_msg = "No exception occured"
+    
+    if e:
+        msg = ''
+        try:
+            msg = unicode(e)
+            excName = e.__class__.__name__
+            
+            return str(excName) + ": " + msg
+            
+        except Exception, e1:
+            # Unable to parse passed-in exception 'e', so returning the most recent
+            # exception when this method was called
+            return "Most recent exception = " + ex_msg + " (" + msg + ")"
+            
     else:
-        client_secret = None
-        raise KeyError("No secret entry in settings module for host = %s\nPlease check the address" % hostname)
-  
-    if hasattr(settings, 'user_agents') and settings.user_agents.has_key(hostname):
-        user_agent = settings.user_agents[hostname]
-    else:
-        user_agent = settings.DEFAULT_USER_AGENT
+         return ex_msg           
 
-    if hasattr(settings, 'app_titles') and settings.app_titles.has_key(hostname):
-        app_title = settings.app_titles[hostname]
-    else:
-        app_title = settings.DEFAULT_APP_TITLE
-        
-    if hasattr(settings, 'product_names') and settings.product_names.has_key(client_id):
-        product_name = settings.product_names[client_id]
-    else:
-        product_name = settings.DEFAULT_PRODUCT_NAME
-  
-    if hasattr(settings, 'host_msgs') and settings.host_msgs.has_key(hostname):
-        host_msg = settings.host_msgs[hostname]
-    else:
-        host_msg = None
-  
-    return client_id, client_secret, user_agent, app_title, product_name, host_msg
-  
-
-def isTestUser(user_email):
+         
+def is_test_user(user_email):
     """ Returns True if user_email is one of the defined settings.TEST_ACCOUNTS 
   
         Used when testing to ensure that only test user's details and sensitive data are logged.
@@ -472,192 +206,318 @@ def escape_html(text):
     #return cgi.escape(text.decode('unicode_escape')).replace('\n', '<br />')
     #return "".join(html_escape_table.get(c,c) for c in text)
 
+                
+def serve_quota_exceeded_page(self):
+    msg1 = "Daily limit exceeded"
+    msg2 = "The daily quota is reset at midnight Pacific Standard Time (5:00pm Australian Eastern Standard Time, 07:00 UTC)."
+    msg3 = "Please rerun " + host_settings.APP_TITLE + " any time after midnight PST to continue importing your file."
+    serve_message_page(self, msg1, msg2, msg3)
     
-# TODO: Untested
-# def runningOnDev():
-    # """ Returns true when running on local dev server. """
-    # return os.environ['SERVER_SOFTWARE'].startswith('Dev')
+    
+def serve_message_page(self, 
+        msg1, msg2 = None, msg3 = None, 
+        show_back_button=False, 
+        back_button_text="Back to previous page",
+        show_custom_button=False, custom_button_text='Try again', 
+        custom_button_url = settings.MAIN_PAGE_URL,
+        show_heading_messages=True,
+        template_file="message.html",
+        extra_template_values=None):
+    """ Serve message.html page to user with message, with an optional button (Back, or custom URL)
+    
+        self                    A webapp.RequestHandler or similar
+        msg1, msg2, msg3        Text to be displayed.msg2 and msg3 are option. Each msg is displayed in a separate div
+        show_back_button        If True, a [Back] button is displayed, to return to previous page
+        show_custom_button      If True, display button to jump to any URL. title set by custom_button_text
+        custom_button_text      Text label for custom button
+        custom_button_url       URL to go to when custom button is pressed. Should be an absolute URL
+        show_heading_messages   If True, display app_title and (optional) host_msg
+        template_file           Specify an alternate HTML template file
+        extra_template_values   A dictionary containing values that will be merged with the existing template values
+                                    They may be additional parameters, or overwrite existing parameters.
+                                    These new values will be available to the HTML template.
+                                    
+        All args except self and msg1 are optional.
+    """
+    fn_name = "serve_message_page: "
 
-    
-def handle_auth_callback(self):
-    
-    fn_name = "handle_auth_callback() "
-        
     logging.debug(fn_name + "<Start>")
     logservice.flush()
     
     try:
-        if not self.request.get("code"):
-            logging.debug(fn_name + "No 'code', so redirecting to " + str(settings.WELCOME_PAGE_URL))
-            logservice.flush()
-            self.redirect(settings.WELCOME_PAGE_URL)
-            logging.debug(fn_name + "<End> (no code)")
-            logservice.flush()
-            return
+        if custom_button_url == settings.MAIN_PAGE_URL:
+            # Relative URLs sometimes fail on Firefox, so convert the default relative URL to an absolute URL
+            custom_button_url = urljoin("https://" + self.request.host, settings.MAIN_PAGE_URL)
+    
+        if msg1:
+            logging.debug(fn_name + "Msg1: " + msg1)
+        if msg2:
+            logging.debug(fn_name + "Msg2: " + msg2)
+        if msg3:
+            logging.debug(fn_name + "Msg3: " + msg3)
             
-        user = users.get_current_user()
-        logging.debug(fn_name + "Retrieving flow for " + str(user.user_id()))
-        flow = pickle.loads(memcache.get(user.user_id()))
-        if flow:
-            logging.debug(fn_name + "Got flow. Retrieving credentials")
-            error = False
-            retry_count = settings.NUM_API_TRIES
-            while retry_count > 0:
-                try:
-                    credentials = flow.step2_exchange(self.request.params)
-                    # Success!
-                    error = False
-                    
-                    if isTestUser(user.email()):
-                        logging.debug(fn_name + "Retrieved credentials for " + str(user.email()) + ", expires " + 
-                            str(credentials.token_expiry) + " UTC")
-                    else:    
-                        logging.debug(fn_name + "Retrieved credentials, expires " + str(credentials.token_expiry) + " UTC")
-                    break
-                    
-                except client.FlowExchangeError, e:
-                    logging.warning(fn_name + "FlowExchangeError: Giving up - " + get_exception_msg(e))
-                    error = True
-                    credentials = None
-                    break
-                    
-                except Exception, e:
-                    logging.warning(fn_name + "Exception: " + get_exception_msg(e))
-                    error = True
-                    credentials = None
-                    
-                retry_count = retry_count - 1
-
-                if retry_count > 0:
-                    logging.info(fn_name + "Error retrieving credentials. " + 
-                            str(retry_count) + " retries remaining")
-                    logservice.flush()
-                    # Last chances - sleep to give the server some extra time before re-requesting
-                    if retry_count <= 2:
-                        logging.debug(fn_name + "Sleeping for " + str(settings.FRONTEND_API_RETRY_SLEEP_DURATION) + 
-                            " seconds before retrying")
-                        logservice.flush()
-                        time.sleep(settings.FRONTEND_API_RETRY_SLEEP_DURATION)
-                                
-                else:
-                    logging.exception(fn_name + "Unable to retrieve credentials after " + str(settings.NUM_API_TRIES) + 
-                        " attempts. Giving up")
-                    logservice.flush()
-
-                        
-                
-            appengine.StorageByKeyName(
-                model.Credentials, user.user_id(), "credentials").put(credentials)
-                
-            if error:
-                # TODO: Redirect to retry or invalid_credentials page, with more meaningful message
-                logging.warning(fn_name + "Error retrieving credentials from flow. Redirecting to " + settings.WELCOME_PAGE_URL +
-                    "?msg=ACCOUNT_ERROR")
-                logservice.flush()
-                self.redirect(settings.WELCOME_PAGE_URL + "?msg=ACCOUNT_ERROR")
-                logging.debug(fn_name + "<End> (Error retrieving credentials)")
-                logservice.flush()
-            else:
-                # Redirect to the URL stored in the "state" param, when redirect_for_auth was called
-                # This should be the URL that the user was on when authorisation failed
-                logging.debug(fn_name + "Success. Redirecting to " + str(self.request.get("state")))
-                self.redirect(self.request.get("state"))
-                logging.debug(fn_name + "<End>")
-                logservice.flush()
-                    
+        path = os.path.join(os.path.dirname(__file__), constants.PATH_TO_TEMPLATES, template_file)
+          
+        template_values = {'app_title' : host_settings.APP_TITLE,
+                           'host_msg' : host_settings.HOST_MSG,
+                           'msg1': msg1,
+                           'msg2': msg2,
+                           'msg3': msg3,
+                           'show_heading_messages' : show_heading_messages,
+                           'show_back_button' : show_back_button,
+                           'back_button_text' : back_button_text,
+                           'show_custom_button' : show_custom_button,
+                           'custom_button_text' : custom_button_text,
+                           'custom_button_url' : custom_button_url,
+                           'product_name' : host_settings.PRODUCT_NAME,
+                           'url_discussion_group' : settings.url_discussion_group,
+                           'email_discussion_group' : settings.email_discussion_group,
+                           'url_issues_page' : settings.url_issues_page,
+                           'url_source_code' : settings.url_source_code,
+                           'app_version' : appversion.version,
+                           'upload_timestamp' : appversion.upload_timestamp}
+                           
+        if extra_template_values:
+            # Add/update template values
+            logging.debug(fn_name + "DEBUG: Updating template values ==>")
+            logging.debug(extra_template_values)
+            logservice.flush()
+            template_values.update(extra_template_values)
+            
+        self.response.out.write(template.render(path, template_values))
+        logging.debug(fn_name + "<End>" )
+        logservice.flush()
     except Exception, e:
         logging.exception(fn_name + "Caught top-level exception")
         serve_outer_exception_message(self, e)
         logging.debug(fn_name + "<End> due to exception" )
         logservice.flush()
-
-        
-def get_task(tasks_svc, tasklist_id, task_id):
-    """ Retrieve specified task from specified tasklist.
-    
-        Returns the task if task exists.
-        
-        The get() throws an Exception if task does not exist
-    """
-
-    return tasks_svc.get(tasklist=tasklist_id, task=task_id).execute()
     
 
-def get_task_safe(tasks_svc, tasklist_id, task_id):
-    """ Retrieve specified task from specified tasklist. 
-    
-        Returns None if task does not exist (404). 
-        
-        Throws exception on any other errors.
-        
-    """
-
-    fn_name = "task_exists: "
-    
-    try:
-        result = tasks_svc.get(tasklist=tasklist_id, task=task_id).execute()
-        
-        if result.get('kind') == 'tasks#task' and result.get('id') == task_id:
-            return result
-        else:
-            # DEBUG
-            logging.warning(fn_name + "DEBUG: Returned data does not appear to be a task, or ID doesn't match " + task_id + " ==>")
-            logging.debug(result)
-            return None
-
-    except apiclient_errors.HttpError, e:
-        # logging.debug(fn_name + "DEBUG: Status = [" + str(e.resp.status) + "]")
-        # 404 is expected if task does not exist
-        if e.resp.status == 404:
-            return None
-        else:
-            logging.exception(fn_name + "HttpError retrieving task, not a 404")
-            raise e
-        
-    except Exception, e:
-        logging.exception(fn_name + "Exception retrieving task")
-        raise e
-            
-        
-    
-
-def task_exists(tasks_svc, tasklist_id, task_id):
-    """ Returns True if specified task exists, else False. """
-    
-    fn_name = "task_exists: "
-    
-    try:
-        result = get_task(tasks_svc, tasklist_id, task_id)
-        if result.get('kind') == 'tasks#task' and result.get('id') == task_id:
-            return True
-        else:
-            # DEBUG
-            logging.debug(fn_name + "Returned data does not appear to be a task, or ID doesn't match " + task_id + " ==>")
-            logging.debug(result)
-            return False
-
-    except apiclient_errors.HttpError, e:
-        # logging.debug(fn_name + "Status = [" + str(e.resp.status) + "]")
-        # 404 is expected if task does not exist
-        if e.resp.status == 404:
-            return False
-        else:
-            logging.exception(fn_name + "HttpError retrieving task, not a 404")
-            raise e
-        
-    except Exception, e:
-        logging.exception(fn_name + "Exception retrieving task")
-        raise e
-            
-        
 def serve_outer_exception_message(self, e):
     """ Display an Oops message when something goes very wrong. 
     
         This is called from the outer exception handler of major methods (such as get/post handlers)
     """
+    fn_name = "serve_outer_exception_message: "
     
-    self.response.out.write("""Oops! Something went terribly wrong.<br />%s<br />Please report this error to <a href="http://%s">%s</a>""" % 
+    self.response.out.write("""Oops! Something went terribly wrong.<br />%s<br /><br />This system is in beta, and is being activeley developed.<br />Please report any errors to <a href="http://%s">%s</a> so that they can be fixed. Thank you.""" % 
         ( get_exception_msg(e), settings.url_issues_page, settings.url_issues_page))
         
+        
+    logging.error(fn_name + get_exception_msg(e))
+    logservice.flush()
 
+    
+def reject_non_test_user(self):
+    fn_name = "reject_non_test_user: "
+    
+    logging.debug(fn_name + "Rejecting non-test user on limited access server")
+    logservice.flush()
+    
+    # self.response.out.write("<html><body><h2>This is a test server. Access is limited to test users.</h2>" +
+                    # "<br /><br /><div>Please use the production server at <href='http://tasks-backup.appspot.com'>tasks-backup.appspot.com</a></body></html>")
+                    # logging.debug(fn_name + "<End> (restricted access)" )
+    serve_message_page(self, 
+        "This is a test server. Access is limited to test users.",
+        "Please click the button to go to the production server at tasks-backup.appspot.com",
+        show_custom_button=True, 
+        custom_button_text='Go to live server', 
+        custom_button_url='http://tasks-backup.appspot.com',
+        show_heading_messages=False)
+                    
+                    
+def format_datetime_as_str(d, format_str, date_only=False, prefix=''):
+    """ Attempts to convert datetime to a string.
+    
+        d               datetime object
+        format_str      format string to be used by strftime
+        date_only       If true, and strftime fails on the datetime object, then return a simplified date-only string
+                        If false, and strftime fails on the datetime object, then return a simplified date & time string
+                        
+        The worker parses the RFC 3339 datetime strings retrieved from the server and converts that to datetime object.
+        The earliest year that can be parsed by datetime.strptime() (or formatted by datetime.strftime) is 1900.
+        Any strings that cannot be parsed by datetime.strptime() will be stored as a '1900-01-01 00:00:00' datetime object.
+        
+        However, if the datetime string is '0000-01-01T00:00:00.000Z', the worker stores None instead.
+        In that case, we return the original '0000-01-01T00:00:00.000Z' string.
+        
+    """
+    
+    fn_name = "format_datetime_as_str: "
+    
+    try:
+        datetime_str = ''
+        if d == None:
+            # The original datestamp was '0000-01-01T00:00:00.000Z' which is stored as None,
+            # so return a human-friendly representation of zero-date (i.e., '0000-01-01 00:00:00' or '0000-01-01')
+            if date_only:
+                datetime_str = constants.ZERO_DATE_STRING
+            else:
+                datetime_str = constants.ZERO_DATETIME_STRING
+        else:
+            try:
+                datetime_str = d.strftime(format_str)
+            except Exception, e:
+                try:
+                    # Can't be formatted, so try to convert to a meaningfull string manually
+                    # This ignores the passed-in format string, but should at least provide something useful
+                    if date_only:
+                        datetime_str = "%04d-%02d-%02d" % (d.year,d.month,d.day)
+                    else:
+                        datetime_str = "%04d-%02d-%02d %02d:%02d:%02d" % (d.year,d.month,d.day,d.hour,d.minute, d.second)
+                except Exception, e:
+                    # Can't be converted (this should never happen)
+                    logging.warning(fn_name + "Unable to convert datetime object; returning empty string")
+                    return ''
+        return prefix + datetime_str
+        
+    except Exception, e:
+        logging.exception(fn_name + "Error processing datetime object; returning empty string")
+        return ''
+        
+    
+def convert_RFC3339_string_to_datetime(datetime_str, field_name, date_only=False):
+    """ Attempt to convert the RFC 3339 datetime string to a valid datetime object.
+    
+        If the field value cannot be parsed, return a default '1900-01-01 00:00:00' value.
+        If the string is '0001-01-01T00:00:00.000Z', return None.
+        
+            datetime_str            String to be converted
+            field_name              The name of the field being parsed. Only used for logging
+            date_only               If True, return a date object instead of datetime
+        
+        strptime() can only parse dates after Jan 1900, but sometimes the server returns
+        dates outside the valid range. Invalid values will be converted to 1900-01-01
+        so that they can be parsed by strptime() or formatted by strftime()
+        
+        Parse the yyyy-mm-ddThh:mm:ss.dddZ return a date or datetime object.
+        There have been occassional strange values in the 'completed' property, such as 
+        "-1701567-04-26T07:12:55.000Z"
+            According to http://docs.python.org/library/datetime.html
+              "The exact range of years for which strftime() works also varies across platforms. 
+               Regardless of platform, years before 1900 cannot be used."
+        so if any date/timestamp value is invalid, set the property to '1900-01-01 00:00:00'
+        
+        NOTE: Sometimes a task has a completion date of '0000-01-01T00:00:00.000Z', which cannot
+        be converted to datetime, because the earliest allowable datetime year is 0001, so that is
+        returned as None
+        
+        Raises an exception if datetime_str is empty, or cannot be handled at all. In this case, it 
+        is recommended that the calling method delete the associated field in the task object.
+        
+    """
+    
+    fn_name = "convert_RFC3339_string_to_datetime: "
+    
+    try:
+        if not datetime_str:
+            # Nothing to parse, so raise an Exception, so that the calling method can deal with it
+            raise ValueError("No datetime string - nothing to parse")
+
+        if datetime_str == constants.ZERO_RFC3339_DATETIME_STRING:
+            # Zero timestamp is represented by None. 
+            # Methods seeing None for a datetime object should replace it with a string representing 
+            # the zero date (e.g., '0000-01-01 00:00:00')
+            return None
+            
+        d = None
+        try:
+            # Parse the RFC 3339 datetime string
+            d = datetime.datetime.strptime(datetime_str, "%Y-%m-%dT%H:%M:%S.000Z")
+            
+            # Test the resultant datetime to ensure that it can be displayed by strftime()
+            # This prevents exceptions later when other modules try to display a datetime
+            # that is outside the valid range for strftime(), such as dates before 1900.
+            try:
+                test_date_str = d.strftime('%H:%M:%S %a, %d %b %Y')
+            except Exception, e:
+                d = datetime.datetime(1900,1,1,0,0,0)
+                logging.warning(fn_name + "Unable to convert '" + field_name + "' string '" + str(datetime_str) + 
+                    "' to a datetime that can be displayed by strftime, so using " + str(d) + 
+                    ": " + get_exception_msg(e))
+                logservice.flush()
+            
+        except ValueError, e:
+            # Minimum datestamp that can be parsed by strptime or displayed by strftime is 1900-01-01
+            d = datetime.datetime(1900,1,1,0,0,0)
+            logging.warning(fn_name + "Invalid '" + field_name + "' timestamp (" + str(datetime_str) + 
+                "), so using " + str(d) + 
+                ": " + get_exception_msg(e))
+            logservice.flush()
+            
+        except Exception, e:
+            logging.exception(fn_name + "Unable to parse '" + field_name + "' value '" + str(datetime_str) + 
+                "' as a datetime")
+            logservice.flush()
+            raise e
+                
+    except Exception, e:
+        # Catch all, in case we can't even process or display datetime_str
+        logging.exception(fn_name + "Unable to parse '" + field_name + "' value")
+        try:
+            logging.error(fn_name + "Invalid value was '" + str(datetime_str) + "'")
+        except Exception, e:
+            logging.error(fn_name + "Unable to log invalid value: " + get_exception_msg(e))
+        logservice.flush()
+        raise e
+        
+    if d and date_only:
+        return d.date()
+    else:
+        return d
+        
+        
+def set_timestamp(task, field_name, date_only=False):
+    """ Parse timestamp field value and replace with a datetime object. 
+    
+            task                    A task dictionary object, as returned from the Google server
+            field_name              The name of the field to be set
+            date_only               If True, store a date object instead of datetime
+        
+        Parses the specified field and stores a date or datetime object so that methods which access
+        the task (including Django templates) can format the displayed date.
+        
+        If there is a major problem, such as the field no being able to be parsed at all, we delete
+        the field from the task dictionary.
+    """
+    
+    fn_name = "set_timestamp: "
+    try:
+        if field_name in task:
+            # Field exists, so try to parse its value
+            try:
+                datetime_str = task[field_name]
+                task[field_name] = convert_RFC3339_string_to_datetime(datetime_str, field_name, date_only)
+            except Exception, e:
+                try:
+                    logging.error(fn_name + "Unable to parse '" + field_name + 
+                        "' datetime field value '" + str(datetime_str) + "', so deleting field: " +
+                        get_exception_msg(e))
+                except Exception, e:
+                    # In case logging the value causes an exception, log without value
+                    logging.error(fn_name + "Unable to parse '" + field_name + 
+                        "' datetime field value, and unable to log field value, so deleting field: " +
+                        get_exception_msg(e))
+                        
+                # Delete the field which has the un-parseable value
+                try:
+                    del(task[field_name])
+                except Exception, e:
+                    logging.error(fn_name + "Unable to delete '" + field_name + "': " + get_exception_msg(e))
+                logservice.flush()
+                
+    except Exception, e:
+        # This should never happen
+        logging.exception(fn_name + "Error attempting to set '" + field_name + "' datetime field value, so deleting field")
+        # Delete the field which caused the exception
+        try:
+            del(task[field_name])
+        except Exception, e:
+            logging.error(fn_name + "Unable to delete '" + field_name + "': " + get_exception_msg(e))
+        logservice.flush()
+                  
+                  
+def convert_unicode_to_str(ustr):
+    return unicodedata.normalize('NFKD', ustr).encode('ascii','ignore')                  
     

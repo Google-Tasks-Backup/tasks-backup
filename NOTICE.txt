@@ -1,0 +1,43 @@
+Copyright 2012 Julie Smith.  All Rights Reserved.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+
+
+Google Tasks backup (GTB) reuses code from Google Tasks Porter (GTP), and adds
+extra functionality including;
+- task state inclusion options (completed, hidden, deleted)
+- additional export file formats,
+- a tasks display page with multiple selection and filtering options
+- better handling of very large task lists
+- better handling of server errors
+
+Whereas GTP was used a database to retrieve tasks from the Google Tasks server, 
+and to store snapshots on behalf of the user, GTB retrieves tasks into memory
+and then provides the user with a number of export options, including various 
+file formats, tasks display page, and RTM-compatible email.
+
+The memory based approach of GTB is significantly faster, and also uses 
+signicantly fewer resources than GTP. Users who report that their tasklists
+were too large to be exported by GTP have been able to successfully back up
+using GTB.
+
+
+Unlike GTP, GTB does not import tasks. 
+There is a separate project (import-tasks.appsot.com) which can import tasks 
+that have been exported by GTB, as well as specially formatted CSV files.
+
+Uses apiclient, httplib2, oauth2client, uritemplate
+from v1.0 (13 Sep 2012) of google-api-python-client
+http://code.google.com/p/google-api-python-client/downloads/list
+
+

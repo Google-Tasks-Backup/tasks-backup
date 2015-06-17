@@ -1,4 +1,4 @@
-#!/usr/bin/python2.5
+# -*- coding: utf-8 -*-
 #
 # Copyright 2012 Julie Smith.  All Rights Reserved.
 #
@@ -25,11 +25,38 @@ import logging
 import os
 import pickle
 import sys
-#import urllib
+
+
+# Fix for DeadlineExceeded, because "Pre-Call Hooks to UrlFetch Not Working"
+#     Based on code from https://groups.google.com/forum/#!msg/google-appengine/OANTefJvn0A/uRKKHnCKr7QJ
+from google.appengine.api import urlfetch
+real_fetch = urlfetch.fetch
+def fetch_with_deadline(url, *args, **argv):
+    argv['deadline'] = settings.URL_FETCH_TIMEOUT
+    return real_fetch(url, *args, **argv)
+urlfetch.fetch = fetch_with_deadline
+
+
+
+# OLD (pre google-api-python-client-gae-1.0)
+# from oauth2client import appengine
+# from oauth2client import client
 
 from apiclient import discovery
-from apiclient.oauth2client import appengine
-from apiclient.oauth2client import client
+import httplib2
+from oauth2client.appengine import OAuth2Decorator
+
+# JS 2012-09-16: Imports to enable credentials = StorageByKeyName()
+from oauth2client.appengine import StorageByKeyName
+from oauth2client.appengine import CredentialsModel
+from oauth2client.appengine import CredentialsProperty
+
+# To allow catching initial "error" : "invalid_grant" and logging as Info
+# rather than as a Warning or Error, because AccessTokenRefreshError seems
+# to happen quite regularly
+from oauth2client.client import AccessTokenRefreshError
+
+import webapp2
 
 from google.appengine.api import apiproxy_stub_map
 from google.appengine.api import mail
@@ -37,10 +64,6 @@ from google.appengine.api import memcache
 from google.appengine.api import taskqueue
 from google.appengine.api import users
 from google.appengine.ext import db
-from google.appengine.ext import webapp
-from google.appengine.ext.webapp import template
-from google.appengine.ext.webapp import util
-from google.appengine.ext.webapp.util import run_wsgi_app
 from google.appengine.runtime import apiproxy_errors
 from google.appengine.runtime import DeadlineExceededError
 from google.appengine.api import urlfetch_errors
@@ -73,7 +96,7 @@ __author__ = "julie.smith.1999@gmail.com (Julie Smith)"
 
 
 
-class ProcessTasksWorker(webapp.RequestHandler):
+class ProcessTasksWorker(webapp2.RequestHandler):
     """ Process tasks according to data in the ProcessTasksJob entity """
 
     credentials = None
@@ -83,18 +106,34 @@ class ProcessTasksWorker(webapp.RequestHandler):
     tasks_svc = None
     tasklists_svc = None
     
+    def _log_progress(self, prefix_msg=""):
+        fn_name = "_log_progress: "
+        
+        if prefix_msg:
+            logging.debug(fn_name + prefix_msg + " - Job status = '" + str(self.process_tasks_job.status) + 
+                "', progress: " + str(self.process_tasks_job.total_progress))
+        else:
+            logging.debug(fn_name + "Job status = '" + str(self.process_tasks_job.status) + "', progress: " + 
+                "', progress: " + str(self.process_tasks_job.total_progress))
+                
+        if self.process_tasks_job.message:
+            logging.debug(fn_name + "Message = " + str(self.process_tasks_job.message))
+            
+        if self.process_tasks_job.error_message:
+            logging.debug(fn_name + "Error message = " + str(self.process_tasks_job.error_message))
+
+        logservice.flush()
+        
+    
     def post(self):
         fn_name = "ProcessTasksWorker.post(): "
         
         logging.debug(fn_name + "<start> (app version %s)" %appversion.version)
         logservice.flush()
 
-        client_id, client_secret, user_agent, app_title, project_name, host_msg = shared.get_settings(self.request.host)
-        
-        
         self.user_email = self.request.get(settings.TASKS_QUEUE_KEY_NAME)
         
-        self.is_test_user = shared.isTestUser(self.user_email)
+        self.is_test_user = shared.is_test_user(self.user_email)
         
         if self.user_email:
             
@@ -108,89 +147,129 @@ class ProcessTasksWorker(webapp.RequestHandler):
                 # TODO: Find some way of notifying the user?????
                 # Could use memcache to relay a message which is displayed in ProgressHandler
                 return
-            else:
-                logging.debug(fn_name + "Retrieved process tasks job for " + str(self.user_email))
-                logservice.flush()
                 
-                self.process_tasks_job.status = constants.ExportJobStatus.INITIALISING
+                
+        
+            logging.debug(fn_name + "Retrieved process tasks job for " + str(self.user_email))
+            logging.debug(fn_name + "Job was requested at " + str(self.process_tasks_job.job_created_timestamp))
+            logservice.flush()
+            
+            if self.process_tasks_job.status != constants.ExportJobStatus.TO_BE_STARTED:
+                # Very occassionally, GAE starts a 2nd instance of the worker, so we check for that here.
+                
+                # Check when job status was last updated. If it was less than settings.MAX_JOB_PROGRESS_INTERVAL
+                # seconds ago, assume that another instance is already running, log error and exit
+                time_since_last_update = datetime.datetime.now() - self.process_tasks_job.job_progress_timestamp
+                if time_since_last_update.seconds < settings.MAX_JOB_PROGRESS_INTERVAL:
+                    logging.error(fn_name + "It appears that worker was called whilst another job is already running for " + str(self.user_email))
+                    logging.error(fn_name + "Previous job requested at " + str(self.process_tasks_job.job_created_timestamp) + " UTC is still running.")
+                    logging.error(fn_name + "Previous worker started at " + str(self.process_tasks_job.job_start_timestamp) + " UTC and last job progress update was " + str(time_since_last_update.seconds) + " seconds ago, with status " + str(self.process_tasks_job.status) )
+                    logging.warning(fn_name + "<End> (Another worker is already running)")
+                    logservice.flush()
+                    return
+                
+                else:
+                    # A previous job hasn't completed, and hasn't updated progress for more than 
+                    # settings.MAX_JOB_PROGRESS_INTERVAL secons, so assume that previous worker
+                    # for this job has died.
+                    logging.error(fn_name + "It appears that a previous job requested by " + str(self.user_email) + " at " + str(self.process_tasks_job.job_created_timestamp) + " UTC has stalled.")
+                    logging.error(fn_name + "Previous worker started at " + str(self.process_tasks_job.job_start_timestamp) + " UTC and last job progress update was " + str(time_since_last_update.seconds) + " seconds ago, with status " + str(self.process_tasks_job.status) + ", progress = ")
+                    
+                    if self.process_tasks_job.number_of_job_starts > settings.MAX_NUM_JOB_STARTS:
+                        logging.error(fn_name + "This job has already been started " + str(self.process_tasks_job.number_of_job_starts) + " times. Giving up")
+                        logging.warning(fn_name + "<End> (Multiple job restart failures)")
+                        logservice.flush()
+                        return
+                    else:
+                        logging.info(fn_name + "Attempting to restart backup job. Attempt number " + 
+                            str(self.process_tasks_job.number_of_job_starts + 1))
+                        logservice.flush()
+            
+            
+            self.process_tasks_job.status = constants.ExportJobStatus.INITIALISING
+            self.process_tasks_job.number_of_job_starts = self.process_tasks_job.number_of_job_starts + 1
+            self.process_tasks_job.job_progress_timestamp = datetime.datetime.now()
+            self.process_tasks_job.job_start_timestamp = datetime.datetime.now()
+            self.process_tasks_job.message = "Validating background job ..."
+            self._log_progress("Initialising")
+            self.process_tasks_job.put()
+
+            time_since_job_request = datetime.datetime.now() - self.process_tasks_job.job_created_timestamp
+            logging.debug(fn_name + "Starting job that was requested " + str(time_since_job_request.seconds) + 
+                " seconds ago at " + str(self.process_tasks_job.job_created_timestamp) + " UTC")
+            
+            
+            user = self.process_tasks_job.user
+            if not user:
+                logging.error(fn_name + "No user object in DB record for " + str(self.user_email))
+                logservice.flush()
+                self.process_tasks_job.status = constants.ExportJobStatus.ERROR
+                self.process_tasks_job.message = ''
+                self.process_tasks_job.error_message = "Problem with user details. Please restart."
                 self.process_tasks_job.job_progress_timestamp = datetime.datetime.now()
-                self.process_tasks_job.message = "Validating background job ..."
-                logging.debug(fn_name + "Initialising - Job status: '" + str(self.process_tasks_job.status) + "', progress: " + 
-                    str(self.process_tasks_job.total_progress) + ", msg: '" + 
-                    str(self.process_tasks_job.message) + "', err msg: '" + str(self.process_tasks_job.error_message) + "'")
+                self._log_progress("No user")
+                self.process_tasks_job.put()
+                logging.debug(fn_name + "<End> No user object")
+                return
+                  
+            # self.credentials = self.process_tasks_job.credentials
+            
+            # DEBUG: 2012-09-16; Trying a different method of retrieving credentials, to see if it
+            # allows retrieveal of credentials for TAFE account
+            self.credentials = StorageByKeyName(CredentialsModel, user.user_id(), 'credentials').get()
+            
+            if not self.credentials:
+                logging.error(fn_name + "No credentials in DB record for " + str(self.user_email))
+                logservice.flush()
+                self.process_tasks_job.status = constants.ExportJobStatus.ERROR
+                self.process_tasks_job.message = ''
+                self.process_tasks_job.error_message = "Problem with user credentials. Please restart."
+                self.process_tasks_job.job_progress_timestamp = datetime.datetime.now()
+                self._log_progress("No credentials")
+                self.process_tasks_job.put()
+                logging.debug(fn_name + "<End> No credentials")
+                return
+          
+            if self.credentials.invalid:
+                logging.error(fn_name + "Invalid credentials in DB record for " + str(self.user_email))
+                logservice.flush()
+                self.process_tasks_job.status = constants.ExportJobStatus.ERROR
+                self.process_tasks_job.message = ''
+                self.process_tasks_job.error_message = "Invalid credentials. Please restart and re-authenticate."
+                self.process_tasks_job.job_progress_timestamp = datetime.datetime.now()
+                self._log_progress("Credentials invalid")
                 logservice.flush()
                 self.process_tasks_job.put()
+                logging.debug(fn_name + "<End> Invalid credentials")
+                return
+          
+            if self.is_test_user:
+                logging.debug(fn_name + "User is test user %s" % self.user_email)
+                logservice.flush()
                 
-                user = self.process_tasks_job.user
-                if not user:
-                    logging.error(fn_name + "No user object in DB record for " + str(self.user_email))
-                    logservice.flush()
-                    self.process_tasks_job.status = constants.ExportJobStatus.ERROR
-                    self.process_tasks_job.message = ''
-                    self.process_tasks_job.error_message = "Problem with user details. Please restart."
-                    self.process_tasks_job.job_progress_timestamp = datetime.datetime.now()
-                    logging.debug(fn_name + "No user - Job status: '" + str(self.process_tasks_job.status) + "', progress: " + 
-                        str(self.process_tasks_job.total_progress) + ", msg: '" + 
-                        str(self.process_tasks_job.message) + "', err msg: '" + str(self.process_tasks_job.error_message) + "'")
-                    logservice.flush()
-                    self.process_tasks_job.put()
-                    logging.debug(fn_name + "<End> No user object")
-                    return
-                      
-                self.credentials = self.process_tasks_job.credentials
-                if not self.credentials:
-                    logging.error(fn_name + "No credentials in DB record for " + str(self.user_email))
-                    logservice.flush()
-                    self.process_tasks_job.status = constants.ExportJobStatus.ERROR
-                    self.process_tasks_job.message = ''
-                    self.process_tasks_job.error_message = "Problem with user self.credentials. Please restart."
-                    self.process_tasks_job.job_progress_timestamp = datetime.datetime.now()
-                    logging.debug(fn_name + "Job status: '" + str(self.process_tasks_job.status) + "', progress: " + 
-                        str(self.process_tasks_job.total_progress) + ", msg: '" + 
-                        str(self.process_tasks_job.message) + "', err msg: '" + str(self.process_tasks_job.error_message) + "'")
-                    logservice.flush()
-                    self.process_tasks_job.put()
-                    logging.debug(fn_name + "<End> No self.credentials")
-                    return
-              
-                if self.credentials.invalid:
-                    logging.error(fn_name + "Invalid credentials in DB record for " + str(self.user_email))
-                    logservice.flush()
-                    self.process_tasks_job.status = constants.ExportJobStatus.ERROR
-                    self.process_tasks_job.message = ''
-                    self.process_tasks_job.error_message = "Invalid self.credentials. Please restart and re-authenticate."
-                    self.process_tasks_job.job_progress_timestamp = datetime.datetime.now()
-                    logging.debug(fn_name + "Credentials invalid - Job status: '" + str(self.process_tasks_job.status) + "', progress: " + 
-                        str(self.process_tasks_job.total_progress) + ", msg: '" + 
-                        str(self.process_tasks_job.message) + "', err msg: '" + str(self.process_tasks_job.error_message) + "'")
-                    logservice.flush()
-                    self.process_tasks_job.put()
-                    logging.debug(fn_name + "<End> Invalid self.credentials")
-                    return
-              
-                if self.is_test_user:
-                    logging.debug(fn_name + "User is test user %s" % self.user_email)
-                    logservice.flush()
-                    
-                http = httplib2.Http()
-                http = self.credentials.authorize(http)
-                service = discovery.build("tasks", "v1", http)
-                self.tasklists_svc = service.tasklists()
-                self.tasks_svc = service.tasks()
-                
-                self.export_tasks()
-                # logging.debug(fn_name + "Finished processing. Total progress = " + 
-                    # str(self.process_tasks_job.total_progress) + " for " + str(self.user_email))
+            http = httplib2.Http()
+            http = self.credentials.authorize(http)
+            service = discovery.build("tasks", "v1", http=http)
+            self.tasklists_svc = service.tasklists()
+            self.tasks_svc = service.tasks()
+            
+            # =========================================
+            #   Retrieve tasks from the Google server
+            # =========================================
+            self._export_tasks()
+
         else:
             logging.error(fn_name + "No processing, as there was no user_email key")
             logservice.flush()
             
-        logging.debug(fn_name + "<End>, user = " + str(self.user_email))
+        logging.debug(fn_name + "<End>")
         logservice.flush()
 
 
-    def export_tasks(self):
-        fn_name = "export_tasks: "
+    def _export_tasks(self):
+    
+        fn_name = "_export_tasks: "
+        
         logging.debug(fn_name + "<Start>")
         logservice.flush()
         
@@ -204,9 +283,9 @@ class ProcessTasksWorker(webapp.RequestHandler):
         
         # Retrieve all tasks for the user
         try:
-
-            logging.debug(fn_name + "include_hidden = " + str(include_hidden) +
-                ", include_completed = " + str(include_completed) +
+            logging.debug(fn_name + 
+                "include_completed = " + str(include_completed) +
+                ", include_hidden = " + str(include_hidden) +
                 ", include_deleted = " + str(include_deleted))
             logservice.flush()
             
@@ -226,10 +305,7 @@ class ProcessTasksWorker(webapp.RequestHandler):
             self.process_tasks_job.status = constants.ExportJobStatus.BUILDING
             self.process_tasks_job.job_progress_timestamp = datetime.datetime.now()
             self.process_tasks_job.message = 'Retrieving tasks from server ...'
-            logging.debug(fn_name + "Building - Job status: '" + str(self.process_tasks_job.status) + "', progress: " + 
-                str(self.process_tasks_job.total_progress) + ", msg: '" + 
-                str(self.process_tasks_job.message) + "', err msg: '" + str(self.process_tasks_job.error_message) + "'")
-            logservice.flush()
+            self._log_progress("Building")
             self.process_tasks_job.put()
             
             # This list will contain zero or more tasklist dictionaries, which each contain tasks
@@ -251,7 +327,7 @@ class ProcessTasksWorker(webapp.RequestHandler):
                     logging.debug(fn_name + "calling tasklists.list().execute() to create tasklists list")
                     logservice.flush()
             
-                retry_count = constants.NUM_API_RETRIES
+                retry_count = settings.NUM_API_TRIES
                 while retry_count > 0:
                   try:
                     if next_tasklists_page_token:
@@ -261,19 +337,35 @@ class ProcessTasksWorker(webapp.RequestHandler):
                     # Successfully retrieved data, so break out of retry loop
                     break
                     
+                    
                   except Exception, e:
                     retry_count = retry_count - 1
                     if retry_count > 0:
-                        logging.warning(fn_name + "Error retrieving list of tasklists. " + 
-                            str(retry_count) + " retries remaining")
+                        if isinstance(e, AccessTokenRefreshError):
+                            # Log first 'n' AccessTokenRefreshError as Info, because they are reasonably common,
+                            # and the system usually continues normally after the 2nd call to
+                            # "new_request: Refreshing due to a 401"
+                            # Occassionally, the system seems to need a 3rd attempt 
+                            # (i.e., success after waiting 45 seconds)
+                            logging.info(fn_name + 
+                                "Access Token Refresh Error whilst retrieving list of tasklists (1st time, not yet an error). " + 
+                                str(retry_count) + " attempts remaining: " + shared.get_exception_msg(e))
+                        else:
+                            logging.warning(fn_name + "Error retrieving list of tasklists. " + 
+                                str(retry_count) + " attempts remaining: " + shared.get_exception_msg(e))
                         logservice.flush()
                         if retry_count <= 2:
-                            logging.debug(fn_name + "Sleeping for " + str(settings.WORKER_API_RETRY_SLEEP_DURATION) + 
+                            logging.debug(fn_name + "Giving server an extra chance; Sleeping for " +
+                                str(settings.WORKER_API_RETRY_SLEEP_DURATION) + 
                                 " seconds before retrying")
                             logservice.flush()
+                            # Update job_progress_timestamp so that job doesn't time out
+                            self.process_tasks_job.job_progress_timestamp = datetime.datetime.now()
+                            self.process_tasks_job.put()
                             time.sleep(settings.WORKER_API_RETRY_SLEEP_DURATION)
                     else:
-                        logging.exception(fn_name + "Still error retrieving list of tasklists after " + str(constants.NUM_API_RETRIES) + " retries. Giving up")
+                        logging.exception(fn_name + "Still error retrieving list of tasklists after " + 
+                            str(settings.NUM_API_TRIES) + " attempts. Giving up")
                         logservice.flush()
                         raise e
             
@@ -330,7 +422,7 @@ class ProcessTasksWorker(webapp.RequestHandler):
                     # =====================================================
                     #       Process all the tasks in this task list
                     # =====================================================
-                    tasklist_dict, num_tasks = self.get_tasks_in_tasklist(tasklist_title, tasklist_id, 
+                    tasklist_dict, num_tasks = self._get_tasks_in_tasklist(tasklist_title, tasklist_id, 
                         include_hidden, include_completed, include_deleted)
                     # Track number of tasks per tasklist
                     tasks_per_list.append(num_tasks)
@@ -340,10 +432,7 @@ class ProcessTasksWorker(webapp.RequestHandler):
                     self.process_tasks_job.tasklist_progress = 0 # Because total_progress now includes num_tasks for current tasklist
                     self.process_tasks_job.job_progress_timestamp = datetime.datetime.now()
                     self.process_tasks_job.message = ''
-                    logging.debug(fn_name + "Processed tasklist. Updated job status: '" + str(self.process_tasks_job.status) + "', progress: " + 
-                        str(self.process_tasks_job.total_progress) + ", msg: '" + 
-                        str(self.process_tasks_job.message) + "', err msg: '" + str(self.process_tasks_job.error_message) + "'")
-                    logservice.flush()
+                    self._log_progress("Processed tasklist")
                     self.process_tasks_job.put()
                     
                     # if self.is_test_user:
@@ -416,7 +505,8 @@ class ProcessTasksWorker(webapp.RequestHandler):
             
             # Multiply by 1.0 float value so that we can use ceiling to find number of Blobs required
             num_of_blobs = int(math.ceil(data_len * 1.0 / constants.MAX_BLOB_SIZE))
-            logging.debug(fn_name + "Calculated " + str(num_of_blobs) + " blobs required to store " + str(data_len) + " bytes")
+            logging.debug(fn_name + "Calculated " + str(num_of_blobs) + " blobs required to store " + 
+                str(data_len) + " bytes")
             logservice.flush()
             
             try:
@@ -446,10 +536,7 @@ class ProcessTasksWorker(webapp.RequestHandler):
                 self.process_tasks_job.job_progress_timestamp = datetime.datetime.now()
                 # self.process_tasks_job.message = summary_msg + " in " + proc_time_str
                 self.process_tasks_job.message = summary_msg + " at " + \
-                    self.process_tasks_job.job_start_timestamp.strftime("%H:%M UTC, %a %d %b %Y")
-                # logging.debug(fn_name + "COMPLETED: Export complete - Job status: '" + str(self.process_tasks_job.status) + "', progress: " + 
-                    # str(self.process_tasks_job.total_progress) + ", msg: '" + 
-                    # str(self.process_tasks_job.message) + "', err msg: '" + str(self.process_tasks_job.error_message) + "'")
+                    start_time.strftime("%H:%M UTC, %a %d %b %Y")
                 logging.info(fn_name + "COMPLETED: " + summary_msg + " for " + self.user_email + " in " + proc_time_str)
                 logservice.flush()
                 self.process_tasks_job.put()
@@ -460,7 +547,8 @@ class ProcessTasksWorker(webapp.RequestHandler):
                     processing_time = process_time.days * 3600*24 + process_time.seconds + process_time.microseconds / 1000000.0
                     included_options_str = "Includes: Completed = %s, Deleted = %s, Hidden = %s" % (str(include_completed), str(include_deleted), str(include_hidden))
                     
-                    logging.debug(fn_name + "STATS: Started at " + str(start_time) +
+                    logging.debug(fn_name + "STATS: Job started at " + str(self.process_tasks_job.job_start_timestamp) +
+                        "\n    Worker started at " + str(start_time) +
                         "\n    " + summary_msg + 
                         "\n    " + breakdown_msg +
                         "\n    " + proc_time_str +
@@ -493,10 +581,7 @@ class ProcessTasksWorker(webapp.RequestHandler):
                 self.process_tasks_job.message = ''
                 self.process_tasks_job.error_message = "Tasklists data is too large - Unable to store tasklists in DB: " + shared.get_exception_msg(e)
                 self.process_tasks_job.job_progress_timestamp = datetime.datetime.now()
-                logging.debug(fn_name + "apiproxy_errors.RequestTooLargeError - Job status: '" + str(self.process_tasks_job.status) + "', progress: " + 
-                    str(self.process_tasks_job.total_progress) + ", msg: '" + 
-                    str(self.process_tasks_job.message) + "', err msg: '" + str(self.process_tasks_job.error_message) + "'")
-                logservice.flush()
+                self._log_progress("apiproxy_errors.RequestTooLargeError")
                 self.process_tasks_job.put()
             
             except Exception, e:
@@ -506,10 +591,7 @@ class ProcessTasksWorker(webapp.RequestHandler):
                 self.process_tasks_job.message = ''
                 self.process_tasks_job.error_message = "Unable to store tasklists in DB: " + shared.get_exception_msg(e)
                 self.process_tasks_job.job_progress_timestamp = datetime.datetime.now()
-                logging.debug(fn_name + "Exception - Job status: '" + str(self.process_tasks_job.status) + "', progress: " + 
-                    str(self.process_tasks_job.total_progress) + ", msg: '" + 
-                    str(self.process_tasks_job.message) + "', err msg: '" + str(self.process_tasks_job.error_message) + "'")
-                logservice.flush()
+                self._log_progress("Exception")
                 self.process_tasks_job.put()
 
         except urlfetch_errors.DeadlineExceededError, e:
@@ -517,12 +599,9 @@ class ProcessTasksWorker(webapp.RequestHandler):
             logservice.flush()
             self.process_tasks_job.status = constants.ExportJobStatus.ERROR
             self.process_tasks_job.message = ''
-            self.process_tasks_job.error_message = "urlfetch_errors.DeadlineExceededError: " + shared.get_exception_msg(e)
+            self.process_tasks_job.error_message = "Server took too long to respond: " + shared.get_exception_msg(e)
             self.process_tasks_job.job_progress_timestamp = datetime.datetime.now()
-            logging.debug(fn_name + "urlfetch_errors.DeadlineExceededError - Job status: '" + str(self.process_tasks_job.status) + "', progress: " + 
-                str(self.process_tasks_job.total_progress) + ", msg: '" + 
-                str(self.process_tasks_job.message) + "', err msg: '" + str(self.process_tasks_job.error_message) + "'")
-            logservice.flush()
+            self._log_progress("urlfetch_errors.DeadlineExceededError")
             self.process_tasks_job.put()
       
         except apiproxy_errors.DeadlineExceededError, e:
@@ -530,12 +609,9 @@ class ProcessTasksWorker(webapp.RequestHandler):
             logservice.flush()
             self.process_tasks_job.status = constants.ExportJobStatus.ERROR
             self.process_tasks_job.message = ''
-            self.process_tasks_job.error_message = "apiproxy_errors.DeadlineExceededError: " + shared.get_exception_msg(e)
+            self.process_tasks_job.error_message = "Server took too long to respond: " + shared.get_exception_msg(e)
             self.process_tasks_job.job_progress_timestamp = datetime.datetime.now()
-            logging.debug(fn_name + "apiproxy_errors.DeadlineExceededError - Job status: '" + str(self.process_tasks_job.status) + "', progress: " + 
-                str(self.process_tasks_job.total_progress) + ", msg: '" + 
-                str(self.process_tasks_job.message) + "', err msg: '" + str(self.process_tasks_job.error_message) + "'")
-            logservice.flush()
+            self._log_progress("apiproxy_errors.DeadlineExceededError")
             self.process_tasks_job.put()
         
         except DeadlineExceededError, e:
@@ -543,12 +619,9 @@ class ProcessTasksWorker(webapp.RequestHandler):
             logservice.flush()
             self.process_tasks_job.status = constants.ExportJobStatus.ERROR
             self.process_tasks_job.message = ''
-            self.process_tasks_job.error_message = "DeadlineExceededError: " + shared.get_exception_msg(e)
+            self.process_tasks_job.error_message = "Server took too long to respond: " + shared.get_exception_msg(e)
             self.process_tasks_job.job_progress_timestamp = datetime.datetime.now()
-            logging.debug(fn_name + "DeadlineExceededError - Job status: '" + str(self.process_tasks_job.status) + "', progress: " + 
-                str(self.process_tasks_job.total_progress) + ", msg: '" + 
-                str(self.process_tasks_job.message) + "', err msg: '" + str(self.process_tasks_job.error_message) + "'")
-            logservice.flush()
+            self._log_progress("DeadlineExceededError")
             self.process_tasks_job.put()
         
         except Exception, e:
@@ -556,12 +629,9 @@ class ProcessTasksWorker(webapp.RequestHandler):
             logservice.flush()
             self.process_tasks_job.status = constants.ExportJobStatus.ERROR
             self.process_tasks_job.message = ''
-            self.process_tasks_job.error_message = shared.get_exception_msg(e)
+            self.process_tasks_job.error_message = "System error: " + shared.get_exception_msg(e)
             self.process_tasks_job.job_progress_timestamp = datetime.datetime.now()
-            logging.debug(fn_name + "Exception - Job status: '" + str(self.process_tasks_job.status) + "', progress: " + 
-                str(self.process_tasks_job.total_progress) + ", msg: '" + 
-                str(self.process_tasks_job.message) + "', err msg: '" + str(self.process_tasks_job.error_message) + "'")
-            logservice.flush()
+            self._log_progress("Exception")
             self.process_tasks_job.put()
         
 
@@ -569,7 +639,7 @@ class ProcessTasksWorker(webapp.RequestHandler):
         logservice.flush()
             
     
-    def get_tasks_in_tasklist(self, tasklist_title, tasklist_id, include_hidden, include_completed, include_deleted):
+    def _get_tasks_in_tasklist(self, tasklist_title, tasklist_id, include_hidden, include_completed, include_deleted):
         """ Returns all the tasks in the tasklist 
         
             arguments:
@@ -586,7 +656,7 @@ class ProcessTasksWorker(webapp.RequestHandler):
                 'tasks' is a list. Each element in the list is dictionary representing 1 task
               number of tasks
         """        
-        fn_name = "CreateBackupHandler.get_tasks_in_tasklist(): "
+        fn_name = "CreateBackupHandler._get_tasks_in_tasklist(): "
         
         
         tasklist_dict = {} # Blank dictionary for this tasklist
@@ -602,8 +672,9 @@ class ProcessTasksWorker(webapp.RequestHandler):
         prev_progress_timestamp = datetime.datetime.now()
         
         if self.is_test_user and settings.DUMP_DATA:
-          logging.debug(fn_name + "include_hidden = " + str(include_hidden) +
-                            ", include_completed = " + str(include_completed) +
+          logging.debug(fn_name +
+                            "TEST: include_completed = " + str(include_completed) +
+                            ", include_hidden = " + str(include_hidden) +
                             ", include_deleted = " + str(include_deleted))
           logservice.flush()
         # ---------------------------------------------------------------------------
@@ -611,7 +682,7 @@ class ProcessTasksWorker(webapp.RequestHandler):
         # ---------------------------------------------------------------------------
         while more_tasks_data_to_retrieve:
         
-          retry_count = constants.NUM_API_RETRIES
+          retry_count = settings.NUM_API_TRIES
           while retry_count > 0:
             try:
               # Retrieve a page of (up to 100) tasks
@@ -633,20 +704,25 @@ class ProcessTasksWorker(webapp.RequestHandler):
               retry_count = retry_count - 1
               if retry_count > 0:
                 logging.warning(fn_name + "Error retrieving tasks, " + 
-                      str(retry_count) + " retries remaining")
+                      str(retry_count) + " attempts remaining: " + shared.get_exception_msg(e))
                 logservice.flush()
                 # Last chances - sleep to give the server some extra time before re-requesting
                 if retry_count <= 2:
-                    logging.debug(fn_name + "Sleeping for " + str(settings.WORKER_API_RETRY_SLEEP_DURATION) + 
+                    logging.debug(fn_name + "Giving server an extra chance; Sleeping for " + 
+                        str(settings.WORKER_API_RETRY_SLEEP_DURATION) + 
                         " seconds before retrying")
                     logservice.flush()
+                    # Update job_progress_timestamp so that job doesn't time out
+                    self.process_tasks_job.job_progress_timestamp = datetime.datetime.now()
+                    self.process_tasks_job.put()
                     time.sleep(settings.WORKER_API_RETRY_SLEEP_DURATION)
                 
               else:
-                logging.exception(fn_name + "Still error retrieving tasks for tasklist after " + str(constants.NUM_API_RETRIES) + " retries. Giving up")
+                logging.exception(fn_name + "Still error retrieving tasks for tasklist after " + 
+                    str(settings.NUM_API_TRIES) + " attempts. Giving up")
                 logservice.flush()
                 raise e
-              
+          
           if self.is_test_user and settings.DUMP_DATA:
             logging.debug(fn_name + "tasks_data ==>")
             logging.debug(tasks_data)
@@ -663,7 +739,7 @@ class ProcessTasksWorker(webapp.RequestHandler):
             try:
               tasks = tasks_data[u'items'] # Store all the tasks (List of Dict)
             except Exception, e:
-              logging.exception(fn_name, "Exception extracting items from tasks_data.")
+              logging.exception(fn_name, "Exception extracting items from tasks_data: " + shared.get_exception_msg(e))
               #logging.error(tasks_data)
               logservice.flush()
               raise e
@@ -673,56 +749,26 @@ class ProcessTasksWorker(webapp.RequestHandler):
               # logging.debug(tasks)
               # logservice.flush()
             
-            # ------------------------------------------------------------------------------------------------
-            # Fix date/time format for each task, so that the date/time values can be used in Django templates
-            # Convert the yyyy-mm-ddThh:mm:ss.dddZ format to a datetime object, and store that.
-            # There have been occassional format errors in the 'completed' property, 
-            # due to 'completed' value such as "-1701567-04-26T07:12:55.000Z"
-            # According to http://docs.python.org/library/datetime.html
-            #       "The exact range of years for which strftime() works also varies across platforms. 
-            #        Regardless of platform, years before 1900 cannot be used."
-            # so if any date/timestamp value is invalid, set the property to '1900-01-01 00:00:00'
-            # NOTE: Sometimes a task has a completion date of '0000-01-01T00:00:00.000Z', which also cannot
-            # be converted to datetime, because the earliest allowable datetime year is 0001
-            # ------------------------------------------------------------------------------------------------
             for t in tasks:
                 num_tasks = num_tasks + 1
-              
-                date_due = t.get(u'due')
-                if date_due:
-                    try:
-                        new_due_date = datetime.datetime.strptime(date_due, "%Y-%m-%dT00:00:00.000Z").date()
-                    except ValueError, e:
-                        new_due_date = datetime.date(1900, 1, 1)
-                        logging.warning(fn_name + "Invalid 'due' timestamp (" + str(date_due) + "), so using " + str(new_due_date) + 
-                            ": " + shared.get_exception_msg(e))
-                        logservice.flush()
-                    t[u'due'] = new_due_date
                 
-                datetime_updated = t.get(u'updated')
-                if datetime_updated:
-                    try:
-                        new_datetime_updated = datetime.datetime.strptime(datetime_updated, "%Y-%m-%dT%H:%M:%S.000Z")
-                    except ValueError, e:
-                        new_datetime_updated = datetime.datetime(1900, 1, 1, 0, 0, 0)
-                        logging.warning(fn_name + "Invalid 'updated' timestamp (" + str(datetime_updated) + "), so using " + str(new_datetime_updated) + 
-                            ": " + shared.get_exception_msg(e))
-                        logservice.flush()
-                    t[u'updated'] = new_datetime_updated
+                # TODO: Investigate if including this will cause memory to be exceeded for very large tasks list
+                # Store original RFC-3339 timestamps (used for raw2 export format)
+                if t.has_key('due'):
+                    t['due_RFC3339'] = t['due']
+                if t.has_key('updated'):
+                    t['updated_RFC3339'] = t['updated']
+                if t.has_key('completed'):
+                    t['completed_RFC3339'] = t['completed']
                 
-                datetime_completed = t.get(u'completed')
-                if datetime_completed:
-                    try:
-                        new_datetime_completed = datetime.datetime.strptime(datetime_completed, "%Y-%m-%dT%H:%M:%S.000Z")
-                    except ValueError, e:
-                        new_datetime_completed = datetime.datetime(1900, 1, 1, 0, 0, 0)
-                        logging.warning(fn_name + "Invalid 'completed' timestamp (" + str(datetime_completed) + "), so using " + str(new_datetime_completed) + 
-                            ": " + shared.get_exception_msg(e))
-                        logservice.flush()
-                    t[u'completed'] = new_datetime_completed
+                # Converts the RFC-3339 string returned by the server to a date or datetime object  
+                # so that other methods (such as Django templates) can display a custom formatted date
+                shared.set_timestamp(t, u'due', date_only=True)
+                shared.set_timestamp(t, u'updated')
+                shared.set_timestamp(t, u'completed')
                 
             if tasklist_dict.has_key(u'tasks'):
-                # This is the n'th page of task data for this taslkist, so extend the existing list of tasks
+                # This is the n'th page of task data for this tasklist, so extend the existing list of tasks
                 tasklist_dict[u'tasks'].extend(tasks)
             else:
                 # This is the first (or only) list of task for this tasklist
@@ -770,45 +816,8 @@ class ProcessTasksWorker(webapp.RequestHandler):
         logservice.flush()  
         return tasklist_dict, num_tasks
      
-        
-def urlfetch_timeout_hook(service, call, request, response):
-    if call != 'Fetch':
-        return
 
-    # Make the default deadline 30 seconds instead of 5.
-    if not request.has_deadline():
-        request.set_deadline(30.0)
-
-
-
-def real_main():
-    logging.debug("main(): Starting worker")
-    
-    apiproxy_stub_map.apiproxy.GetPreCallHooks().Append(
-        'urlfetch_timeout_hook', urlfetch_timeout_hook, 'urlfetch')
-    run_wsgi_app(webapp.WSGIApplication([
+app = webapp2.WSGIApplication([
         (settings.WORKER_URL, ProcessTasksWorker),
-    ], debug=True))
-    logging.debug("main(): <End>")
+    ], debug=True)  
 
-def profile_main():
-    # This is the main function for profiling
-    # We've renamed our original main() above to real_main()
-    import cProfile, pstats, StringIO
-    prof = cProfile.Profile()
-    prof = prof.runctx("real_main()", globals(), locals())
-    stream = StringIO.StringIO()
-    stats = pstats.Stats(prof, stream=stream)
-    stats.sort_stats("time")  # Or cumulative
-    stats.print_stats(80)  # 80 = how many to print
-    # The rest is optional.
-    stats.print_callees()
-    stats.print_callers()
-    logging.info("Profile data:\n%s", stream.getvalue())
-    
-main = real_main
-
-if __name__ == '__main__':
-    main()
-    
-    

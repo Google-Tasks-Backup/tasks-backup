@@ -1,4 +1,4 @@
-#!/usr/bin/python2.5
+# -*- coding: utf-8 -*-
 #
 # Copyright 2012 Julie Smith  All Rights Reserved.
 #
@@ -18,9 +18,6 @@
 
 __author__ = "julie.smith.1999@gmail.com (Julie Smith)"
 
-from google.appengine.dist import use_library
-use_library("django", "1.2")
-
 import logging
 import os
 import sys
@@ -28,16 +25,19 @@ import cgi
 import pickle
 import datetime
 
+import webapp2
+
+
 from google.appengine.ext import db
-from google.appengine.ext import webapp
 from google.appengine.ext.webapp import template
-from google.appengine.ext.webapp import util
 from google.appengine.runtime import apiproxy_errors
 from google.appengine.runtime import DeadlineExceededError
 from google.appengine.api import urlfetch_errors
 from google.appengine.api import logservice # To flush logs
 from google.appengine.api.app_identity import get_application_id
 
+import httplib2
+from oauth2client.appengine import OAuth2Decorator
 
 logservice.AUTOFLUSH_EVERY_SECONDS = 5
 logservice.AUTOFLUSH_EVERY_BYTES = None
@@ -45,17 +45,30 @@ logservice.AUTOFLUSH_EVERY_LINES = 5
 logservice.AUTOFLUSH_ENABLED = True
 
 
+# Application-specific imports
 import model
 import settings
 import appversion # appversion.version is set before the upload process to keep the version number consistent
-import shared # Code whis is common between tasks-backup.py and worker.py
+import shared # Code which is common between tasks-backup.py and worker.py
 import constants
+import host_settings
 
+
+msg = "Authorisation error. Please report this error to " + settings.url_issues_page
+
+auth_decorator = OAuth2Decorator(client_id=host_settings.CLIENT_ID,
+                                 client_secret=host_settings.CLIENT_SECRET,
+                                 scope=host_settings.SCOPE,
+                                 user_agent=host_settings.USER_AGENT,
+                                 message=msg)
+                            
+                            
   
     
-class DownloadStatsHandler(webapp.RequestHandler):
-    """Display statistics"""
+class DownloadStatsHandler(webapp2.RequestHandler):
+    """Returns statistics as a CSV file"""
 
+    @auth_decorator.oauth_required
     def get(self):
 
         fn_name = "DisplayStatsHandler.get(): "
@@ -91,8 +104,8 @@ class DownloadStatsHandler(webapp.RequestHandler):
                 # If not removed, output goes to file (if error generated after "Content-Disposition" was set),
                 # and user would not see the error message!
                 del self.response.headers["Content-Disposition"]
-            except Exception, e:
-                logging.debug(fn_name + "Unable to delete 'Content-Disposition' from headers: " + shared.get_exception_msg(e))
+            except Exception, e1:
+                logging.debug(fn_name + "Unable to delete 'Content-Disposition' from headers (may not be a problem, because header may not have had it set): " + shared.get_exception_msg(e1))
             self.response.clear() 
             
             self.response.out.write("""Oops! Something went terribly wrong.<br />%s<br />Please report this error to <a href="http://code.google.com/p/tasks-backup/issues/list">code.google.com/p/tasks-backup/issues/list</a>""" % shared.get_exception_msg(e))
@@ -101,37 +114,8 @@ class DownloadStatsHandler(webapp.RequestHandler):
     
     
 
+app = webapp2.WSGIApplication(
+    [
+        ('/admin/stats', DownloadStatsHandler),
+    ], debug=False)        
 
-        
-
-def real_main():
-    logging.debug("main(): Starting tasks-backup (app version %s)" %appversion.version)
-    template.register_template_library("common.customdjango")
-
-    application = webapp.WSGIApplication(
-        [
-            ('/admin/stats', DownloadStatsHandler),
-        ], debug=False)
-    util.run_wsgi_app(application)
-    logging.debug("main(): <End>")
-
-def profile_main():
-    # From https://developers.google.com/appengine/kb/commontasks#profiling
-    # This is the main function for profiling
-    # We've renamed our original main() above to real_main()
-    import cProfile, pstats, StringIO
-    prof = cProfile.Profile()
-    prof = prof.runctx("real_main()", globals(), locals())
-    stream = StringIO.StringIO()
-    stats = pstats.Stats(prof, stream=stream)
-    stats.sort_stats("time")  # Or cumulative
-    stats.print_stats(80)  # 80 = how many to print
-    # The rest is optional.
-    stats.print_callees()
-    stats.print_callers()
-    logging.info("Profile data:\n%s", stream.getvalue())
-    
-main = real_main
-
-if __name__ == "__main__":
-    main()

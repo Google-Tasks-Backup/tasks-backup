@@ -1,0 +1,19 @@
+# Auto detect text files and perform LF normalization
+* text=auto
+
+# Text files to always be normalized and converted
+# to native line endings on checkout.
+*.js text
+*.py text
+*.css text
+*.csv text
+*.ics text
+*.txt text
+*.yaml text
+*.html text
+
+# Binary files that should not be modified.
+*.png binary
+*.jpg binary
+*.gif binary
+*.ico binary

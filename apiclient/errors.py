@@ -23,7 +23,8 @@ should be defined in this file.
 __author__ = 'jcgregorio@google.com (Joe Gregorio)'
 
 
-from anyjson import simplejson
+from oauth2client import util
+from oauth2client.anyjson import simplejson
 
 
 class Error(Exception):
@@ -34,28 +35,26 @@ class Error(Exception):
 class HttpError(Error):
   """HTTP data was invalid or unexpected."""
 
+  @util.positional(3)
   def __init__(self, resp, content, uri=None):
     self.resp = resp
     self.content = content
     self.uri = uri
 
   def _get_reason(self):
-    """Calculate the reason for the error from the response content.
-    """
-    if self.resp.get('content-type', '').startswith('application/json'):
-      try:
-        data = simplejson.loads(self.content)
-        reason = data['error']['message']
-      except (ValueError, KeyError):
-        reason = self.content
-    else:
-      reason = self.resp.reason
+    """Calculate the reason for the error from the response content."""
+    reason = self.resp.reason
+    try:
+      data = simplejson.loads(self.content)
+      reason = data['error']['message']
+    except (ValueError, KeyError):
+      pass
     return reason
 
   def __repr__(self):
     if self.uri:
       return '<HttpError %s when requesting %s returned "%s">' % (
-          self.resp.status, self.uri, self._get_reason())
+          self.resp.status, self.uri, self._get_reason().strip())
     else:
       return '<HttpError %s "%s">' % (self.resp.status, self._get_reason())
 
@@ -70,3 +69,62 @@ class InvalidJsonError(Error):
 class UnknownLinkType(Error):
   """Link type unknown or unexpected."""
   pass
+
+
+class UnknownApiNameOrVersion(Error):
+  """No API with that name and version exists."""
+  pass
+
+
+class UnacceptableMimeTypeError(Error):
+  """That is an unacceptable mimetype for this operation."""
+  pass
+
+
+class MediaUploadSizeError(Error):
+  """Media is larger than the method can accept."""
+  pass
+
+
+class ResumableUploadError(Error):
+  """Error occured during resumable upload."""
+  pass
+
+
+class InvalidChunkSizeError(Error):
+  """The given chunksize is not valid."""
+  pass
+
+
+class BatchError(HttpError):
+  """Error occured during batch operations."""
+
+  @util.positional(2)
+  def __init__(self, reason, resp=None, content=None):
+    self.resp = resp
+    self.content = content
+    self.reason = reason
+
+  def __repr__(self):
+      return '<BatchError %s "%s">' % (self.resp.status, self.reason)
+
+  __str__ = __repr__
+
+
+class UnexpectedMethodError(Error):
+  """Exception raised by RequestMockBuilder on unexpected calls."""
+
+  @util.positional(1)
+  def __init__(self, methodId=None):
+    """Constructor for an UnexpectedMethodError."""
+    super(UnexpectedMethodError, self).__init__(
+        'Received unexpected call %s' % methodId)
+
+
+class UnexpectedBodyError(Error):
+  """Exception raised by RequestMockBuilder on unexpected bodies."""
+
+  def __init__(self, expected, provided):
+    """Constructor for an UnexpectedMethodError."""
+    super(UnexpectedBodyError, self).__init__(
+        'Expected: [%s] - Provided: [%s]' % (expected, provided))

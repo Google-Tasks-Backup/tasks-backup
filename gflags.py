@@ -1,6 +1,6 @@
 #!/usr/bin/env python
-
-# Copyright (c) 2007, Google Inc.
+#
+# Copyright (c) 2002, Google Inc.
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -58,8 +58,8 @@ value-checking and type conversion.  The converted flag values are
 available as attributes of the 'FlagValues' object.
 
 Code can access the flag through a FlagValues object, for instance
-gflags.FLAGS.myflag.  Typically, the __main__ module passes the
-command line arguments to gflags.FLAGS for parsing.
+gflags.FLAGS.myflag.  Typically, the __main__ module passes the command
+line arguments to gflags.FLAGS for parsing.
 
 At bottom, this module calls getopt(), so getopt functionality is
 supported, including short- and long-style flags, and the use of -- to
@@ -144,7 +144,7 @@ validators.
 Howto:
 If you want to enforce a constraint over one flag, use
 
-flags.RegisterValidator(flag_name,
+gflags.RegisterValidator(flag_name,
                         checker,
                         message='Flag validation failed',
                         flag_values=FLAGS)
@@ -158,15 +158,15 @@ your own checker.
 
 EXAMPLE USAGE:
 
-FLAGS = flags.FLAGS
+FLAGS = gflags.FLAGS
 
-flags.DEFINE_integer('my_version', 0, 'Version number.')
-flags.DEFINE_string('filename', None, 'Input file name', short_name='f')
+gflags.DEFINE_integer('my_version', 0, 'Version number.')
+gflags.DEFINE_string('filename', None, 'Input file name', short_name='f')
 
-flags.RegisterValidator('my_version',
+gflags.RegisterValidator('my_version',
                         lambda value: value % 2 == 0,
                         message='--my_version must be divisible by 2')
-flags.MarkFlagAsRequired('filename')
+gflags.MarkFlagAsRequired('filename')
 
 
 NOTE ON --flagfile:
@@ -202,7 +202,7 @@ Absolute path names ALWAYS work!
 
 EXAMPLE USAGE:
 
-  import gflags
+
   FLAGS = gflags.FLAGS
 
   # Flag names are globally defined!  So in general, we need to be
@@ -222,7 +222,7 @@ EXAMPLE USAGE:
     if FLAGS.debug: print 'non-flag arguments:', argv
     print 'Happy Birthday', FLAGS.name
     if FLAGS.age is not None:
-      print 'You are a %s, who is %d years old' % (FLAGS.gender, FLAGS.age)
+      print 'You are a %d year old %s' % (FLAGS.age, FLAGS.gender)
 
   if __name__ == '__main__':
     main(sys.argv)
@@ -285,7 +285,7 @@ added to the module.
 EXAMPLE USAGE 2 (WITH KEY FLAGS):
 
 Consider an application that contains the following three files (two
-auxiliary modules and a main module):
+auxiliary modules and a main module)
 
 File libfoo.py:
 
@@ -301,11 +301,11 @@ File libbar.py:
   import gflags
 
   gflags.DEFINE_string('bar_gfs_path', '/gfs/path',
-                       'Path to the GFS files for libbar.')
+                      'Path to the GFS files for libbar.')
   gflags.DEFINE_string('email_for_bar_errors', 'bar-team@google.com',
-                       'Email address for bug reports about module libbar.')
+                      'Email address for bug reports about module libbar.')
   gflags.DEFINE_boolean('bar_risky_hack', False,
-                        'Turn on an experimental and buggy optimization.')
+                       'Turn on an experimental and buggy optimization.')
 
   ... some code ...
 
@@ -329,8 +329,7 @@ File myscript.py:
 
 When myscript is invoked with the flag --helpshort, the resulted help
 message lists information about all the key flags for myscript:
---num_iterations, --num_replicas, --rpc2, and --bar_gfs_path (in
-addition to the special flags --help and --helpshort).
+--num_iterations, --num_replicas, --rpc2, and --bar_gfs_path.
 
 Of course, myscript uses all the flags declared by it (in this case,
 just --num_replicas) or by any of the modules it transitively imports
@@ -384,6 +383,8 @@ enum_value (for enum flags), list_separator (for flags that consist of
 a list of values, separated by a special token).
 
 6. We do not provide any example here: please use --helpxml instead.
+
+This module requires at least python 2.2.1 to run.
 """
 
 import cgi
@@ -391,36 +392,29 @@ import getopt
 import os
 import re
 import string
+import struct
 import sys
+# pylint: disable-msg=C6204
+try:
+  import fcntl
+except ImportError:
+  fcntl = None
+try:
+  # Importing termios will fail on non-unix platforms.
+  import termios
+except ImportError:
+  termios = None
 
 import gflags_validators
+# pylint: enable-msg=C6204
 
-# Are we running at least python 2.2?
-try:
-  if tuple(sys.version_info[:3]) < (2,2,0):
-    raise NotImplementedError("requires python 2.2.0 or later")
-except AttributeError:   # a very old python, that lacks sys.version_info
-  raise NotImplementedError("requires python 2.2.0 or later")
-
-# If we're not running at least python 2.2.1, define True, False, and bool.
-# Thanks, Guido, for the code.
-try:
-  True, False, bool
-except NameError:
-  False = 0
-  True = 1
-  def bool(x):
-    if x:
-      return True
-    else:
-      return False
 
 # Are we running under pychecker?
 _RUNNING_PYCHECKER = 'pychecker.python' in sys.modules
 
 
-def _GetCallingModule():
-  """Returns the name of the module that's calling into this module.
+def _GetCallingModuleObjectAndName():
+  """Returns the module that's calling into this module.
 
   We generally use this function to get the name of the module calling a
   DEFINE_foo... function.
@@ -429,10 +423,15 @@ def _GetCallingModule():
   for depth in range(1, sys.getrecursionlimit()):
     if not sys._getframe(depth).f_globals is globals():
       globals_for_frame = sys._getframe(depth).f_globals
-      module_name = _GetModuleObjectAndName(globals_for_frame)[1]
+      module, module_name = _GetModuleObjectAndName(globals_for_frame)
       if module_name is not None:
-        return module_name
+        return module, module_name
   raise AssertionError("No module was found")
+
+
+def _GetCallingModule():
+  """Returns the name of the module that's calling into this module."""
+  return _GetCallingModuleObjectAndName()[1]
 
 
 def _GetThisModuleObjectAndName():
@@ -450,6 +449,10 @@ class DuplicateFlag(FlagsError):
   """Raised if there is a flag naming conflict."""
   pass
 
+class CantOpenFlagFileError(FlagsError):
+  """Raised if flagfile fails to open: doesn't exist, wrong permissions, etc."""
+  pass
+
 
 class DuplicateFlagCannotPropagateNoneToSwig(DuplicateFlag):
   """Special case of DuplicateFlag -- SWIG flag value can't be set to None.
@@ -462,22 +465,39 @@ class DuplicateFlagCannotPropagateNoneToSwig(DuplicateFlag):
   pass
 
 
-# A DuplicateFlagError conveys more information than a
-# DuplicateFlag. Since there are external modules that create
-# DuplicateFlags, the interface to DuplicateFlag shouldn't change.
 class DuplicateFlagError(DuplicateFlag):
+  """A DuplicateFlag whose message cites the conflicting definitions.
 
-  def __init__(self, flagname, flag_values):
+  A DuplicateFlagError conveys more information than a DuplicateFlag,
+  namely the modules where the conflicting definitions occur. This
+  class was created to avoid breaking external modules which depend on
+  the existing DuplicateFlags interface.
+  """
+
+  def __init__(self, flagname, flag_values, other_flag_values=None):
+    """Create a DuplicateFlagError.
+
+    Args:
+      flagname: Name of the flag being redefined.
+      flag_values: FlagValues object containing the first definition of
+          flagname.
+      other_flag_values: If this argument is not None, it should be the
+          FlagValues object where the second definition of flagname occurs.
+          If it is None, we assume that we're being called when attempting
+          to create the flag a second time, and we use the module calling
+          this one as the source of the second definition.
+    """
     self.flagname = flagname
-    message = "The flag '%s' is defined twice." % self.flagname
-    flags_by_module = flag_values.FlagsByModuleDict()
-    for module in flags_by_module:
-      for flag in flags_by_module[module]:
-        if flag.name == flagname or flag.short_name == flagname:
-          message = message + " First from " + module + ","
-          break
-    message = message + " Second from " + _GetCallingModule()
-    DuplicateFlag.__init__(self, message)
+    first_module = flag_values.FindModuleDefiningFlag(
+        flagname, default='<unknown>')
+    if other_flag_values is None:
+      second_module = _GetCallingModule()
+    else:
+      second_module = other_flag_values.FindModuleDefiningFlag(
+          flagname, default='<unknown>')
+    msg = "The flag '%s' is defined twice. First from %s, Second from %s" % (
+        self.flagname, first_module, second_module)
+    DuplicateFlag.__init__(self, msg)
 
 
 class IllegalFlagValue(FlagsError):
@@ -493,7 +513,7 @@ class UnrecognizedFlag(FlagsError):
 # An UnrecognizedFlagError conveys more information than an UnrecognizedFlag.
 # Since there are external modules that create DuplicateFlags, the interface to
 # DuplicateFlag shouldn't change.  The flagvalue will be assigned the full value
-# of the flag and its argument, if any, allowing handling of unrecognzed flags
+# of the flag and its argument, if any, allowing handling of unrecognized flags
 # in an exception handler.
 # If flagvalue is the empty string, then this exception is an due to a
 # reference to a flag that was not already defined.
@@ -511,7 +531,20 @@ _help_width = 80  # width of help output
 
 def GetHelpWidth():
   """Returns: an integer, the width of help lines that is used in TextWrap."""
-  return _help_width
+  if (not sys.stdout.isatty()) or (termios is None) or (fcntl is None):
+    return _help_width
+  try:
+    data = fcntl.ioctl(sys.stdout, termios.TIOCGWINSZ, '1234')
+    columns = struct.unpack('hh', data)[1]
+    # Emacs mode returns 0.
+    # Here we assume that any value below 40 is unreasonable
+    if columns >= 40:
+      return columns
+    # Returning an int as default is fine, int(int) just return the int.
+    return int(os.getenv('COLUMNS', _help_width))
+
+  except (TypeError, IOError, struct.error):
+    return _help_width
 
 
 def CutCommonSpacePrefix(text):
@@ -522,8 +555,8 @@ def CutCommonSpacePrefix(text):
   for. That means the first line will stay untouched. This is especially
   useful to turn doc strings into help texts. This is because some
   people prefer to have the doc comment start already after the
-  apostrophy and then align the following lines while others have the
-  apostrophies on a seperately line.
+  apostrophe and then align the following lines while others have the
+  apostrophes on a separate line.
 
   The function also drops trailing empty lines and ignores empty lines
   following the initial content line while calculating the initial
@@ -545,7 +578,7 @@ def CutCommonSpacePrefix(text):
       text_first_line = []
     else:
       text_first_line = [text_lines.pop(0)]
-    # Calculate length of common leading whitesppace (only over content lines)
+    # Calculate length of common leading whitespace (only over content lines)
     common_prefix = os.path.commonprefix([line for line in text_lines if line])
     space_prefix_len = len(common_prefix) - len(common_prefix.lstrip())
     # If we have a common space prefix, drop it from all lines
@@ -560,7 +593,7 @@ def CutCommonSpacePrefix(text):
 def TextWrap(text, length=None, indent='', firstline_indent=None, tabs='    '):
   """Wraps a given text to a maximum line length and returns it.
 
-  We turn lines that only contain whitespaces into empty lines.  We keep
+  We turn lines that only contain whitespace into empty lines.  We keep
   new lines and tabs (e.g., we do not treat tabs as spaces).
 
   Args:
@@ -594,7 +627,7 @@ def TextWrap(text, length=None, indent='', firstline_indent=None, tabs='    '):
   else:
     line = firstline_indent
     if len(firstline_indent) >= length:
-      raise FlagsError('First iline indent must be shorter than length')
+      raise FlagsError('First line indent must be shorter than length')
 
   # If the callee does not care about tabs we simply convert them to
   # spaces If callee wanted tabs to be single space then we do that
@@ -648,7 +681,7 @@ def TextWrap(text, length=None, indent='', firstline_indent=None, tabs='    '):
           line += ' '
       # Add word and shorten it up to allowed line length. Restart next
       # line with indent and repeat, or add a space if we're done (word
-      # finished) This deals with words that caanot fit on one line
+      # finished) This deals with words that cannot fit on one line
       # (e.g. indent + word longer than allowed line length).
       while len(line) + len(word) >= length:
         line += word
@@ -660,7 +693,7 @@ def TextWrap(text, length=None, indent='', firstline_indent=None, tabs='    '):
         line += word + ' '
     # End of input line. If we have content we finish the line. If the
     # current line is just the indent but we had content in during this
-    # original line then we need to add an emoty line.
+    # original line then we need to add an empty line.
     if (result and line != indent) or (not result and line != firstline_indent):
       result.append(line.rstrip())
     elif len(result) == old_result_len:
@@ -722,13 +755,26 @@ def _GetModuleObjectAndName(globals_dict):
 
 
 def _GetMainModule():
-  """Returns the name of the module from which execution started."""
-  for depth in range(1, sys.getrecursionlimit()):
-    try:
-      globals_of_main = sys._getframe(depth).f_globals
-    except ValueError:
-      return _GetModuleObjectAndName(globals_of_main)[1]
-  raise AssertionError("No module was found")
+  """Returns: string, name of the module from which execution started."""
+  # First, try to use the same logic used by _GetCallingModuleObjectAndName(),
+  # i.e., call _GetModuleObjectAndName().  For that we first need to
+  # find the dictionary that the main module uses to store the
+  # globals.
+  #
+  # That's (normally) the same dictionary object that the deepest
+  # (oldest) stack frame is using for globals.
+  deepest_frame = sys._getframe(0)
+  while deepest_frame.f_back is not None:
+    deepest_frame = deepest_frame.f_back
+  globals_for_main_module = deepest_frame.f_globals
+  main_module_name = _GetModuleObjectAndName(globals_for_main_module)[1]
+  # The above strategy fails in some cases (e.g., tools that compute
+  # code coverage by redefining, among other things, the main module).
+  # If so, just use sys.argv[0].  We can probably always do this, but
+  # it's safest to try to use the same logic as _GetCallingModuleObjectAndName()
+  if main_module_name is None:
+    main_module_name = sys.argv[0]
+  return main_module_name
 
 
 class FlagValues:
@@ -773,6 +819,9 @@ class FlagValues:
     # Dictionary: module name (string) -> list of Flag objects that are defined
     # by that module.
     self.__dict__['__flags_by_module'] = {}
+    # Dictionary: module id (int) -> list of Flag objects that are defined by
+    # that module.
+    self.__dict__['__flags_by_module_id'] = {}
     # Dictionary: module name (string) -> list of Flag objects that are
     # key for that module.
     self.__dict__['__key_flags_by_module'] = {}
@@ -782,6 +831,13 @@ class FlagValues:
     self.UseGnuGetOpt(False)
 
   def UseGnuGetOpt(self, use_gnu_getopt=True):
+    """Use GNU-style scanning. Allows mixing of flag and non-flag arguments.
+
+    See http://docs.python.org/library/getopt.html#getopt.gnu_getopt
+
+    Args:
+      use_gnu_getopt: wether or not to use GNU style scanning.
+    """
     self.__dict__['__use_gnu_getopt'] = use_gnu_getopt
 
   def IsGnuGetOpt(self):
@@ -798,6 +854,15 @@ class FlagValues:
       are lists of Flag objects.
     """
     return self.__dict__['__flags_by_module']
+
+  def FlagsByModuleIdDict(self):
+    """Returns the dictionary of module_id -> list of defined flags.
+
+    Returns:
+      A dictionary.  Its keys are module IDs (ints).  Its values
+      are lists of Flag objects.
+    """
+    return self.__dict__['__flags_by_module_id']
 
   def KeyFlagsByModuleDict(self):
     """Returns the dictionary of module_name -> list of key flags.
@@ -820,6 +885,16 @@ class FlagValues:
     """
     flags_by_module = self.FlagsByModuleDict()
     flags_by_module.setdefault(module_name, []).append(flag)
+
+  def _RegisterFlagByModuleId(self, module_id, flag):
+    """Records the module that defines a specific flag.
+
+    Args:
+      module_id: An int, the ID of the Python module.
+      flag: A Flag object, a flag that is key to the module.
+    """
+    flags_by_module_id = self.FlagsByModuleIdDict()
+    flags_by_module_id.setdefault(module_id, []).append(flag)
 
   def _RegisterKeyFlagForModule(self, module_name, flag):
     """Specifies that a flag is a key flag for a module.
@@ -876,6 +951,44 @@ class FlagValues:
         key_flags.append(flag)
     return key_flags
 
+  def FindModuleDefiningFlag(self, flagname, default=None):
+    """Return the name of the module defining this flag, or default.
+
+    Args:
+      flagname: Name of the flag to lookup.
+      default: Value to return if flagname is not defined. Defaults
+          to None.
+
+    Returns:
+      The name of the module which registered the flag with this name.
+      If no such module exists (i.e. no flag with this name exists),
+      we return default.
+    """
+    for module, flags in self.FlagsByModuleDict().iteritems():
+      for flag in flags:
+        if flag.name == flagname or flag.short_name == flagname:
+          return module
+    return default
+
+  def FindModuleIdDefiningFlag(self, flagname, default=None):
+    """Return the ID of the module defining this flag, or default.
+
+    Args:
+      flagname: Name of the flag to lookup.
+      default: Value to return if flagname is not defined. Defaults
+          to None.
+
+    Returns:
+      The ID of the module which registered the flag with this name.
+      If no such module exists (i.e. no flag with this name exists),
+      we return default.
+    """
+    for module_id, flags in self.FlagsByModuleIdDict().iteritems():
+      for flag in flags:
+        if flag.name == flagname or flag.short_name == flagname:
+          return module_id
+    return default
+
   def AppendFlagValues(self, flag_values):
     """Appends flags registered in another FlagValues instance.
 
@@ -889,7 +1002,11 @@ class FlagValues:
       # perform a check to make sure that the entry we're looking at is
       # for its normal name.
       if flag_name == flag.name:
-        self[flag_name] = flag
+        try:
+          self[flag_name] = flag
+        except DuplicateFlagError:
+          raise DuplicateFlagError(flag_name, self,
+                                   other_flag_values=flag_values)
 
   def RemoveFlagValues(self, flag_values):
     """Remove flags that were previously appended from another FlagValues.
@@ -911,12 +1028,19 @@ class FlagValues:
       raise FlagsError("Flag name cannot be empty")
     # If running under pychecker, duplicate keys are likely to be
     # defined.  Disable check for duplicate keys when pycheck'ing.
-    if (fl.has_key(name) and not flag.allow_override and
+    if (name in fl and not flag.allow_override and
         not fl[name].allow_override and not _RUNNING_PYCHECKER):
+      module, module_name = _GetCallingModuleObjectAndName()
+      if (self.FindModuleDefiningFlag(name) == module_name and
+          id(module) != self.FindModuleIdDefiningFlag(name)):
+        # If the flag has already been defined by a module with the same name,
+        # but a different ID, we can stop here because it indicates that the
+        # module is simply being imported a subsequent time.
+        return
       raise DuplicateFlagError(name, self)
     short_name = flag.short_name
     if short_name is not None:
-      if (fl.has_key(short_name) and not flag.allow_override and
+      if (short_name in fl and not flag.allow_override and
           not fl[short_name].allow_override and not _RUNNING_PYCHECKER):
         raise DuplicateFlagError(short_name, self)
       fl[short_name] = flag
@@ -931,7 +1055,7 @@ class FlagValues:
   def __getattr__(self, name):
     """Retrieves the 'value' attribute of the flag --name."""
     fl = self.FlagDict()
-    if not fl.has_key(name):
+    if name not in fl:
       raise AttributeError(name)
     return fl[name].value
 
@@ -1006,8 +1130,8 @@ class FlagValues:
 
     E.g.,
 
-      flags.DEFINE_integer('foo', 1, 'Integer flag.')
-      del flags.FLAGS.foo
+      gflags.DEFINE_integer('foo', 1, 'Integer flag.')
+      del gflags.FLAGS.foo
 
     Args:
       flag_name: A string, the name of the flag to be deleted.
@@ -1025,9 +1149,10 @@ class FlagValues:
     if not self._FlagIsRegistered(flag_obj):
       # If the Flag object indicated by flag_name is no longer
       # registered (please see the docstring of _FlagIsRegistered), then
-      # we delete the occurences of the flag object in all our internal
+      # we delete the occurrences of the flag object in all our internal
       # dictionaries.
       self.__RemoveFlagFromDictByModule(self.FlagsByModuleDict(), flag_obj)
+      self.__RemoveFlagFromDictByModule(self.FlagsByModuleIdDict(), flag_obj)
       self.__RemoveFlagFromDictByModule(self.KeyFlagsByModuleDict(), flag_obj)
 
   def __RemoveFlagFromDictByModule(self, flags_by_module_dict, flag_obj):
@@ -1039,7 +1164,7 @@ class FlagValues:
       flag_obj: A flag object.
     """
     for unused_module, flags_in_module in flags_by_module_dict.iteritems():
-      # while (as opposed to if) takes care of multiple occurences of a
+      # while (as opposed to if) takes care of multiple occurrences of a
       # flag in the list for the same module.
       while flag_obj in flags_in_module:
         flags_in_module.remove(flag_obj)
@@ -1047,7 +1172,7 @@ class FlagValues:
   def SetDefault(self, name, value):
     """Changes the default value of the named flag object."""
     fl = self.FlagDict()
-    if not fl.has_key(name):
+    if name not in fl:
       raise AttributeError(name)
     fl[name].SetDefault(value)
     self._AssertValidators(fl[name].validators)
@@ -1059,7 +1184,7 @@ class FlagValues:
   has_key = __contains__  # a synonym for __contains__()
 
   def __iter__(self):
-    return self.FlagDict().iterkeys()
+    return iter(self.FlagDict())
 
   def __call__(self, argv):
     """Parses flags from argv; stores parsed flags into this FlagValues object.
@@ -1107,7 +1232,7 @@ class FlagValues:
       prefix = shortest_matches[name]
       no_prefix = shortest_matches[no_name]
 
-      # Replace all occurences of this boolean with extended forms
+      # Replace all occurrences of this boolean with extended forms
       for arg_idx in range(1, len(argv)):
         arg = argv[arg_idx]
         if arg.find('=') >= 0: continue
@@ -1144,7 +1269,7 @@ class FlagValues:
         break
       except getopt.GetoptError, e:
         if not e.opt or e.opt in fl:
-          # Not an unrecognized option, reraise the exception as a FlagsError
+          # Not an unrecognized option, re-raise the exception as a FlagsError
           raise FlagsError(e)
         # Remove offender from args and try again
         for arg_index in range(len(args)):
@@ -1182,7 +1307,7 @@ class FlagValues:
         # short option
         name = name[1:]
         short_option = 1
-      if fl.has_key(name):
+      if name in fl:
         flag = fl[name]
         if flag.boolean and short_option: arg = 1
         flag.Parse(arg)
@@ -1215,7 +1340,7 @@ class FlagValues:
 
   def RegisteredFlags(self):
     """Returns: a list of the names and short names of all registered flags."""
-    return self.FlagDict().keys()
+    return list(self.FlagDict())
 
   def FlagValuesDict(self):
     """Returns: a dictionary that maps flag names to flag values."""
@@ -1238,8 +1363,7 @@ class FlagValues:
     flags_by_module = self.FlagsByModuleDict()
     if flags_by_module:
 
-      modules = flags_by_module.keys()
-      modules.sort()
+      modules = sorted(flags_by_module)
 
       # Print the help for the main module first, if possible.
       main_module = _GetMainModule()
@@ -1323,7 +1447,7 @@ class FlagValues:
         # a different flag is using this name now
         continue
       # only print help once
-      if flagset.has_key(flag): continue
+      if flag in flagset: continue
       flagset[flag] = 1
       flaghelp = ""
       if flag.short_name: flaghelp += "-%s," % flag.short_name
@@ -1447,9 +1571,7 @@ class FlagValues:
     try:
       file_obj = open(filename, 'r')
     except IOError, e_msg:
-      print e_msg
-      print 'ERROR:: Unable to open flagfile: %s' % (filename)
-      return flag_line_list
+      raise CantOpenFlagFileError('ERROR:: Unable to open flagfile: %s' % e_msg)
 
     line_list = file_obj.readlines()
     file_obj.close()
@@ -1472,17 +1594,18 @@ class FlagValues:
                                                    parsed_file_list)
           flag_line_list.extend(included_flags)
         else:  # Case of hitting a circularly included file.
-          print >>sys.stderr, ('Warning: Hit circular flagfile dependency: %s'
-                               % sub_filename)
+          sys.stderr.write('Warning: Hit circular flagfile dependency: %s\n' %
+                           (sub_filename,))
       else:
         # Any line that's not a comment or a nested flagfile should get
-        # copied into 2nd position.  This leaves earlier arguements
+        # copied into 2nd position.  This leaves earlier arguments
         # further back in the list, thus giving them higher priority.
         flag_line_list.append(line.strip())
     return flag_line_list
 
   def ReadFlagsFromFiles(self, argv, force_gnu=True):
     """Processes command line args, but also allow args to be read from file.
+
     Args:
       argv: A list of strings, usually sys.argv[1:], which may contain one or
         more flagfile directives of the form --flagfile="./filename".
@@ -1532,7 +1655,8 @@ class FlagValues:
         else:
           # This handles the case of (-)-flagfile=foo.
           flag_filename = self.ExtractFilename(current_arg)
-        new_argv[0:0] = self.__GetFlagFileLines(flag_filename, parsed_file_list)
+        new_argv.extend(
+            self.__GetFlagFileLines(flag_filename, parsed_file_list))
       else:
         new_argv.append(current_arg)
         # Stop parsing after '--', like getopt and gnu_getopt.
@@ -1554,8 +1678,8 @@ class FlagValues:
     This function ignores flags whose value is None.  Each flag
     assignment is separated by a newline.
 
-    NOTE: MUST mirror the behavior of the C++ function
-    CommandlineFlagsIntoString from google3/base/commandlineflags.cc.
+    NOTE: MUST mirror the behavior of the C++ CommandlineFlagsIntoString
+    from http://code.google.com/p/google-gflags
     """
     s = ''
     for flag in self.FlagDict().values():
@@ -1568,8 +1692,8 @@ class FlagValues:
 
     Output will be in the format of a flagfile.
 
-    NOTE: MUST mirror the behavior of the C++ version of
-    AppendFlagsIntoFile from google3/base/commandlineflags.cc.
+    NOTE: MUST mirror the behavior of the C++ AppendFlagsIntoFile
+    from http://code.google.com/p/google-gflags
     """
     out_file = open(filename, 'a')
     out_file.write(self.FlagsIntoString())
@@ -1580,10 +1704,10 @@ class FlagValues:
 
     NOTE: We use element names that are consistent with those used by
     the C++ command-line flag library, from
-    google3/base/commandlineflags_reporting.cc.  We also use a few new
-    elements (e.g., <key>), but we do not interfere / overlap with
-    existing XML elements used by the C++ library.  Please maintain this
-    consistency.
+    http://code.google.com/p/google-gflags
+    We also use a few new elements (e.g., <key>), but we do not
+    interfere / overlap with existing XML elements used by the C++
+    library.  Please maintain this consistency.
 
     Args:
       outfile: File object we write to.  Default None means sys.stdout.
@@ -1640,6 +1764,14 @@ class FlagValues:
 FLAGS = FlagValues()
 
 
+def _StrOrUnicode(value):
+  """Converts value to a python string or, if necessary, unicode-string."""
+  try:
+    return str(value)
+  except UnicodeEncodeError:
+    return unicode(value)
+
+
 def _MakeXMLSafe(s):
   """Escapes <, >, and & from s, and removes XML 1.0-illegal chars."""
   s = cgi.escape(s)  # Escape <, >, and &
@@ -1649,6 +1781,8 @@ def _MakeXMLSafe(s):
   # NOTE: if there are problems with current solution, one may move to
   # XML 1.1, which allows such chars, if they're entity-escaped (&#xHH;).
   s = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f]', '', s)
+  # Convert non-ascii characters to entities.  Note: requires python >=2.3
+  s = s.encode('ascii', 'xmlcharrefreplace')   # u'\xce\x88' -> 'u&#904;'
   return s
 
 
@@ -1662,12 +1796,12 @@ def _WriteSimpleXMLElement(outfile, name, value, indent):
       as the value of the XML element.
     indent: A string, prepended to each line of generated output.
   """
-  value_str = str(value)
+  value_str = _StrOrUnicode(value)
   if isinstance(value, bool):
     # Display boolean values as the C++ flag library does: no caps.
     value_str = value_str.lower()
-  outfile.write('%s<%s>%s</%s>\n' %
-                (indent, name, _MakeXMLSafe(value_str), name))
+  safe_value_str = _MakeXMLSafe(value_str)
+  outfile.write('%s<%s>%s</%s>\n' % (indent, name, safe_value_str, name))
 
 
 class Flag:
@@ -1723,6 +1857,17 @@ class Flag:
 
     self.SetDefault(default)
 
+  def __hash__(self):
+    return hash(id(self))
+
+  def __eq__(self, other):
+    return self is other
+
+  def __lt__(self, other):
+    if isinstance(other, Flag):
+      return id(self) < id(other)
+    return NotImplemented
+
   def __GetParsedValueAsString(self, value):
     if value is None:
       return None
@@ -1733,7 +1878,7 @@ class Flag:
         return repr('true')
       else:
         return repr('false')
-    return repr(str(value))
+    return repr(_StrOrUnicode(value))
 
   def Parse(self, argument):
     try:
@@ -1919,7 +2064,7 @@ class ArgumentSerializer:
   """Base class for generating string representations of a flag value."""
 
   def Serialize(self, value):
-    return str(value)
+    return _StrOrUnicode(value)
 
 
 class ListSerializer(ArgumentSerializer):
@@ -1928,7 +2073,7 @@ class ListSerializer(ArgumentSerializer):
     self.list_sep = list_sep
 
   def Serialize(self, value):
-    return self.list_sep.join([str(x) for x in value])
+    return self.list_sep.join([_StrOrUnicode(x) for x in value])
 
 
 # Flags validators
@@ -1960,8 +2105,8 @@ def RegisterValidator(flag_name,
     AttributeError: if flag_name is not registered as a valid flag name.
   """
   flag_values.AddValidator(gflags_validators.SimpleValidator(flag_name,
-                                                             checker,
-                                                             message))
+                                                            checker,
+                                                            message))
 
 
 def MarkFlagAsRequired(flag_name, flag_values=FLAGS):
@@ -2051,7 +2196,9 @@ def DEFINE_flag(flag, flag_values=FLAGS):
     # FLAGS test here) and redefine flags with the same name (e.g.,
     # debug).  To avoid breaking their code, we perform the
     # registration only if flag_values is a real FlagValues object.
-    flag_values._RegisterFlagByModule(_GetCallingModule(), flag)
+    module, module_name = _GetCallingModuleObjectAndName()
+    flag_values._RegisterFlagByModule(module_name, flag)
+    flag_values._RegisterFlagByModuleId(id(module), flag)
 
 
 def _InternalDeclareKeyFlags(flag_names,
@@ -2099,7 +2246,7 @@ def DECLARE_key_flag(flag_name, flag_values=FLAGS):
 
   Sample usage:
 
-    flags.DECLARED_key_flag('flag_1')
+    gflags.DECLARED_key_flag('flag_1')
 
   Args:
     flag_name: A string, the name of an already declared flag.
@@ -2144,8 +2291,8 @@ def ADOPT_module_key_flags(module, flag_values=FLAGS):
   # If module is this flag module, take _SPECIAL_FLAGS into account.
   if module == _GetThisModuleObjectAndName()[0]:
     _InternalDeclareKeyFlags(
-        # As we associate flags with _GetCallingModule(), the special
-        # flags defined in this module are incorrectly registered with
+        # As we associate flags with _GetCallingModuleObjectAndName(), the
+        # special flags defined in this module are incorrectly registered with
         # a different module.  So, we can't use _GetKeyFlagsForModule.
         # Instead, we take all flags from _SPECIAL_FLAGS (a private
         # FlagValues, where no other module should register flags).
@@ -2169,7 +2316,7 @@ def DEFINE_string(name, default, help, flag_values=FLAGS, **args):
 #
 # BOOLEAN FLAGS
 #
-# and the special HELP flags.
+
 
 class BooleanParser(ArgumentParser):
   """Parser of boolean values."""
@@ -2230,8 +2377,10 @@ def DEFINE_boolean(name, default, help, flag_values=FLAGS, **args):
   """
   DEFINE_flag(BooleanFlag(name, default, help, **args), flag_values)
 
+
 # Match C++ API to unconfuse C++ people.
 DEFINE_bool = DEFINE_boolean
+
 
 class HelpFlag(BooleanFlag):
   """
@@ -2252,22 +2401,16 @@ class HelpFlag(BooleanFlag):
         print "flags:"
         print flags
       sys.exit(1)
-
-
 class HelpXMLFlag(BooleanFlag):
   """Similar to HelpFlag, but generates output in XML format."""
-
   def __init__(self):
     BooleanFlag.__init__(self, 'helpxml', False,
                          'like --help, but generates XML output',
                          allow_override=1)
-
   def Parse(self, arg):
     if arg:
       FLAGS.WriteHelpInXMLFormat(sys.stdout)
       sys.exit(1)
-
-
 class HelpshortFlag(BooleanFlag):
   """
   HelpshortFlag is a special boolean flag that prints usage
@@ -2325,6 +2468,7 @@ class NumericParser(ArgumentParser):
 #
 # FLOAT FLAGS
 #
+
 
 class FloatParser(NumericParser):
   """Parser of floating point values.
@@ -2414,17 +2558,9 @@ class IntegerParser(NumericParser):
       base = 10
       if len(argument) > 2 and argument[0] == "0" and argument[1] == "x":
         base = 16
-      try:
-        return int(argument, base)
-      # ValueError is thrown when argument is a string, and overflows an int.
-      except ValueError:
-        return long(argument, base)
+      return int(argument, base)
     else:
-      try:
-        return int(argument)
-      # OverflowError is thrown when argument is numeric, and overflows an int.
-      except OverflowError:
-        return long(argument)
+      return int(argument)
 
   def Type(self):
     return 'int'
@@ -2683,6 +2819,20 @@ def DEFINE_multi_int(name, default, help, lower_bound=None, upper_bound=None,
   integers.
   """
   parser = IntegerParser(lower_bound, upper_bound)
+  serializer = ArgumentSerializer()
+  DEFINE_multi(parser, serializer, name, default, help, flag_values, **args)
+
+
+def DEFINE_multi_float(name, default, help, lower_bound=None, upper_bound=None,
+                       flag_values=FLAGS, **args):
+  """Registers a flag whose value can be a list of arbitrary floats.
+
+  Use the flag on the command line multiple times to place multiple
+  float values into the list.  The 'default' may be a single float
+  (which will be converted into a single-element list) or a list of
+  floats.
+  """
+  parser = FloatParser(lower_bound, upper_bound)
   serializer = ArgumentSerializer()
   DEFINE_multi(parser, serializer, name, default, help, flag_values, **args)
 

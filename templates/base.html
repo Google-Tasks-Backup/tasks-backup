@@ -21,29 +21,12 @@ This is the Django master template for snapshots.html and import.html.
         <title>{{ app_title }} - {% block title %}{% endblock %}</title>
         <link rel="stylesheet" type="text/css" href="/static/tasks_backup.css" />
         <link rel="shortcut icon" type="image/x-icon" href="/static/favicon.ico" />
-        <link rel="icon" type="image/x-icon" href="/static/favicon.ico" />
         {% block head %}
         {% endblock %}
-        <script type="text/javascript">
-
-          var _gaq = _gaq || [];
-          _gaq.push(['_setAccount', 'UA-30118203-1']);
-          _gaq.push(['_trackPageview']);
-
-          (function() {
-            var ga = document.createElement('script'); ga.type = 'text/javascript'; ga.async = true;
-            ga.src = ('https:' == document.location.protocol ? 'https://ssl' : 'http://www') + '.google-analytics.com/ga.js';
-            var s = document.getElementsByTagName('script')[0]; s.parentNode.insertBefore(ga, s);
-          })();
-
-        </script>
+        {% include "inc_google_analytics.html" %}
     </head>
 <body>
-    {% if is_authorized %}
-        <div class="usertitle">
-            Authorised user: {{ user_email }} <span class="logout-link">[ <a href="{{ logout_url }}">Log out</a> ]</span>
-        </div>
-    {% endif %}
+    {% include "inc_user_header.html" %}
     <noscript>
         <br />
         <h3>Javascript should be enabled for maximum application functionality</h3>
@@ -55,11 +38,6 @@ This is the Django master template for snapshots.html and import.html.
 <div class="logo break">
   <table>
     <tr>
-    <!--
-      <td valign="top" style="padding-top: 5px;">
-        <a href="{{ url_home_page }}"><img src="/logo.png" width="120" height="120" /></a>
-      </td>
-    -->
       <td>
         <span class="heading">{% block heading %}{% endblock %}</span>
         {% block body %}
@@ -69,18 +47,7 @@ This is the Django master template for snapshots.html and import.html.
   </table>
 </div>
 
-	<div class="project-footer">
-		<div class="break">
-			Questions or comments? Go to <a href="http://{{ url_discussion_group }}">{{ url_discussion_group }}</a>
-			or email <a href="mailto:{{ email_discussion_group }}">{{ email_discussion_group }}</a>
-		</div>
-		<div class="break">
-			Please report bugs or suggest improvements at <a href="http:/{{ url_issues_page }}">{{ url_issues_page }}</a>
-		</div>
-		<div class="break">
-			Source code for this project is at <a href="http://{{ url_source_code }}">{{ url_source_code }}</a>
-		</div>
-	</div>
+    {% include "inc_project_footer.html" %}
 
 </body>
 </html>

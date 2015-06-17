@@ -27,6 +27,56 @@ register = webapp.template.create_template_register()
 
 
 @register.filter
+def split_by_newline( value ):
+  """
+    Filter - returns a list of lines.
+    Splits value at newlines.
+    
+    Usage (in template):
+
+    <ul>{% for s in str|split_by_newline %}
+      <li>{{ s }}</li>
+    {% endfor %}</ul>
+
+    Results with the HTML:
+    <ul>
+      <li>Some text</li>
+      <li>Another line</li>
+      <li>The last line</li>
+    </ul>
+
+  """
+  try:
+    return value.split('\n')
+  except Exception, e:
+    return value
+  
+  
+@register.filter
+def get_range( value ):
+  """
+    Filter - returns a list containing range made from given value
+    Usage (in template):
+
+    <ul>{% for i in 3|get_range %}
+      <li>{{ i }}. Do something</li>
+    {% endfor %}</ul>
+
+    Results with the HTML:
+    <ul>
+      <li>0. Do something</li>
+      <li>1. Do something</li>
+      <li>2. Do something</li>
+    </ul>
+
+    Instead of 3 one may use the variable set in the views
+    
+    2013-03-09; Retrieved from http://djangosnippets.org/snippets/1357/
+  """
+  return range( value )
+  
+  
+@register.filter
 def replace(str_to_replace, args):
   """Performs arbitrary string transformations on template fields.
 

@@ -16,48 +16,42 @@ limitations under the License.
 
 This is the Django template for the landing page.
 
-Original created by Dwight Guth, 2011
+Based on work by Dwight Guth, 2011
 Extensively modified by Julie Smith, 2012
 {% endcomment %}
-<!doctype html>
-<html>
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE html PUBLIC
+  "-//W3C//DTD XHTML 1.0 Strict//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en">
     <head>
         <title>{{ app_title }}</title>
         <link rel="stylesheet" type="text/css" href="/static/tasks_backup.css" />
         <link rel="shortcut icon" type="image/x-icon" href="/static/favicon.ico" />
-        <link rel="icon" type="image/x-icon" href="/static/favicon.ico" />
+        <meta name="keywords" content="Google Tasks Backup, Google Tasks, Backup Google Tasks">
         <script type="text/javascript">
 
             function authorise() {
                 document.getElementById("authorise_button").value = "Authorising, please wait (this may take up to one minute) ...";
                 document.getElementById("authorise_button").innerHTML = "Authorising, please wait (this may take up to one minute) ...";
                 document.getElementById("authorise_button").disabled = true;
-                window.location.href = "/auth";
+                dest = "https://" + window.location.hostname + "{{ url_main_page }}";
+                //alert("dest = '" + dest + "'");
+                window.location.href = dest;
             }
 
         </script>
-        <script type="text/javascript">
-
-          var _gaq = _gaq || [];
-          _gaq.push(['_setAccount', 'UA-30118203-1']);
-          _gaq.push(['_trackPageview']);
-
-          (function() {
-            var ga = document.createElement('script'); ga.type = 'text/javascript'; ga.async = true;
-            ga.src = ('https:' == document.location.protocol ? 'https://ssl' : 'http://www') + '.google-analytics.com/ga.js';
-            var s = document.getElementsByTagName('script')[0]; s.parentNode.insertBefore(ga, s);
-          })();
-
-        </script>
+        
+        {% include "inc_google_analytics.html" %}
     </head>
 
 <body>
 
-{% if is_authorized %}
-    <div class="usertitle">
-        Authorised user: {{ user_email }} <span class="logout-link">[ <a href="{{ logout_url }}">Log out</a> ]</span>
-    </div>
-{% endif %}
+    {% include "inc_user_header.html" %}
+
+    {% if display_link_to_production_server %}
+        {% include "inc_limited_access_server_msg.html" %}
+    {% endif %}
 
     <noscript>
         <br />
@@ -71,23 +65,31 @@ Extensively modified by Julie Smith, 2012
         </div>
     {% endif %}
 
-    {% if msg == "ACCOUNT_ERROR" %}
+    {% if msg == "ACCOUNT_ERROR" or msg == "TIMEOUT" %}
         <div class="break">
             <br />
             <br />
-            <div class="medium-break take-note-larger">
-                An error occurred authorizing your account.  
-            </div>
-            Possible reasons;
-            <ul>
-                <li> there is a server or communications problem, or </li>
-                <li> your Google Apps account is not authorised to access this application, or </li>
-                <li> your account is not currently in good standing with Google. </li>
-            </ul>
-            <div class="medium-break take-note-larger">
-                Please try again
-            </div>
+            {% if msg == "TIMEOUT"%}
+                <div class="break take-note-larger">
+                    The server timed out authorizing your account. Please try again.
+                </div>
+            {% else %}
+                <div class="medium-break take-note-larger">
+                    An error occurred authorizing your account.  
+                </div>
+                Possible reasons;
+                <ul>
+                    <li> there is a server or communications problem, or </li>
+                    <li> your Google Apps account is not authorised to access this application, or </li>
+                    <li> your account is not currently in good standing with Google. </li>
+                </ul>
+                <div class="medium-break take-note-larger">
+                    Please try again
+                </div>
+            {% endif %}
+            
             <div class="break">
+                <br />
                 If this happens again, please <a href="http:/{{ url_issues_page }}">report the issue</a> so that we can try to fix it.  
             </div>
             <br />
@@ -96,8 +98,8 @@ Extensively modified by Julie Smith, 2012
         </div>
     {% endif %}
     
-    <div class="break">
-        {{ app_title }} can be used to export or display Google Tasks
+    <div style="margin-top:15px" class="break">
+        <span class="take-note">{{ app_title }}</span> can be used to export or display Google Tasks
         <ul class="info-ul">
             <li>
                 Export formats;
@@ -106,7 +108,7 @@ Extensively modified by Julie Smith, 2012
                     <li>iCalendar (.ics file)</li>
                     <li>
                         Import/Export (.csv or .GTBak file containing the data needed to import tasks
-                        using <a href="http://import-tasks.appspot.com">Import Google Tasks</a>)
+                        using <a href="http://import-tasks.appspot.com">Google Tasks Import</a>)
                         <span class="comment"> { See <a href="/static/info.html#import_export_description">info page</a> for details }</span>
                     </li>
                     <li>
@@ -118,48 +120,33 @@ Extensively modified by Julie Smith, 2012
                         <span class="comment"> { See <a href="/static/info.html">info page</a> for details }</span>
                     </li>
                     <li>Remember The Milk (email)   <span class="comment"> { untested, as I don't have RTM }</span></li>
+                    <li>Text file, in two different formats. Tasks are indented using either tabs or spaces</li>
                 </ul>
             </li>
             <li>
-                Display tasks as a single web page (e.g., suitable for printing)
+                Display all tasks, grouped by tasklist, on a single web page (e.g., suitable for printing)
             </li>
         </ul>
     </div>
-    <div class="break">
-        This application uses Google authentication to access your Tasks data. The permission for this application will be displayed as "{{ product_name }} - Tasks" in your list of 
-        <a href="https://www.google.com/accounts/IssuedAuthSubTokens">Authorised Sites, Apps, and Services</a>, and can be revoked there at any time.
-    </div>
-    <button id="authorise_button" class="big-button" type="button" onclick="authorise();">Authorise</button>
+    
+    {% if display_link_to_production_server %}
+        <input type="button" class="big-button" onClick="window.location.href = 'http://{{ production_server }}'" 
+               value="Go to live server">
+    {% else %}
+        <div class="break">
+            This application uses Google authentication to access your Tasks data. The permission for this application will be displayed as "{{ product_name }} - Tasks" in your list of 
+            <a href="https://www.google.com/accounts/IssuedAuthSubTokens">Authorised Sites, Apps, and Services</a>, and can be revoked there at any time.
+        </div>
+        {% if user_email %}
+            <button id="authorise_button" class="big-button" type="button" 
+                    onclick="window.location.href = 'https://' + window.location.hostname + '{{ url_main_page }}'">Main menu</button>
+        {% else %}
+            <button id="authorise_button" class="big-button" type="button" onclick="authorise();">Authorise</button>
+        {% endif %}
+    {% endif %}
  
-    <div class="break">
-        This application is currently in beta. 
-		You are welcome to try it, but I cannot give any guarantee that data retrieved will be correct or in a usable format. 
-        It is running from my personal Google Apps account, and so has quota limitations. 
-    </div>
    
-
-	<div class="project-footer">
-        <div class="break">
-            Version {{ app_version }} ({{ upload_timestamp }})
-        </div>
-		<div class="break">
-			Questions or comments? Go to <a href="http://{{ url_discussion_group }}">{{ url_discussion_group }}</a>
-			or email <a href="mailto:{{ email_discussion_group }}">{{ email_discussion_group }}</a>
-		</div>
-		<div class="break">
-			Please report bugs or suggest improvements at <a href="http:/{{ url_issues_page }}">{{ url_issues_page }}</a>
-		</div>
-		<div class="break">
-			Source code for this project is at <a href="http://{{ url_source_code }}">{{ url_source_code }}</a>
-		</div>
-        <div class="break">
-            {{ app_title }} uses cookies for two purposes;
-            <ul>
-                <li>To track your authorisation credentials between pages. This ensure that you (and only you) can get the results of your backup request.</li>
-                <li><a href="http://www.google.com/analytics/">Google Analytics</a> is used to track usage such as; number of unique visitors, location, browser type, operating system. </li>
-            </ul>
-        </div>
-	</div>
+    {% include "inc_project_footer.html" %}
     
 	<div class="backgroundPopup"></div>
 

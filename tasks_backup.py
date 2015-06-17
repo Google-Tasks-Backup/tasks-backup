@@ -1,4 +1,4 @@
-#!/usr/bin/python2.5
+# -*- coding: utf-8 -*-
 #
 # Copyright 2011 Google Inc.  All Rights Reserved.
 #
@@ -22,8 +22,6 @@
 # Orig __author__ = "dwightguth@google.com (Dwight Guth)"
 __author__ = "julie.smith.1999@gmail.com (Julie Smith)"
 
-from google.appengine.dist import use_library
-use_library("django", "1.2")
 
 import logging
 import os
@@ -32,25 +30,40 @@ import sys
 import gc
 import cgi
 import time
+from urlparse import urljoin
 
-from apiclient import discovery
-from apiclient.oauth2client import appengine
-from apiclient.oauth2client import client
+
+# Fix for DeadlineExceeded, because "Pre-Call Hooks to UrlFetch Not Working"
+#     Based on code from https://groups.google.com/forum/#!msg/google-appengine/OANTefJvn0A/uRKKHnCKr7QJ
+from google.appengine.api import urlfetch
+real_fetch = urlfetch.fetch
+def fetch_with_deadline(url, *args, **argv):
+    argv['deadline'] = settings.URL_FETCH_TIMEOUT
+    return real_fetch(url, *args, **argv)
+urlfetch.fetch = fetch_with_deadline
+
+import httplib2
+from oauth2client.appengine import OAuth2Decorator
+
+import webapp2
+
 
 from google.appengine.api import mail
 from google.appengine.api import memcache
 from google.appengine.api import taskqueue
 from google.appengine.api import users
+from google.appengine.api import apiproxy_stub_map
 from google.appengine.ext import db
-from google.appengine.ext import webapp
 from google.appengine.ext.webapp import template
-from google.appengine.ext.webapp import util
 from google.appengine.runtime import apiproxy_errors
 from google.appengine.runtime import DeadlineExceededError
 from google.appengine.api import urlfetch_errors
+from google.appengine.api import mail_errors # To catch InvalidSenderError
 from google.appengine.api import logservice # To flush logs
+from google.appengine.api.app_identity import get_application_id
 
-# Import from error so that we can process HttpError
+
+# Import apiclient errors so that we can process HttpError
 from apiclient import errors as apiclient_errors
 
 
@@ -59,24 +72,110 @@ logservice.AUTOFLUSH_EVERY_BYTES = None
 logservice.AUTOFLUSH_EVERY_LINES = 5
 logservice.AUTOFLUSH_ENABLED = True
 
-import httplib2
 import Cookie
 
 import datetime
 from datetime import timedelta
 import csv
 
+
+
+# Application-specific imports
 import model
 import settings
 import appversion # appversion.version is set before the upload process to keep the version number consistent
 import shared # Code which is common between tasks-backup.py and worker.py
 import constants
+import host_settings
 
-  
+msg = "Authorisation error. Please report this error to " + settings.url_issues_page
+
+auth_decorator = OAuth2Decorator(client_id=host_settings.CLIENT_ID,
+                                 client_secret=host_settings.CLIENT_SECRET,
+                                 scope=host_settings.SCOPE,
+                                 user_agent=host_settings.USER_AGENT,
+                                 message=msg)
+                            
+                            
     
-class MainHandler(webapp.RequestHandler):
+class WelcomeHandler(webapp2.RequestHandler):
+    """ Displays an introductory web page, explaining what the app does and providing link to authorise.
+    
+        This page can be viewed even if the user is not logged in.
+    """
+
+    # Do not add auth_decorator to Welcome page handler, because we want anyone to be able to view the welcome page
+    def get(self):
+        """ Handles GET requests for settings.WELCOME_PAGE_URL """
+
+        fn_name = "WelcomeHandler.get(): "
+
+        logging.debug(fn_name + "<Start> (app version %s)" %appversion.version )
+        logservice.flush()
+        
+        try:
+            display_link_to_production_server = False
+            if not self.request.host in settings.PRODUCTION_SERVERS and settings.DISPLAY_LINK_TO_PRODUCTION_SERVER:
+                logging.debug(fn_name + "Running on limited-access server '" + unicode(self.request.host) + 
+                    "', displaying link to production server")
+                logservice.flush()
+                display_link_to_production_server = True
+            
+            user = users.get_current_user()
+            user_email = None
+            is_admin_user = False
+            if user:
+                user_email = user.email()
+                
+                if not self.request.host in settings.PRODUCTION_SERVERS:
+                    # logging.debug(fn_name + "DEBUG: Running on limited-access server")
+                    if shared.is_test_user(user_email):
+                        # Allow test user to see normal page content
+                        logging.debug(fn_name + "TEST: Allow test user [" + unicode(user_email) + "] to see normal page content")
+                        logservice.flush()
+                        display_link_to_production_server = False
+                
+                logging.debug(fn_name + "User is logged in, so displaying username and logout link")
+                is_admin_user = users.is_current_user_admin()
+            else:
+                logging.debug(fn_name + "User is not logged in, so won't display logout link")
+            logservice.flush()
+                    
+                    
+            template_values = {'app_title' : host_settings.APP_TITLE,
+                               'display_link_to_production_server' : display_link_to_production_server,
+                               'production_server' : settings.PRODUCTION_SERVERS[0],
+                               'host_msg' : host_settings.HOST_MSG,
+                               'url_home_page' : settings.MAIN_PAGE_URL,
+                               'product_name' : host_settings.PRODUCT_NAME,
+                               'user_email' : user_email,
+                               'url_main_page' : settings.MAIN_PAGE_URL,
+                               'msg': self.request.get('msg'),
+                               'logout_url': users.create_logout_url(settings.WELCOME_PAGE_URL),
+                               'url_discussion_group' : settings.url_discussion_group,
+                               'email_discussion_group' : settings.email_discussion_group,
+                               'url_issues_page' : settings.url_issues_page,
+                               'url_source_code' : settings.url_source_code,
+                               'app_version' : appversion.version,
+                               'upload_timestamp' : appversion.upload_timestamp}
+                               
+            path = os.path.join(os.path.dirname(__file__), constants.PATH_TO_TEMPLATES, "welcome.html")
+            self.response.out.write(template.render(path, template_values))
+            logging.debug(fn_name + "<End>" )
+            logservice.flush()
+            
+        except Exception, e:
+            logging.exception(fn_name + "Caught top-level exception")
+            shared.serve_outer_exception_message(self, e)
+            logging.debug(fn_name + "<End> due to exception" )
+            logservice.flush()
+    
+
+
+class MainHandler(webapp2.RequestHandler):
     """Handler for /."""
 
+    @auth_decorator.oauth_required
     def get(self):
         """ Main page, once user has been authenticated """
 
@@ -86,38 +185,39 @@ class MainHandler(webapp.RequestHandler):
         logservice.flush()
         
         try:
-            client_id, client_secret, user_agent, app_title, product_name, host_msg = shared.get_settings(self.request.host)
-
-            ok, user, credentials, fail_msg, fail_reason = shared.get_credentials(self)
-            if not ok:
-                # User not logged in, or no or invalid credentials
-                logging.info(fn_name + "Get credentials error: " + fail_msg)
-                logservice.flush()
-                # self.redirect(settings.WELCOME_PAGE_URL)
-                shared.redirect_for_auth(self, user)
-                return
-                
+            user = users.get_current_user()
+            
             user_email = user.email()
             is_admin_user = users.is_current_user_admin()
             
-            is_authorized = True
-            # logging.debug(fn_name + "Resetting auth_count cookie to zero")
-            # logservice.flush()
-            
-            if self.request.host in settings.LIMITED_ACCESS_SERVERS:
-                logging.debug(fn_name + "Running on limited-access server")
-                if not shared.isTestUser(user_email):
-                    logging.info(fn_name + "Rejecting non-test user [" + str(user_email) + "] on limited access server")
-                    self.response.out.write("<h2>This is a test server. Access is limited to test users.</h2>")
-                    logging.debug(fn_name + "<End> (restricted access)" )
+            display_link_to_production_server = False
+            if not self.request.host in settings.PRODUCTION_SERVERS:
+                logging.debug(fn_name + "Running on limited-access server: " + unicode(self.request.host))
+                logservice.flush()
+                if settings.DISPLAY_LINK_TO_PRODUCTION_SERVER:
+                    display_link_to_production_server = True
+                if shared.is_test_user(user_email):
+                    # Allow test user to see normal page
+                    display_link_to_production_server = False
+                    logging.info(fn_name + "Allowing test user [" + unicode(user_email) + "] on limited access server")
+                    logservice.flush()
+                else:
+                    logging.info(fn_name + "Rejecting non-test user [" + unicode(user_email) + "] on limited access server")
+                    logservice.flush()
+                    shared.reject_non_test_user(self)
+                    logging.debug(fn_name + "<End> (Non test user on limited access server)")
                     logservice.flush()
                     return
-              
-            template_values = {'app_title' : app_title,
-                               'host_msg' : host_msg,
+                
+            logging.debug(fn_name + "User = " + user_email)
+            logservice.flush()                
+            
+            template_values = {'app_title' : host_settings.APP_TITLE,
+                               'display_link_to_production_server' : display_link_to_production_server,
+                               'production_server' : settings.PRODUCTION_SERVERS[0],
+                               'host_msg' : host_settings.HOST_MSG,
                                'url_home_page' : settings.MAIN_PAGE_URL,
-                               'product_name' : product_name,
-                               'is_authorized': is_authorized,
+                               'product_name' : host_settings.PRODUCT_NAME,
                                'is_admin_user' : is_admin_user,
                                'user_email' : user_email,
                                'start_backup_url' : settings.START_BACKUP_URL,
@@ -141,76 +241,25 @@ class MainHandler(webapp.RequestHandler):
             logging.debug(fn_name + "<End> due to exception" )
             logservice.flush()
     
-    
-    
-class WelcomeHandler(webapp.RequestHandler):
-    """ Displays an introductory web page, explaining what the app does and providing link to authorise.
-    
-        This page can be viewed even if the user is not logged in.
-    """
+       
 
-    def get(self):
-        """ Handles GET requests for settings.WELCOME_PAGE_URL """
-
-        fn_name = "WelcomeHandler.get(): "
-
-        logging.debug(fn_name + "<Start> (app version %s)" %appversion.version )
-        logservice.flush()
-        
-        try:
-            client_id, client_secret, user_agent, app_title, product_name, host_msg = shared.get_settings(self.request.host)
-
-            ok, user, credentials, fail_msg, fail_reason = shared.get_credentials(self)
-            if not ok:
-                is_authorized = False
-            else:
-                is_authorized = True
-            
-            user_email = None
-            if user:
-                user_email = user.email()
-            
-            template_values = {'app_title' : app_title,
-                               'host_msg' : host_msg,
-                               'url_home_page' : settings.MAIN_PAGE_URL,
-                               'product_name' : product_name,
-                               'is_authorized': is_authorized,
-                               'user_email' : user_email,
-                               'url_main_page' : settings.MAIN_PAGE_URL,
-                               'msg': self.request.get('msg'),
-                               'logout_url': users.create_logout_url(settings.WELCOME_PAGE_URL),
-                               'url_discussion_group' : settings.url_discussion_group,
-                               'email_discussion_group' : settings.email_discussion_group,
-                               'url_issues_page' : settings.url_issues_page,
-                               'url_source_code' : settings.url_source_code,
-                               'app_version' : appversion.version,
-                               'upload_timestamp' : appversion.upload_timestamp}
-                               
-            path = os.path.join(os.path.dirname(__file__), constants.PATH_TO_TEMPLATES, "welcome.html")
-            self.response.out.write(template.render(path, template_values))
-            logging.debug(fn_name + "<End>" )
-            logservice.flush()
-        except Exception, e:
-            logging.exception(fn_name + "Caught top-level exception")
-            shared.serve_outer_exception_message(self, e)
-            logging.debug(fn_name + "<End> due to exception" )
-            logservice.flush()
-    
-
-    
-class StartBackupHandler(webapp.RequestHandler):
+class StartBackupHandler(webapp2.RequestHandler):
     """ Handler to start the backup process. """
     
+    @auth_decorator.oauth_required
     def get(self):
-        """ Handles redirect from authorisation.
-            The only time we should get here is if retrieving credentials failed in _start_backup(), 
-            and we were redirected here after successfully authenticating.
+        """ Handles redirect from authorisation, or user accessing /startbackup directly
         
-            There should be a backup job record, and its status should be STARTING
-
-            shared.redirect_for_auth() stores the URL for the StartBackupHandler(), so when OAuthCallbackHandler()
-            redirects to here (on successful authorisation), it comes in as a GET, so we call _start_backup() to 
-            (re)start the export.
+            The user will land on the GET handler if they go direct to /startbackup
+            In that case, there should be no backup job record, or that job will not 
+            have status of TO_BE_STARTED, so we silently redirect user to /main
+            so that they can choose the backup opgtions and start a backup job
+        
+            The user may also be redirected here after auth_decorator authenticated a user in the post() method,
+            because the post-authorisation redirection lands on the GET, not the POST. In that case,
+            there should be a backup job record, and its status should be TO_BE_STARTED, so we call
+            _start_backup() from here to start the export.
+            
         """
         
         fn_name = "StartBackupHandler.get(): "
@@ -219,32 +268,79 @@ class StartBackupHandler(webapp.RequestHandler):
         logservice.flush()
         
         try:
-            # Only get the user here. The credentials are retrieved within _start_backup()
-            # Don't need to check if user is logged in, because all pages (except '/') are set as secure in app.yaml
             user = users.get_current_user()
             user_email = user.email()
+            
+            is_test_user = shared.is_test_user(user_email)
+            if not self.request.host in settings.PRODUCTION_SERVERS:
+                # logging.debug(fn_name + "Running on limited-access server")
+                if not is_test_user:
+                    logging.info(fn_name + "Rejecting non-test user [" + str(user_email) + "] on limited access server")
+                    logservice.flush()
+                    shared.reject_non_test_user(self)
+                    logging.debug(fn_name + "<End> (restricted access)" )
+                    logservice.flush()
+                    return
+            
             # Retrieve the export job record for this user
             tasks_backup_job = model.ProcessTasksJob.get_by_key_name(user_email)
             
-            # There should be a backup job record, and its status should be STARTING
+            # There should be a backup job record, and its status should be TO_BE_STARTED
             if tasks_backup_job is None:
-                logging.warning(fn_name + "No DB record for " + user_email)
-                shared.serve_message_page(self, "No export job found. Please start a backup from the main menu.",
-                    "If you believe this to be an error, please report this at the link below",
-                    show_custom_button=True, custom_button_text='Go to main menu')
-                logging.warning(fn_name + "<End> No DB record")
+                # If no DB record (e.g., first time user), redirect to /main
+                logging.warning(fn_name + "No DB record for " + user_email + " so redirecting to " + 
+                    settings.MAIN_PAGE_URL)
+                logging.debug(fn_name + "<End> (No DB record)")
                 logservice.flush()
+                self.redirect(settings.MAIN_PAGE_URL)
                 return
             
-            if tasks_backup_job.status != constants.ExportJobStatus.STARTING:
-                # The only time we should get here is if the credentials failed, and we were redirected after
-                # successfully authorising. In that case, the jab status should still be STARTING
-                shared.serve_message_page(self, "Job status: " + str(tasks_backup_job.status) + ". Please start a backup from the main menu.",
-                    "If you believe this to be an error, please report this at the link below",
-                    show_custom_button=True, custom_button_text='Go to main menu')
-                logging.warning(fn_name + "<End> Invalid job status: " + str(tasks_backup_job.status))
-                logservice.flush()
-                return
+                # logging.warning(fn_name + "No DB record for " + user_email)
+                # shared.serve_message_page(self, "No export job found. Please start a backup from the main menu.",
+                    # "If you believe this to be an error, please report this at the link below",
+                    # show_custom_button=True, custom_button_text='Go to main menu')
+                # logging.warning(fn_name + "<End> No DB record")
+                # logservice.flush()
+                # return
+            
+            # This should be a new backup request, created in the POST handler, 
+            # and the job status should be TO_BE_STARTED
+            if tasks_backup_job.status != constants.ExportJobStatus.TO_BE_STARTED:
+                # Check when job status was last updated. If it was less than settings.MAX_JOB_PROGRESS_INTERVAL
+                # seconds ago, assume that another instance is already running,
+                # log warning and redirect to progress page
+                time_since_last_update = datetime.datetime.now() - tasks_backup_job.job_progress_timestamp
+                if time_since_last_update.seconds < settings.MAX_JOB_PROGRESS_INTERVAL:
+                    logging.info(fn_name + 
+                        "User attempted to start backup whilst another job is already running for " + str(user_email))
+                    logging.info(fn_name + "Previous job requested at " + str(tasks_backup_job.job_created_timestamp) + 
+                        " is still running.")
+                    logging.info(fn_name + "Previous worker started at " + str(tasks_backup_job.job_start_timestamp) + 
+                        " and last job progress update was " + str(time_since_last_update.seconds) + 
+                        " seconds ago, with status " +
+                        str(tasks_backup_job.status))
+                    # shared.serve_message_page(self, 
+                        # "An existing backup is already running. Please wait for that backup to finish before starting a new backup.",
+                        # "If you believe this to be an error, please report this at the link below",
+                        # show_custom_button=True, 
+                        # custom_button_text='Check backup progress', 
+                        # custom_button_url=urljoin("https://" + self.request.host, settings.PROGRESS_URL))
+                    logging.info(fn_name + "Redirecting to " + settings.PROGRESS_URL)
+                    self.redirect(settings.PROGRESS_URL)
+                        
+                    logging.info(fn_name + "<End> (Backup already running)")
+                    logservice.flush()
+                    return
+                    
+                else:
+                    # A previous job hasn't completed, and hasn't updated progress for more than 
+                    # settings.MAX_JOB_PROGRESS_INTERVAL seconds, so assume that previous worker
+                    # for this job has died, so log an error and start a new backup job.
+                    logging.error(fn_name + "It appears that a previous job requested by " + str(user_email) + 
+                        " at " + str(tasks_backup_job.job_created_timestamp) + " has stalled.")
+                    logging.info(fn_name + "Previous worker started at " + str(tasks_backup_job.job_start_timestamp) + " and last job progress update was " + str(time_since_last_update.seconds) + " seconds ago." )
+                    logging.info(fn_name + "Starting a new backup job")
+                    logservice.flush()
                 
             self._start_backup(tasks_backup_job)
             
@@ -258,9 +354,9 @@ class StartBackupHandler(webapp.RequestHandler):
         logservice.flush()
             
         
-  
+    @auth_decorator.oauth_required
     def post(self):
-        """ Handles GET request to settings.START_BACKUP_URL, which starts the backup process. """
+        """ Handles POST request to settings.START_BACKUP_URL, which starts the backup process. """
         
         fn_name = "StartBackupHandler.post(): "
        
@@ -268,34 +364,63 @@ class StartBackupHandler(webapp.RequestHandler):
         logservice.flush()
 
         try:
-            # Only get the user here. The credentials are retrieved within _start_backup()
-            # Don't need to check if user is logged in, because all pages (except '/') are set as secure in app.yaml
             user = users.get_current_user()
             user_email = user.email()
-            
-            
-            # logging.debug(fn_name + "Resetting auth_count cookie to zero")
-            # logservice.flush()
-            
 
-            is_test_user = shared.isTestUser(user_email)
-            if self.request.host in settings.LIMITED_ACCESS_SERVERS:
+            is_test_user = shared.is_test_user(user_email)
+            if not self.request.host in settings.PRODUCTION_SERVERS:
                 # logging.debug(fn_name + "Running on limited-access server")
                 if not is_test_user:
-                    logging.info(fn_name + "Rejecting non-test user on limited access server")
-                    self.response.out.write("<h2>This is a test server. Access is limited to test users.</h2>")
+                    logging.info(fn_name + "Rejecting non-test user [" + str(user_email) + "] on limited access server")
+                    logservice.flush()
+                    shared.reject_non_test_user(self)
                     logging.debug(fn_name + "<End> (restricted access)" )
                     logservice.flush()
                     return
             
+            # Retrieve the export job record for this user
+            tasks_backup_job = model.ProcessTasksJob.get_by_key_name(user_email)
             
-            # if is_test_user:
-              # logging.debug(fn_name + "POST args: include_hidden = " + str(self.request.get('include_hidden')) +
-                                # ", include_completed = " + str(self.request.get('include_completed')) +
-                                # ", include_deleted = " + str(self.request.get('include_deleted')))
-                                
-            logging.debug(fn_name + "Storing details for " + str(user_email))
+            if tasks_backup_job:
+                logging.debug(fn_name + "DEBUG: Found job record for " + user_email + 
+                    " with status = " + tasks_backup_job.status)
             
+                # Check if there is a backup job in progress
+                if not tasks_backup_job.status in constants.ExportJobStatus.STOPPED_VALUES:
+                    logging.debug(fn_name + "DEBUG: Found in-progress job for " + user_email) 
+                    # Check when job status was last updated. If it was less than settings.MAX_JOB_PROGRESS_INTERVAL
+                    # seconds ago, assume that another instance is already running, 
+                    # log warning and redirect to progress page
+                    time_since_last_update = datetime.datetime.now() - tasks_backup_job.job_progress_timestamp
+                    if time_since_last_update.seconds < settings.MAX_JOB_PROGRESS_INTERVAL:
+                        logging.warning(fn_name + 
+                            "User attempted to start backup whilst another job is already running for " + str(user_email))
+                        logging.info(fn_name + "Previous job requested at " + 
+                            str(tasks_backup_job.job_created_timestamp) + " is still running.")
+                        logging.info(fn_name + "Previous worker started at " + 
+                            str(tasks_backup_job.job_start_timestamp) + " and last job progress update was " + 
+                            str(time_since_last_update.seconds) + " seconds ago, with status " +
+                            str(tasks_backup_job.status))
+                        logging.info(fn_name + "Redirecting to " + settings.PROGRESS_URL)
+                        self.redirect(settings.PROGRESS_URL)
+                        logging.info(fn_name + "<End> (Backup already running)")
+                        logservice.flush()
+                        return
+                        
+                    else:
+                        # A previous job hasn't completed, and hasn't updated progress for more than 
+                        # settings.MAX_JOB_PROGRESS_INTERVAL seconds, so assume that previous worker
+                        # for this job has died, so log an error and start a new backup job.
+                        logging.error(fn_name + "It appears that a previous job requested by " + str(user_email) + 
+                            " at " + str(tasks_backup_job.job_created_timestamp) + " has stalled.")
+                        logging.info(fn_name + "Previous worker started at " + str(tasks_backup_job.job_start_timestamp) + " and last job progress update was " + str(time_since_last_update.seconds) + " seconds ago." )
+                        logging.info(fn_name + "Starting a new backup job")
+                        logservice.flush()
+                    
+            # ===================================
+            #   Create new backup job for user
+            # ===================================
+            logging.debug(fn_name + "Storing job details for " + str(user_email))
       
             # Create a DB record, using the user's email address as the key
             tasks_backup_job = model.ProcessTasksJob(key_name=user_email)
@@ -304,28 +429,15 @@ class StartBackupHandler(webapp.RequestHandler):
             tasks_backup_job.include_completed = (self.request.get('include_completed') == 'True')
             tasks_backup_job.include_deleted = (self.request.get('include_deleted') == 'True')
             tasks_backup_job.include_hidden = (self.request.get('include_hidden') == 'True')
+            tasks_backup_job.job_created_timestamp = datetime.datetime.now()
             tasks_backup_job.put()
 
             logging.debug(fn_name + "include_hidden = " + str(tasks_backup_job.include_hidden) +
                                     ", include_completed = " + str(tasks_backup_job.include_completed) +
                                     ", include_deleted = " + str(tasks_backup_job.include_deleted))
             logservice.flush()
-
             
-            
-            # Forcing updated auth, so that worker has as much time as possible (i.e. one hour)
-            # This is to combat situations where person authorises (e.g. when they start), but then does something
-            # else for just under 1 hour before starting the backup. In that case, auth expires during the (max) 10 minutes 
-            # that the worker is running (causing AccessTokenRefreshError: invalid_grant)
-            # After authorisation, this URL will be called again as a GET, so we start the backup from the GET handler.
-            logging.debug(fn_name + "Forcing auth, to get the freshest possible authorisation token")
-            shared.redirect_for_auth(self, users.get_current_user())
-            
-            
-            # # Try to start the export job now.
-            # # _start_backup() will attempt to retrieve the user's credentials. If that fails, then
-            # # the this URL will be called again as a GET, and we retry _start_backup() then
-            # self._start_backup(tasks_backup_job)
+            self._start_backup(tasks_backup_job)
                 
             logging.debug(fn_name + "<End>")
             logservice.flush()
@@ -337,23 +449,21 @@ class StartBackupHandler(webapp.RequestHandler):
             logservice.flush()
 
             
+    @auth_decorator.oauth_required        
     def _start_backup(self, tasks_backup_job):
+        """Place the backup job request on the taskqueue.
+        
+           The worker will retrieve the job details from the DB record.
+        """
     
         fn_name = "StartBackupHandler._start_backup(): "
         logging.debug(fn_name + "<Start>")
         logservice.flush()
     
         try:
-            ok, user, credentials, fail_msg, fail_reason = shared.get_credentials(self)
-            if not ok:
-                # User not logged in, or no or invalid credentials
-                logging.warning(fn_name + "Error getting credentials: " + fail_msg + " - Redirecting for auth")
-                shared.redirect_for_auth(self, user)
-                return
-
+            user = users.get_current_user()
             user_email = user.email()                
             
-            tasks_backup_job.credentials = credentials
             tasks_backup_job.job_start_timestamp = datetime.datetime.now()
             tasks_backup_job.put()
             
@@ -365,16 +475,62 @@ class StartBackupHandler(webapp.RequestHandler):
                 " queue, for " + str(user_email))
             logservice.flush()
             
-            try:
-                q.add(t)
-            except exception, e:
-                logging.exception(fn_name + "Exception adding job to taskqueue. Redirecting to " + str(settings.PROGRESS_URL))
-                logservice.flush()
-                logging.debug(fn_name + "<End> (error adding job to taskqueue)")
-                logservice.flush()
-                # TODO: Redirect to retry page with a better/clearer message to user
-                self.redirect(settings.PROGRESS_URL + "?msg=Exception%20adding%20job%20to%20taskqueue")
-                return
+            retry_count = settings.NUM_API_TRIES
+            while retry_count > 0:
+                retry_count = retry_count - 1
+                try:
+                    q.add(t)
+                    break
+                    
+                except Exception, e:
+                    tasks_backup_job.job_progress_timestamp = datetime.datetime.now()
+                    tasks_backup_job.message = 'Waiting for server ...'
+                    
+                    if retry_count > 0:
+                        
+                        logging.warning(fn_name + "Exception adding job to taskqueue, " +
+                            str(retry_count) + " attempts remaining: "  + shared.get_exception_msg(e))
+                        logservice.flush()
+                        
+                        # Give taskqueue some time before trying again
+                        if retry_count <= 2:
+                            sleep_time = settings.FRONTEND_API_RETRY_SLEEP_DURATION
+                        else:
+                            sleep_time = 1
+                        
+                        logging.info(fn_name + "Sleeping for " + str(sleep_time) + 
+                            " seconds before retrying")
+                        logservice.flush()
+                        # Update job_progress_timestamp so that job doesn't time out
+                        tasks_backup_job.job_progress_timestamp = datetime.datetime.now()
+                        tasks_backup_job.put()
+                        
+                        time.sleep(sleep_time)
+                        
+                    else:
+                        logging.exception(fn_name + "Exception adding job to taskqueue")
+                        logservice.flush()
+                
+                        tasks_backup_job.status = constants.ExportJobStatus.ERROR
+                        tasks_backup_job.message = ''
+                        tasks_backup_job.error_message = "Error starting export process: " + \
+                            shared.get_exception_msg(e)
+                        
+                        logging.debug(fn_name + "Job status: '" + str(tasks_backup_job.status) + ", progress: " + 
+                            str(tasks_backup_job.total_progress) + ", msg: '" + 
+                            str(tasks_backup_job.message) + "', err msg: '" + str(tasks_backup_job.error_message))
+                        logservice.flush()
+                        tasks_backup_job.put()
+                        
+                        shared.serve_message_page(self, "Error creating tasks export job.",
+                            "Please report the following error using the link below",
+                            shared.get_exception_msg(e),
+                            show_custom_button=True, custom_button_text="Return to main menu")
+                        
+                        logging.debug(fn_name + "<End> (error adding job to taskqueue)")
+                        logservice.flush()
+                        return
+                    
 
             logging.debug(fn_name + "Redirecting to " + settings.PROGRESS_URL)
             logservice.flush()
@@ -391,9 +547,10 @@ class StartBackupHandler(webapp.RequestHandler):
     
     
     
-class ShowProgressHandler(webapp.RequestHandler):
+class ShowProgressHandler(webapp2.RequestHandler):
     """Handler to display progress to the user """
     
+    @auth_decorator.oauth_required
     def get(self):
         """Display the progress page, which includes a refresh meta-tag to recall this page every n seconds"""
         
@@ -404,25 +561,24 @@ class ShowProgressHandler(webapp.RequestHandler):
         
         try:
             user = users.get_current_user()
-            if not user:
-                # User not logged in
-                logging.info(fn_name + "No user information")
-                logservice.flush()
-                shared.redirect_for_auth(self, user)
-                return
-                
-            client_id, client_secret, user_agent, app_title, product_name, host_msg = shared.get_settings(self.request.host)
                 
             user_email = user.email()
-            if self.request.host in settings.LIMITED_ACCESS_SERVERS:
+
+            display_link_to_production_server = False
+            if not self.request.host in settings.PRODUCTION_SERVERS:
                 # logging.debug(fn_name + "Running on limited-access server")
-                if not shared.isTestUser(user_email):
-                    logging.info(fn_name + "Rejecting non-test user on limited access server")
-                    self.response.out.write("<h2>This is a test server. Access is limited to test users.</h2>")
-                    logging.debug(fn_name + "<End> (restricted access)" )
+                if settings.DISPLAY_LINK_TO_PRODUCTION_SERVER:
+                    display_link_to_production_server = True
+                if shared.is_test_user(user_email):
+                    # Allow test user to see normal page
+                    display_link_to_production_server = False
+                else:
+                    logging.info(fn_name + "Rejecting non-test user [" + str(user_email) + "] on limited access server")
+                    logservice.flush()
+                    shared.reject_non_test_user(self)
+                    logging.debug(fn_name + "<End> (Non test user on limited access server)")
                     logservice.flush()
                     return
-            
             
             show_log_option = (user_email in settings.SHOW_LOG_OPTION_USERS)
             # DEBUG:
@@ -444,64 +600,118 @@ class ShowProgressHandler(webapp.RequestHandler):
             # Retrieve the DB record for this user
             tasks_backup_job = model.ProcessTasksJob.get_by_key_name(user_email)
             if tasks_backup_job is None:
-                logging.error(fn_name + "No DB record for " + user_email)
-                status = 'no-record'
-                progress = 0
-                job_start_timestamp = None
-                job_msg = "No backup found for " + str(user_email)
+                # If no DB record (e.g., first time user), redirect to /main
+                logging.warning(fn_name + "No DB record for " + user_email + " so redirecting to " + 
+                    settings.WELCOME_PAGE_URL)
+                logging.debug(fn_name + "<End> (No DB record)")
+                logservice.flush()
+                self.redirect(settings.WELCOME_PAGE_URL)
+                return
             else:            
                 # total_progress is only updated once all the tasks have been retrieved in a single tasklist.
                 # tasklist_progress is updated every settings.TASK_COUNT_UPDATE_INTERVAL seconds within the retrieval process
-                # for each tasklist. This ensures progress updates happen at least every settings.TASK_COUNT_UPDATE_INTERVAL seconds,
+                # for each tasklist. This ensures progress updates happen at least every
+                # settings.TASK_COUNT_UPDATE_INTERVAL seconds,
                 # which wouldn't happen if it takes a long time to retrieve a large number of tasks in a single tasklist.
                 # So, the current progress = total_progress + tasklist_progress
                 status = tasks_backup_job.status
                 error_message = tasks_backup_job.error_message
                 progress = tasks_backup_job.total_progress + tasks_backup_job.tasklist_progress
                 job_start_timestamp = tasks_backup_job.job_start_timestamp
-                job_execution_time = datetime.datetime.now() - job_start_timestamp
+                if job_start_timestamp:
+                    job_execution_time = datetime.datetime.now() - job_start_timestamp
+                else:
+                    job_execution_time = None
+                time_since_job_was_requested = datetime.datetime.now() - tasks_backup_job.job_created_timestamp
                 include_completed = tasks_backup_job.include_completed
                 include_deleted = tasks_backup_job.include_deleted
                 include_hidden = tasks_backup_job.include_hidden
                 job_msg = tasks_backup_job.message
+
+                # -----------------------------------
+                #   Check job status and progress
+                # -----------------------------------
                 
-                #if status != 'completed' and status != 'export_completed' and status != 'error':
-                #if not status in [constants.ExportJobStatus.EXPORT_COMPLETED, constants.ExportJobStatus.IMPORT_COMPLETED, constants.ExportJobStatus.ERROR ]:
-                if not status in constants.ExportJobStatus.STOPPED_VALUES:
-                    # Check if the job has exceeded either progress or total times
-                    if job_execution_time.seconds > settings.MAX_JOB_TIME:
-                        logging.error(fn_name + "Job created " + str(job_execution_time.seconds) + " seconds ago. Exceeded max allowed " +
-                            str(settings.MAX_JOB_TIME))
-                        error_message = "Job taking too long. Status was " + tasks_backup_job.status
-                        if tasks_backup_job.error_message:
-                            error_message = error_message + ", previous error was " + tasks_backup_job.error_message
-                        status = 'job_exceeded_max_time'
-                
+                if status == constants.ExportJobStatus.TO_BE_STARTED:
+                    logging.debug(fn_name + "Waiting for worker to start. Job was requested " +
+                        str(time_since_job_was_requested.seconds) + " seconds ago at " +
+                        str(tasks_backup_job.job_created_timestamp))
+                    # Check if job has been started within settings.MAX_TIME_ALLOWED_FOR_JOB_TO_START 
+                    # If job hasn't started yet by then, log error and display msg to user
+                    if time_since_job_was_requested.seconds > settings.MAX_TIME_ALLOWED_FOR_JOB_TO_START:
+                        # Job hasn't started withing maximum allowed time
+                        logging.error(fn_name + "Backup has not started within maximum allowed " + 
+                            str(settings.MAX_TIME_ALLOWED_FOR_JOB_TO_START) + " seconds")
+                        # -------------------------------------------------------------
+                        #   Display message to user and don't display progress page
+                        # -------------------------------------------------------------
+                        shared.serve_message_page(self, 
+                            "Backup was not started within maximum startup time. Please try running your backup again.",
+                            error_message,
+                            "If you believe this to be an error, or if this has happened before, please report this at the issues link below",
+                            show_custom_button=True, custom_button_text='Go to main menu')
+                            
+                        logging.warning(fn_name + "<End> (Job didn't start)")
+                        logservice.flush()
+                        return
+                        
+                elif not status in constants.ExportJobStatus.STOPPED_VALUES:
+                    # Check if the job has updated progress within the maximum progress update time.
                     time_since_last_update = datetime.datetime.now() - tasks_backup_job.job_progress_timestamp
                     if time_since_last_update.seconds > settings.MAX_JOB_PROGRESS_INTERVAL:
+                        # Job status has not been updated recently, so consider job to have stalled.
+                        logging.error(fn_name + "Job created at " + str(tasks_backup_job.job_created_timestamp) + " appears to have stalled. Status was " + tasks_backup_job.status + ", progress = " + str(progress))
                         logging.error(fn_name + "Last job progress update was " + str(time_since_last_update.seconds) +
-                            " seconds ago. Job appears to have stalled. Job was started " + str(job_execution_time.seconds) + 
-                            " seconds ago at " + str(job_start_timestamp) + " UTC")
-                        error_message = "Job appears to have stalled. Status was " + tasks_backup_job.status
+                            " seconds ago.")
+                            
+                        if job_execution_time:
+                            logging.info(fn_name + "Job was started by worker " + str(job_execution_time.seconds) + 
+                                " seconds ago at " + str(job_start_timestamp) + " UTC")
+                        else:
+                            logging.error(fn_name + "Job has not been started yet by worker")
+                        logservice.flush()
+                        
                         if tasks_backup_job.error_message:
-                            error_message = error_message + ", previous error was " + tasks_backup_job.error_message
-                        status = 'job_stalled'
+                            error_message = tasks_backup_job.error_message + " - Status was " + tasks_backup_job.status + ", progress = " + str(progress)
+                        else:
+                            error_message = "Status was " + tasks_backup_job.status + ", progress = " + str(progress)
+                        # -------------------------------------------------------------
+                        #   Display message to user and don't display progress page
+                        # -------------------------------------------------------------
+                        shared.serve_message_page(self, 
+                            "Retrieval of tasks appears to have stalled. Please try running your backup again.",
+                            error_message,
+                            "If you believe this to be an error, or if this has happened before, please report this at the issues link below",
+                            show_custom_button=True, custom_button_text='Go to main menu')
+                            
+                        logging.warning(fn_name + "<End> (Job stalled)")
+                        logservice.flush()
+                        return
             
             if status == constants.ExportJobStatus.EXPORT_COMPLETED:
                 logging.info(fn_name + "Retrieved " + str(progress) + " tasks for " + str(user_email))
+            elif status == constants.ExportJobStatus.TO_BE_STARTED:
+                # Job hasn't been started yet, so no progress or job start time
+                logging.debug(fn_name + "Backup for " + str(user_email) + ", requested at " + str(tasks_backup_job.job_created_timestamp) + " UTC, hasn't started yet.")
             else:
                 logging.debug(fn_name + "Status = " + str(status) + ", progress = " + str(progress) + 
-                    " for " + str(user_email) + ", started at " + str(job_start_timestamp) + " UTC")
+                    " for " + str(user_email) + ", worker started at " + str(job_start_timestamp) + " UTC")
             
             if error_message:
                 logging.warning(fn_name + "Error message: " + str(error_message))
+            if job_msg:
+                logging.debug(fn_name + "Job msg: " + str(job_msg))
+                
+            logservice.flush()
             
             path = os.path.join(os.path.dirname(__file__), constants.PATH_TO_TEMPLATES, "progress.html")
             
-            template_values = {'app_title' : app_title,
-                               'host_msg' : host_msg,
+            template_values = {'app_title' : host_settings.APP_TITLE,
+                               'display_link_to_production_server' : display_link_to_production_server,
+                               'production_server' : settings.PRODUCTION_SERVERS[0],
+                               'host_msg' : host_settings.HOST_MSG,
                                'url_home_page' : settings.MAIN_PAGE_URL,
-                               'product_name' : product_name,
+                               'product_name' : host_settings.PRODUCT_NAME,
                                'status' : status,
                                'progress' : progress,
                                'include_completed' : include_completed,
@@ -513,7 +723,7 @@ class ShowProgressHandler(webapp.RequestHandler):
                                'refresh_interval' : settings.PROGRESS_PAGE_REFRESH_INTERVAL,
                                'large_list_html_warning_limit' : settings.LARGE_LIST_HTML_WARNING_LIMIT,
                                'user_email' : user_email,
-                               'display_technical_options' : shared.isTestUser(user_email),
+                               'display_technical_options' : shared.is_test_user(user_email),
                                'url_main_page' : settings.MAIN_PAGE_URL,
                                'results_url' : settings.RESULTS_URL,
                                'show_log_option' : show_log_option,
@@ -528,6 +738,7 @@ class ShowProgressHandler(webapp.RequestHandler):
             self.response.out.write(template.render(path, template_values))
             logging.debug(fn_name + "<End>")
             logservice.flush()
+            
         except Exception, e:
             logging.exception(fn_name + "Caught top-level exception")
             shared.serve_outer_exception_message(self, e)
@@ -536,24 +747,28 @@ class ShowProgressHandler(webapp.RequestHandler):
         
 
         
-class ReturnResultsHandler(webapp.RequestHandler):
+class ReturnResultsHandler(webapp2.RequestHandler):
     """Handler to return results to user in the requested format """
     
+    @auth_decorator.oauth_required
     def get(self):
-        """ If user attempts to go direct to /results, they come in a a GET request, so we redirect to /progress so user can choose format.
+        """ If user attempts to go direct to /results, they come in a a GET request, 
+            so we redirect to /progress so user can choose format.
         
-            This may also happen if credentials expire. The redirect_for_auth() method includes the current URL,
-            but the OAuthHandler() can only redirect to a URL (not POST to it, because it no longer has the data).
+            The user may also be redirected here after auth_decorator authenticated a user in the post() method,
+            because the post-authorisation redirection lands on the GET, not the POST
             
-            If we are here due to auth failure, the web page uses JavaScript to action the user's original selection
+            If we are here due to re-authentication, the web page uses JavaScript to action the user's original selection
         """
         fn_name = "ReturnResultsHandler.get(): "
         logging.debug(fn_name + "<Start>")
         logservice.flush()
         
         try:
-            logging.info(fn_name + "Expected POST for " + str(settings.RESULTS_URL) + 
-                            "; May have been re-authentication when user selected an action, so redirecting to " + str(settings.PROGRESS_URL))
+            logging.info(fn_name + "Expected POST for " + 
+                str(settings.RESULTS_URL) + 
+                "; May have been user going direct to URL, or re-authentication when user selected an action, so redirecting to " + 
+                str(settings.PROGRESS_URL))
             logservice.flush()
             # Display the progress page to allow user to choose format for results
             self.redirect(settings.PROGRESS_URL)
@@ -564,7 +779,9 @@ class ReturnResultsHandler(webapp.RequestHandler):
             shared.serve_outer_exception_message(self, e)
             logging.debug(fn_name + "<End> due to exception" )
             logservice.flush()
-        
+    
+    
+    @auth_decorator.oauth_required
     def post(self):
         """ Return results to the user, in format chosen by user """
         fn_name = "ReturnResultsHandler.post(): "
@@ -587,36 +804,44 @@ class ReturnResultsHandler(webapp.RequestHandler):
             
       
         try:
-            ok, user, credentials, fail_msg, fail_reason = shared.get_credentials(self)
-            if not ok:
-                # User not logged in, or no or invalid credentials
-                shared.redirect_for_auth(self, user)
-                return
-            
-            # User authentication is OK, so we are performing the user's action; 
-            # delete the cookie (set negative age)
-            shared.delete_cookie(self.response, 'actionId')
-            
-            client_id, client_secret, user_agent, app_title, product_name, host_msg = shared.get_settings(self.request.host)
+            user = users.get_current_user()
             
             user_email = user.email()
-            is_test_user = shared.isTestUser(user_email)
-            if self.request.host in settings.LIMITED_ACCESS_SERVERS:
+            is_test_user = shared.is_test_user(user_email)
+            
+            
+            display_link_to_production_server = False
+            if not self.request.host in settings.PRODUCTION_SERVERS:
                 # logging.debug(fn_name + "Running on limited-access server")
-                if not is_test_user:
-                    logging.info(fn_name + "Rejecting non-test user on limited access server")
-                    self.response.out.write("<h2>This is a test server. Access is limited to test users.</h2>")
-                    logging.debug(fn_name + "<End> (restricted access)" )
+                if settings.DISPLAY_LINK_TO_PRODUCTION_SERVER:
+                    display_link_to_production_server = True
+                if shared.is_test_user(user_email):
+                    # Allow test user to see normal page
+                    display_link_to_production_server = False
+                else:
+                    logging.info(fn_name + "Rejecting non-test user [" + str(user_email) + "] on limited access server")
+                    logservice.flush()
+                    shared.reject_non_test_user(self)
+                    logging.debug(fn_name + "<End> (Non test user on limited access server)")
                     logservice.flush()
                     return
+            
+            
+            # Performing the user's action, so delete the cookie (set negative age)
+            shared.delete_cookie(self.response, 'actionId')
             
             # Retrieve the DB record for this user
             tasks_backup_job = model.ProcessTasksJob.get_by_key_name(user_email)
                 
             if tasks_backup_job is None:
-                logging.error(fn_name + "No tasks_backup_job record for " + user_email)
+                # If no DB record (e.g., first time user), redirect to /main
+                logging.error(fn_name + "No tasks_backup_job record for " + user_email + 
+                    " so redirecting to " + settings.WELCOME_PAGE_URL)
+                logging.debug(fn_name + "<End> (No DB record)")
                 logservice.flush()
-                job_start_timestamp = None
+                self.redirect(settings.WELCOME_PAGE_URL)
+                return
+                
             else:            
                 include_completed = tasks_backup_job.include_completed
                 include_deleted = tasks_backup_job.include_deleted
@@ -678,13 +903,68 @@ class ReturnResultsHandler(webapp.RequestHandler):
             display_hidden_tasks = (self.request.get('display_hidden_tasks') == 'True')
             display_deleted_tasks = (self.request.get('display_deleted_tasks') == 'True')
             due_selection = self.request.get('due_selection')
-                        
+            
+            export_using_localtime = (self.request.get('export_using_localtime') == 'True')
+            export_offset_hours_str = self.request.get('export_offset_hours')
+            display_using_localtime = (self.request.get('display_using_localtime') == 'True')
+            display_offset_hours_str = self.request.get('display_offset_hours')
+            
             logging.debug(fn_name + "Selected format = " + str(export_format))
+            logservice.flush()
+            
+            if export_format == 'html_raw':
+                # Use the settings in the Display form
+                use_localtime_offset = display_using_localtime
+                offset_hours_str = display_offset_hours_str
+            else:
+                # Use the settings in the Export form
+                use_localtime_offset = export_using_localtime
+                offset_hours_str = export_offset_hours_str
+            
+            logging.debug(fn_name + "DEBUG: Local time adjustment options:" + 
+                "\n    export_using_localtime     = " + str(export_using_localtime) +
+                "\n    export_offset_hours_str    = " + str(export_offset_hours_str) +
+                "\n    display_using_localtime    = " + str(display_using_localtime) +
+                "\n    display_offset_hours_str   = " + str(display_offset_hours_str) +
+                "\n    use_localtime_offset       = " + str(use_localtime_offset))
+            logservice.flush()
+            
+            adjust_timestamps = False
+            offset_hours = 0.0
+            
+            # The user can choose to adjust ther server's UTC time to their local time
+            # Do not adjust times for formats which expect UTC;
+            #   ICS specifically uses Zulu time
+            #   Import/Export CSV and GTBack are designed to be re-imported into Google Tasks, which expects UTC
+            #   The raw formats, by definition, should be raw ????
+            if use_localtime_offset:
+                try:
+                    # The number of (decimal) hours to add to the 'completed' and 'updated' datetime values,
+                    # to convert from server time (UTC) to the user's local time
+                    offset_hours = float(offset_hours_str)
+                    logging.info(fn_name + "User has chosen " + str(offset_hours) + 
+                        " hours offset for localtime")
+                    logservice.flush()
+                    adjust_timestamps = True
+                except Exception, e:
+                    # Should never happen, because the value is set by <option> values on the HTML form 
+                    logging.error(fn_name + "Error converting offset hours form value [" +
+                        str(offset_hours_str) + "] to a float value, so using zero offset: " + shared.get_exception_msg(e))
+                    logservice.flush()
+                    offset_hours = 0.0
+            else:
+                # Return the date/time as set by the Google Tasks server
+                offset_hours = 0.0
+                
+                        
             logging.debug(fn_name + "Display options:" + 
-                "\n    completed = "+ str(display_completed_tasks) +
-                "\n    hidden    = "+ str(display_hidden_tasks) +
-                "\n    deleted   = "+ str(display_deleted_tasks) +
-                "\n    invalid   = "+ str(display_invalid_tasks))
+                "\n    completed               = " + str(display_completed_tasks) +
+                "\n    hidden                  = " + str(display_hidden_tasks) +
+                "\n    deleted                 = " + str(display_deleted_tasks) +
+                "\n    invalid                 = " + str(display_invalid_tasks))
+            logging.debug(fn_name + "Local time adjustment options:" + 
+                "\n    adjust_timestamps       = " + str(adjust_timestamps) +
+                "\n    offset_hours            = " + str(offset_hours))
             logservice.flush()
             
             if due_selection in ['due_now', 'overdue']:
@@ -724,9 +1004,9 @@ class ReturnResultsHandler(webapp.RequestHandler):
             #    Calculate and add 'depth' property (and add/modify elements for html_raw if required)
             # ---------------------------------------------------------------------------------------------
             for tasklist in tasklists:
-                # if shared.isTestUser(user_email) and settings.DUMP_DATA:
+                # if shared.is_test_user(user_email) and settings.DUMP_DATA:
                     # # DEBUG
-                    # logging.debug(fn_name + "DEBUG: tasklist ==>")
+                    # logging.debug(fn_name + "TEST: tasklist ==>")
                     # logging.debug(tasklist)
                     # logservice.flush()
                 
@@ -735,8 +1015,8 @@ class ReturnResultsHandler(webapp.RequestHandler):
                 tasks = tasklist.get(u'tasks')
                 if not tasks:
                     # No tasks in tasklist
-                    if shared.isTestUser(user_email):
-                        logging.debug(fn_name + "Empty tasklist: '" + str(tasklist.get(u'title')) + "'")
+                    if shared.is_test_user(user_email):
+                        logging.debug(fn_name + "TEST: Empty tasklist: '" + str(tasklist.get(u'title')) + "'")
                         logservice.flush()
                     continue
                 
@@ -761,11 +1041,11 @@ class ReturnResultsHandler(webapp.RequestHandler):
                                     logging.exception("idx = " + str(idx) + ", id = " + task[u'id'] + ", parent = " + 
                                         task[u'parent'] + ", [" + task[u'title'] + "]")
                                     logservice.flush()
-                                    # if shared.isTestUser(user_email):
+                                    # if shared.is_test_user(user_email):
                                         # # DEBUG
-                                        # logging.debug(fn_name + "DEBUG: possible_parent_ids ==>")
+                                        # logging.debug(fn_name + "TEST: possible_parent_ids ==>")
                                         # logging(possible_parent_ids)
-                                        # logging.debug(fn_name + "DEBUG: possible_parent_is_active ==>")
+                                        # logging.debug(fn_name + "TEST: possible_parent_is_active ==>")
                                         # logging(possible_parent_is_active)
                                         # logservice.flush()
                                 depth = idx + 1
@@ -801,7 +1081,7 @@ class ReturnResultsHandler(webapp.RequestHandler):
                                     # (2) This can also happen if a completed task has incomplete subtasks (which should not logically happen),
                                     #     and the user choses not to import completed tasks. In that case the incomplete subtask's completed 
                                     #     parent has not been imported, so GTB reports it as an orphaned (invalid) task.
-                                    if display_invalid_tasks or export_format in ['raw', 'raw1', 'py', 'log']:
+                                    if display_invalid_tasks or export_format in ['raw', 'raw1', 'raw2', 'py', 'log']:
                                         depth = -99
                                         total_num_invalid_tasks = total_num_invalid_tasks + 1
                                     else:
@@ -821,9 +1101,47 @@ class ReturnResultsHandler(webapp.RequestHandler):
                             depth = 0
                         
                         task[u'depth'] = depth
+                        
+                        if adjust_timestamps:
+                            # Adjust timestamps to reflect local time instead of server's UTC
+                            # Note that this only adjusts export types that do NOT use UTC
+                            #   e.g. 'outlook' will be adjusted, but 'ics' will not
+                            updated_time = task.get(u'updated')
+                            if updated_time:
+                                task[u'updated'] = updated_time + datetime.timedelta(hours=offset_hours)
+                            completed_time = task.get(u'completed')
+                            if completed_time:
+                                task[u'completed'] = completed_time + datetime.timedelta(hours=offset_hours)
+                        
                         task_idx = task_idx + 1   
                         
-                    
+                        
+                        """
+                        TODO: Ensure that all text is correctly tabbed according to depth
+                        if export_format == 'tabbed_text':
+                            tabs = '\t'*depth
+                            task[u'tabs'] = tabs
+                            if task.has_key(u'notes') and task[u'notes']:
+                                notes_lines = task[u'notes'].split('\n')
+                                notes = ''
+                                line_end = ''
+                                for note_line in notes_lines:
+                                    notes += line_end + tabs + note_line
+                                    line_end = '\n'
+                                
+                                
+                                
+                                
+                                
+                                
+                                notes_lines = notes.split()
+                                notes = ''
+                                for note_line in notes_lines:
+                                    notes += tabs + note_line + '\n'
+                                task[u'notes'] = notes
+                        """
+                        
+                        
 
                     # Add extra properties for HTML view;
                     #    Add 'indent' property for HTML pages so that tasks can be correctly indented
@@ -939,18 +1257,35 @@ class ReturnResultsHandler(webapp.RequestHandler):
                             tasklist[u'tasklist_has_tasks_to_display'] = True
             
             logservice.flush()
-            logging.debug(fn_name + "total_num_orphaned_hidden_or_deleted_tasks = " + str(total_num_orphaned_hidden_or_deleted_tasks))
-            logging.debug(fn_name + "total_num_invalid_tasks = " + str(total_num_invalid_tasks))
-            logging.debug(fn_name + "num_not_displayed = " + str(num_not_displayed))
+            logging.debug(fn_name + "Number of tasks = " + str(total_progress))
+            logging.debug(fn_name + "    total_num_orphaned_hidden_or_deleted_tasks = " + 
+                str(total_num_orphaned_hidden_or_deleted_tasks))
+            logging.debug(fn_name + "    total_num_invalid_tasks = " + str(total_num_invalid_tasks))
+            logging.debug(fn_name + "    num_not_displayed = " + str(num_not_displayed))
             logservice.flush()
-                
-            template_values = {'app_title' : app_title,
-                               'host_msg' : host_msg,
-                               'product_name' : product_name,
+            
+            # If user hasn't chosen to use a localtime offset, the datetime prefix will be 'UTC '
+            # Otherwise the prefix an empty string
+            if adjust_timestamps:
+                # Don't include the UTC prefix if the user has chosen a different offset
+                utc_prefix_str = ""
+                utc_suffix_str = ""
+            else:
+                #Default prefix, used to indicate that we are exporting/displaying server time, which is UTC
+                utc_prefix_str = "UTC "
+                utc_suffix_str = " UTC"
+            
+            template_values = {'app_title' : host_settings.APP_TITLE,
+                               'display_link_to_production_server' : display_link_to_production_server,
+                               'production_server' : settings.PRODUCTION_SERVERS[0],
+                               'host_msg' : host_settings.HOST_MSG,
+                               'product_name' : host_settings.PRODUCT_NAME,
                                'tasklists': tasklists,
                                'include_completed' : include_completed, # Chosen at start of backup
                                'include_deleted' : include_deleted, # Chosen at start of backup
                                'include_hidden' : include_hidden, # Chosen at start of backup
+                               'utc_prefix_str' : utc_prefix_str,
+                               'utc_suffix_str' : utc_suffix_str,
                                'total_progress' : total_progress,
                                'num_display_tasks' : num_display_tasks,
                                'num_completed_tasks' : num_completed_tasks,
@@ -989,7 +1324,7 @@ class ReturnResultsHandler(webapp.RequestHandler):
             #     and EXT = the file type extension (e.g., 'csv')
             if export_format == 'ics':
                 self._write_ics_using_template(template_values, export_format, output_filename_base)
-            elif export_format in ['outlook', 'raw', 'raw1', 'log', 'import_export']:
+            elif export_format in ['outlook', 'raw', 'raw1', 'raw2', 'log', 'import_export']:
                 self._write_csv_using_template(template_values, export_format, output_filename_base)
             elif export_format == 'html_raw':
                 self._write_html_raw(template_values)
@@ -997,6 +1332,8 @@ class ReturnResultsHandler(webapp.RequestHandler):
                 self._send_email_using_template(template_values, export_format, user_email, output_filename_base)
             elif export_format == 'py':
                 self._write_text_using_template(template_values, export_format, output_filename_base, 'py')
+            elif export_format in ['tabbed_text', 'spaced_text']:
+                self._write_text_using_template(template_values, export_format, output_filename_base, 'txt')
             elif export_format == 'gtb':
                 self._write_gtbak_format(tasklists, export_format, output_filename_base)
             else:
@@ -1038,60 +1375,99 @@ class ReturnResultsHandler(webapp.RequestHandler):
         logging.debug(fn_name + "<Start>")
         logservice.flush()
         
-        # if shared.isTestUser(user_email):
-          # logging.debug(fn_name + "Creating email body using template")
+        # if shared.is_test_user(user_email):
+          # logging.debug(fn_name + "TEST: Creating email body using template")
         # Use a template to convert all the tasks to the desired format 
         template_filename = "tasks_template_%s.txt" % export_format
         
         path = os.path.join(os.path.dirname(__file__), constants.PATH_TO_TEMPLATES, template_filename)
         email_body = template.render(path, template_values)
+        
+        sender=user_email
 
-        # if shared.isTestUser(user_email):
-          # logging.debug(fn_name + "Sending email")
+        # sender = "zzzz@logic-a-to-b.com"
+        # logging.debug(fn_name + "DEBUG: Sending using invalid email address " + sender)
+        # logservice.flush()
+
+        # if shared.is_test_user(user_email):
+          # logging.debug(fn_name + "TEST: Sending email")
         # TODO: Catch exception sending & display to user ??
         # According to "C:\Program Files\Google\google_appengine\google\appengine\api\mail.py", 
         #   end_mail() doesn't return any value, but can throw InvalidEmailError when invalid email address provided
-        try:
-            mail.send_mail(sender=user_email,
-                           to=user_email,
-                           subject=output_filename_base,
-                           body=email_body)
-        except apiproxy_errors.OverQuotaError:
-            # Refer to https://developers.google.com/appengine/docs/quotas#When_a_Resource_is_Depleted
-            logging.exception(fn_name + "Unable to send email")
-            self.response.out.write("""Sorry, unable to send email due to quota limitations of my Appspot account.
-                                       <br />
-                                       It may be that your email is too large, or that too many emails have been sent by others in the past 24 hours.
-                                       </br>
-                                       Use your browser back button to return to the previous page.
-                                    """)
-            logging.debug(fn_name + "<End> (due to OverQuotaError)")
-            logservice.flush()
-            return
-        except Exception, e:
-            logging.exception(fn_name + "Unable to send email")
-            self.response.out.write("""Unable to send email. 
-                Please report the following error to <a href="http://%s">%s</a>
-                <br />
-                %s
-                """ % (settings.url_issues_page, settings.url_issues_page, str(e)))
-            logging.debug(fn_name + "<End> (due to exception)")
-            logservice.flush()
-            return
+        send_try_count = 0
+        MAX_SEND_TRY_COUNT = 2
+        while send_try_count < MAX_SEND_TRY_COUNT:
+            msg1 = None
+            msg2 = None
+            msg3 = None
+            send_try_count += 1
             
+            try:
+                mail.send_mail(sender=sender,
+                               to=user_email,
+                               subject=output_filename_base,
+                               body=email_body)
+                               
+                if shared.is_test_user(user_email):
+                  logging.debug(fn_name + "TEST: Email sent to %s" % user_email)
+                else:
+                  logging.debug(fn_name + "Email sent")
+                  
+                shared.serve_message_page(self, "Email sent to " + str(user_email), 
+                    show_back_button=True, back_button_text="Continue", show_heading_messages=False)
+                
+                break
+                               
+            except apiproxy_errors.OverQuotaError:
+                # Refer to https://developers.google.com/appengine/docs/quotas#When_a_Resource_is_Depleted
+                logging.exception(fn_name + "Unable to send email")
+                msg1 = "Sorry, unable to send email due to quota limitations"
+                msg2 = "It may be that your email is too large, or that too many emails have been sent by others in the past 24 hours."
+                shared.serve_message_page(self, msg1, msg2,
+                    show_custom_button=True, 
+                    custom_button_text='Return to menu', 
+                    custom_button_url = settings.RESULTS_URL,
+                    show_heading_messages=True,
+                    template_file="message.html")    
+                logging.debug(fn_name + "<End> (due to OverQuotaError)")
+                logservice.flush()
+                return
+                
+            except mail_errors.InvalidSenderError, e:
+                if send_try_count < MAX_SEND_TRY_COUNT:
+                    logging.warning(fn_name + "Unable to send email from " + unicode(sender))
+                    sender = host_settings.APP_TITLE + "@" + get_application_id() + ".appspotmail.com"
+                    logging.debug(fn_name + "Will retry sending from " + unicode(sender))
+                    logservice.flush()
+                else:
+                    logging.exception(fn_name + "Unable to send email")
+                    logservice.flush()
+                    msg1 = "Sorry, unable to send email"
+                    msg2 = shared.get_exception_msg(e)
             
-        if shared.isTestUser(user_email):
-          logging.debug(fn_name + "Email sent to %s" % user_email)
-        else:
-          logging.debug(fn_name + "Email sent")
-          
-        # self.response.out.write("Email sent to %s </br>Use your browser back button to return to the previous page" % user_email)
-        shared.serve_message_page(self, "Email sent to " + str(user_email), 
-            show_back_button=True, back_button_text="Continue", show_heading_messages=False)
-        
-        #self.redirect("/completed")
-        # logging.debug(fn_name + "Calling garbage collection")
-        # gc.collect()
+            except Exception, e:
+                if send_try_count < MAX_SEND_TRY_COUNT:
+                    logging.warning(fn_name + "Unable to send email from " + unicode(sender) +
+                        " Will try again ... [" + shared.get_exception_msg(e) + "]")
+                    logservice.flush()
+                else:
+                    logging.exception(fn_name + "Unable to send email")
+                    logservice.flush()
+                    msg1 = "Sorry, unable to send email"
+                    msg2 = shared.get_exception_msg(e)
+                
+            if send_try_count >= MAX_SEND_TRY_COUNT:
+                shared.serve_message_page(self, msg1, msg2,
+                    show_custom_button=True, 
+                    custom_button_text='Return to menu', 
+                    custom_button_url = settings.RESULTS_URL,
+                    show_heading_messages=True,
+                    template_file="message.html")    
+                logging.debug(fn_name + "<End> (due to exception)")
+                logservice.flush()
+                return
+                
+                
         logging.debug(fn_name + "<End>")
         logservice.flush()
 
@@ -1106,26 +1482,24 @@ class ReturnResultsHandler(webapp.RequestHandler):
         logservice.flush()
         
         template_filename = "tasks_template_%s.ics" % export_format
-        output_filename = output_filename_base + ".ics"
+        output_filename = shared.convert_unicode_to_str(output_filename_base + ".ics")
         self.response.headers["Content-Type"] = "text/calendar"
         self.response.headers.add_header(
             "Content-Disposition", "attachment; filename=%s" % output_filename)
 
         path = os.path.join(os.path.dirname(__file__), constants.PATH_TO_TEMPLATES, template_filename)
-        if shared.isTestUser(template_values['user_email']):
-          logging.debug(fn_name + "Writing %s format to %s" % (export_format, output_filename))
+        if shared.is_test_user(template_values['user_email']):
+          logging.debug(fn_name + "TEST: Writing %s format to %s" % (export_format, output_filename))
         else:
           logging.debug(fn_name + "Writing %s format" % export_format)
         self.response.out.write(template.render(path, template_values))
-        # logging.debug(fn_name + "Calling garbage collection")
-        # gc.collect()
         logging.debug(fn_name + "<End>")
         logservice.flush()
         
 
     def _write_csv_using_template(self, template_values, export_format, output_filename_base):
         """ Write a CSV file according to the specified .csv template file
-            Currently supports export_format = 'outlook', 'raw', 'raw1' and 'import_export'
+            Currently supports export_format = 'outlook', 'raw', 'raw1', 'raw2' and 'import_export'
         """
         fn_name = "_write_csv_using_template(): "
 
@@ -1133,27 +1507,26 @@ class ReturnResultsHandler(webapp.RequestHandler):
         logservice.flush()
         
         template_filename = "tasks_template_%s.csv" % export_format
-        output_filename = output_filename_base + ".csv"
+        
+        output_filename = shared.convert_unicode_to_str(output_filename_base + ".csv")
         self.response.headers["Content-Type"] = "text/csv"
         self.response.headers.add_header(
             "Content-Disposition", "attachment; filename=%s" % output_filename)
 
         
         path = os.path.join(os.path.dirname(__file__), constants.PATH_TO_TEMPLATES, template_filename)
-        if shared.isTestUser(template_values['user_email']):
-          logging.debug(fn_name + "Writing %s format to %s" % (export_format, output_filename))
+        if shared.is_test_user(template_values['user_email']):
+          logging.debug(fn_name + "TEST: Writing %s format to %s" % (export_format, output_filename))
         else:
           logging.debug(fn_name + "Writing %s format" % export_format)
         self.response.out.write(template.render(path, template_values))
-        # logging.debug(fn_name + "Calling garbage collection")
-        # gc.collect()
         logging.debug(fn_name + "<End>")
         logservice.flush()
 
 
     def _write_text_using_template(self, template_values, export_format, output_filename_base, file_extension):
         """ Write a TXT file according to the specified .txt template file
-            Currently supports export_format = 'py' 
+            Currently supports export_format = 'py', 'tabbed_text', 'spaced_text' 
         """
         fn_name = "_write_text_using_template(): "
 
@@ -1161,32 +1534,32 @@ class ReturnResultsHandler(webapp.RequestHandler):
         logservice.flush()
         
         template_filename = "tasks_template_%s.%s" % (export_format, file_extension)
-        output_filename = output_filename_base + "." + file_extension
+        output_filename = shared.convert_unicode_to_str(output_filename_base + "." + file_extension)
         self.response.headers["Content-Type"] = "text/plain"
         self.response.headers.add_header(
             "Content-Disposition", "attachment;filename=%s" % output_filename)
 
         
         path = os.path.join(os.path.dirname(__file__), constants.PATH_TO_TEMPLATES, template_filename)
-        if shared.isTestUser(template_values['user_email']):
-          logging.debug(fn_name + "Writing %s format to %s" % (export_format, output_filename))
+        if shared.is_test_user(template_values['user_email']):
+          logging.debug(fn_name + "TEST: Writing %s format to %s" % (export_format, output_filename))
         else:
           logging.debug(fn_name + "Writing %s format" % export_format)
         # TODO: Output in a manner suitable for downloading from an Android phone
         #       Currently sends source of HTML page as output_filename
         #       Perhaps try Content-Type = "application/octet-stream" ???
         self.response.out.write(template.render(path, template_values))
-        # logging.debug(fn_name + "Calling garbage collection")
-        # gc.collect()
         logging.debug(fn_name + "<End>")
         logservice.flush()
 
         
     def _write_gtbak_format(self, tasklists, export_format, output_filename_base):
-        fn_name = "_write_raw_file(): "
+        fn_name = "_write_gtbak_format(): "
 
         logging.debug(fn_name + "<Start>")
         logservice.flush()
+        
+        logging.debug(fn_name + "Building GTBak structure")
         
         gtback_list = []
         for tasklist in tasklists:
@@ -1217,12 +1590,25 @@ class ReturnResultsHandler(webapp.RequestHandler):
                 notes = task.get(u'notes')
                 if notes:
                     gtb_task[u'notes'] = notes
-                date_due = task.get(u'due')
-                if date_due:
-                    gtb_task[u'due'] = date_due.strftime("UTC %Y-%m-%d") # import-tasks requires a string
-                completed = task.get(u'completed')
-                if completed:
-                    gtb_task[u'completed'] = completed.strftime("UTC %Y-%m-%d %H:%M:%S") # import-tasks requires a string
+                                       
+                if u'due' in task:
+                    # If it exists, the 'due' element is a date object 
+                    #    (if original 'due' element was >= '0001-01-01'),
+                    # or None 
+                    #    (if original 'due' element was '0000-01-01')
+                    # import-tasks requires a string, so use format_datetime_as_str() to convert object to string
+                    gtb_task[u'due'] = shared.format_datetime_as_str(task[u'due'], 
+                        "%Y-%m-%d", prefix="UTC ", date_only=True)
+                
+                if u'completed' in task:
+                    # If it exists, the 'completed' element is a datetime object 
+                    #    (if original 'completed' element was >= '0001-01-01 00:00:00'),
+                    # or None 
+                    #    (if original 'completed' element was '0000-01-01 00:00:00')
+                    # import-tasks requires a string, so use format_datetime_as_str() to convert object to string
+                    gtb_task[u'completed'] = shared.format_datetime_as_str(task[u'completed'],
+                        "%Y-%m-%d %H:%M:%S", prefix="UTC ")
+                    
                 deleted = task.get(u'deleted')
                 if deleted:
                     gtb_task[u'deleted'] = 'True' # import-tasks requires a string
@@ -1257,7 +1643,7 @@ class ReturnResultsHandler(webapp.RequestHandler):
         logging.debug(fn_name + "<Start>")
         logservice.flush()
         
-        output_filename = output_filename_base + "." + file_extension
+        output_filename = shared.convert_unicode_to_str(output_filename_base + "." + file_extension)
         self.response.headers["Content-Type"] = content_type
         self.response.headers.add_header(
             "Content-Disposition", "attachment;filename=%s" % output_filename)
@@ -1300,6 +1686,11 @@ class ReturnResultsHandler(webapp.RequestHandler):
         include_completed = template_values.get('include_completed')
         include_hidden = template_values.get('include_hidden')
         include_deleted = template_values.get('include_deleted')
+        
+        # The utc_suffix_str is only set when the retrieved time is UTC. If the user selects a
+        # non-zero offset, utc_suffix_str is empty.
+        # Here, we use the UTC prefix (used in CSV file) as a suffix for 'updated' and 'completed'
+        utc_suffix_str = template_values.get('utc_suffix_str') 
         
         # Values chosen by user at progress page, before displaying this page
         due_selection = template_values.get('due_selection')
@@ -1352,7 +1743,7 @@ class ReturnResultsHandler(webapp.RequestHandler):
         # Put subsequent TOP anchors above the BOTTOM anchor of the previous tasklist, so that
         # the "To top ..." link is visible when a user is traversing from bottom to top
         self.response.out.write("""<a name="tl1_top"> </a>""")
-        self.response.out.write("""<div class="usertitle">Authorised user: """)
+        self.response.out.write("""<div class="no-print usertitle">Authorised user: """)
     
         self.response.out.write(user_email)
         self.response.out.write(' <span class="logout-link">[ <a href="')
@@ -1364,7 +1755,7 @@ class ReturnResultsHandler(webapp.RequestHandler):
         
         # Need to provide the specific URL of the progress page. We can't use history.back() because the user may have used 
         # the next/previous tasklist links one or more times.
-        self.response.out.write("""<div class="no-print" style="float: left;"><button onclick="window.location.href = '%s'" class="back-button"  value="Back">Back</button></div>""" % settings.RESULTS_URL)
+        self.response.out.write("""<div class="no-print" style="float: left;"><button onclick="window.location.href = '%s'" class="back-button"  value="Back">Back</button></div>""" % settings.PROGRESS_URL)
         self.response.out.write("""<div class="no-print" style="float: right;"><button onclick="window.print()" class="back-button"  value="Print page">Print page</button></div>""")
         self.response.out.write("""<div style="clear: both;"></div>""")
         self.response.out.write("""</div>""") # Closing div to contain Back and Print buttons on same row
@@ -1460,27 +1851,33 @@ class ReturnResultsHandler(webapp.RequestHandler):
                         
                         
                         if u'due' in task:
-                            task_due = task[u'due'].strftime('%a, %d %b %Y') + " UTC"
+                            task_due = shared.format_datetime_as_str(task[u'due'], '%a, %d %b %Y')
                         else:
                             task_due = None
                             
                         if u'updated' in task:
-                            task_updated = task[u'updated'].strftime('%H:%M:%S %a, %d %b %Y') + " UTC"
+                            task_updated = shared.format_datetime_as_str(task[u'updated'], 
+                                '%H:%M:%S %a, %d %b %Y') + utc_suffix_str
                         else:
                             task_updated = None
                         
                         if task.get(u'status') == 'completed':
                             task_completed = True
-                        else:
-                            task_completed = False
-                            
-                        if u'completed' in task:
-                            # We assume that this is only set when the task is completed
-                            task_completed_date = task[u'completed'].strftime('%H:%M %a, %d %b %Y') + " UTC"
                             task_status_str = "&#x2713;"
                         else:
-                            task_completed_date = ''
+                            task_completed = False
                             task_status_str = "[ &nbsp;]"
+                            
+                        if u'completed' in task:
+                            # There is a 'completed' element in the Task dictionary object.
+                            # Note that sometimes the original 'completed' RFC 3339 datetime string
+                            # returned from the server is '0000-01-01T00:00:00.000Z', which is
+                            # converted by the worker to '1900-01-01 00:00:00'
+                            task_completed_date = shared.format_datetime_as_str(task[u'completed'], 
+                                '%H:%M %a, %d %b %Y') + utc_suffix_str
+                        else:
+                            # There is no 'completed' element, so display an empty string
+                            task_completed_date = ''
                         
                         dim_class = ""
                         if task_completed and dim_completed_tasks:
@@ -1585,7 +1982,7 @@ class ReturnResultsHandler(webapp.RequestHandler):
                   'email_discussion_group' : email_discussion_group,
                   'url_issues_page' : url_issues_page,
                   'url_source_code' : url_source_code,
-                  'app_title' : app_title,
+                  'app_title' : host_settings.APP_TITLE,
                   'app_version' : app_version }
             )
 
@@ -1595,219 +1992,43 @@ class ReturnResultsHandler(webapp.RequestHandler):
         logging.debug(fn_name + "<End>")
         logservice.flush()
                
-        
     
-class InvalidCredentialsHandler(webapp.RequestHandler):
-    """Handler for /invalidcredentials"""
+
+class RobotsHandler(webapp2.RequestHandler):
 
     def get(self):
-        """Handles GET requests for /invalidcredentials"""
-
-        fn_name = "InvalidCredentialsHandler.get(): "
-
-        logging.debug(fn_name + "<Start>")
-        logservice.flush()
-        
-        try:
-            # DEBUG
-            # if self.request.cookies.has_key('auth_count'):
-                # logging.debug(fn_name + "Cookie: auth_count = " + str(self.request.cookies['auth_count']))
-            # else:
-                # logging.debug(fn_name + "No auth_count cookie found")
-            # logservice.flush()            
-                
-            client_id, client_secret, user_agent, app_title, product_name, host_msg = shared.get_settings(self.request.host)
-            
-            path = os.path.join(os.path.dirname(__file__), constants.PATH_TO_TEMPLATES, "invalid_credentials.html")
-
-            template_values = {  'app_title' : app_title,
-                                 'app_version' : appversion.version,
-                                 'upload_timestamp' : appversion.upload_timestamp,
-                                 'rc' : self.request.get('rc'),
-                                 'nr' : self.request.get('nr'),
-                                 'err' : self.request.get('err'),
-                                 'AUTH_RETRY_COUNT_COOKIE_EXPIRATION_TIME' : settings.AUTH_RETRY_COUNT_COOKIE_EXPIRATION_TIME,
-                                 'host_msg' : host_msg,
-                                 'url_main_page' : settings.MAIN_PAGE_URL,
-                                 'url_home_page' : settings.MAIN_PAGE_URL,
-                                 'product_name' : product_name,
-                                 'url_discussion_group' : settings.url_discussion_group,
-                                 'email_discussion_group' : settings.email_discussion_group,
-                                 'url_issues_page' : settings.url_issues_page,
-                                 'url_source_code' : settings.url_source_code,
-                                 'logout_url': users.create_logout_url(settings.WELCOME_PAGE_URL)}
-                         
-            self.response.out.write(template.render(path, template_values))
-            # logging.debug(fn_name + "Writing cookie: Resetting auth_count cookie to zero")
-            # logservice.flush()
-            
-            logging.debug(fn_name + "<End>")
-            logservice.flush()
-        except Exception, e:
-            logging.exception(fn_name + "Caught top-level exception")
-            shared.serve_outer_exception_message(self, e)
-            logging.debug(fn_name + "<End> due to exception" )
-            logservice.flush()
+        """If not running on production server, return robots.txt with disallow all
+           to prevent search engines indexing test servers.
+        """
+        # Return contents of robots.txt
+        self.response.headers['Content-Type'] = "text/plain"
+        self.response.out.write("User-agent: *\n")
+        if self.request.host == settings.PRODUCTION_SERVERS[0]:
+            # Only allow first (primary) server to be indexed
+            logging.debug("Returning robots.txt with allow all")
+            self.response.out.write("Disallow:\n")
+        else:
+            logging.debug("Returning robots.txt with disallow all")
+            self.response.out.write("Disallow: /\n")
        
-       
+
+def urlfetch_timeout_hook(service, call, request, response):
+    if call != 'Fetch':
+        return
+
+    # Make the default deadline 30 seconds instead of 5.
+    if not request.has_deadline():
+        request.set_deadline(30.0)
         
-class CompletedHandler(webapp.RequestHandler):
-    """Handler for /completed."""
-
-    def get(self):
-        """Handles GET requests for /completed"""
-        fn_name = "CompletedHandler.get(): "
-
-        logging.debug(fn_name + "<Start>" )
-        logservice.flush()
-                
-        try:
-            # DEBUG
-            # if self.request.cookies.has_key('auth_count'):
-                # logging.debug(fn_name + "Cookie: auth_count = " + str(self.request.cookies['auth_count']))
-            # else:
-                # logging.debug(fn_name + "No auth_count cookie found")
-            # logservice.flush()            
-                
-            ok, user, credentials, fail_msg, fail_reason = shared.get_credentials(self)
-            if not ok:
-                # User not logged in, or no or invalid credentials
-                shared.redirect_for_auth(self, user)
-                return
-                
-                
-            user_email = user.email()
-
-            client_id, client_secret, user_agent, app_title, product_name, host_msg = shared.get_settings(self.request.host)
-
-            path = os.path.join(os.path.dirname(__file__), constants.PATH_TO_TEMPLATES, "completed.html")
-            if not credentials or credentials.invalid:
-                is_authorized = False
-            else:
-                is_authorized = True
-                # logging.debug(fn_name + "Resetting auth_count cookie to zero")
-                # logservice.flush()
-                
-                
-            template_values = {'app_title' : app_title,
-                                 'host_msg' : host_msg,
-                                 'url_main_page' : settings.MAIN_PAGE_URL,
-                                 'url_home_page' : settings.MAIN_PAGE_URL,
-                                 'product_name' : product_name,
-                                 'is_authorized': is_authorized,
-                                 'user_email' : user_email,
-                                 'logout_url': users.create_logout_url(settings.WELCOME_PAGE_URL),
-                                 'msg': self.request.get('msg'),
-                                 'url_discussion_group' : settings.url_discussion_group,
-                                 'email_discussion_group' : settings.email_discussion_group,
-                                 'url_issues_page' : settings.url_issues_page,
-                                 'url_source_code' : settings.url_source_code,
-                                 'logout_url': users.create_logout_url(settings.WELCOME_PAGE_URL)}
-            self.response.out.write(template.render(path, template_values))
-        except Exception, e:
-            logging.exception(fn_name + "Caught top-level exception")
-            shared.serve_outer_exception_message(self, e)
-            logging.debug(fn_name + "<End> due to exception" )
-            logservice.flush()
-
-      
-      
-class AuthHandler(webapp.RequestHandler):
-    """Handler for /auth."""
-
-    def get(self):
-        """Handles GET requests for /auth."""
-        fn_name = "AuthHandler.get() "
         
-        logging.debug(fn_name + "<Start>" )
-        logservice.flush()
-        
-        try:
-                
-            ok, user, credentials, fail_msg, fail_reason = shared.get_credentials(self)
-            if ok:
-                if shared.isTestUser(user.email()):
-                    logging.debug(fn_name + "Existing credentials for " + str(user.email()) + ", expires " + 
-                        str(credentials.token_expiry) + " UTC")
-                else:
-                    logging.debug(fn_name + "Existing credentials expire " + str(credentials.token_expiry) + " UTC")
-                logging.debug(fn_name + "User is authorised. Redirecting to " + settings.MAIN_PAGE_URL)
-                self.redirect(settings.MAIN_PAGE_URL)
-            else:
-                shared.redirect_for_auth(self, user)
-            
-            logging.debug(fn_name + "<End>" )
-            logservice.flush()
-            
-        except shared.DailyLimitExceededError, e:
-            logging.warning(fn_name + e.msg)
-            self.response.out.write(e.msg)
-            logging.debug(fn_name + "<End> (Daily Limit Exceeded)")
-            logservice.flush()
-            
-        except Exception, e:
-            logging.exception(fn_name + "Caught top-level exception")
-            shared.serve_outer_exception_message(self, e)
-            logging.debug(fn_name + "<End> due to exception" )
-            logservice.flush()
+app = webapp2.WSGIApplication(        
+    [
+        ("/robots.txt",                             RobotsHandler),
+        (settings.MAIN_PAGE_URL,                    MainHandler),
+        (settings.WELCOME_PAGE_URL,                 WelcomeHandler),
+        (settings.RESULTS_URL,                      ReturnResultsHandler),
+        (settings.START_BACKUP_URL,                 StartBackupHandler),
+        (settings.PROGRESS_URL,                     ShowProgressHandler),
+        (auth_decorator.callback_path,              auth_decorator.callback_handler()),
+    ], debug=False)
 
-            
-    
-class OAuthCallbackHandler(webapp.RequestHandler):
-    """Handler for /oauth2callback."""
-
-    def get(self):
-        """Handles GET requests for /oauth2callback."""
-        
-        fn_name = "OAuthCallbackHandler.get() "
-        
-        logging.debug(fn_name + "<Start>")
-        logservice.flush()
-        
-        shared.handle_auth_callback(self)
-        
-        logging.debug(fn_name + "<End>")
-        logservice.flush()
-        
-
-def real_main():
-    logging.debug("main(): Starting tasks-backup (app version %s)" %appversion.version)
-    template.register_template_library("common.customdjango")
-
-    application = webapp.WSGIApplication(
-        [
-            (settings.MAIN_PAGE_URL,                    MainHandler),
-            (settings.WELCOME_PAGE_URL,                 WelcomeHandler),
-            (settings.RESULTS_URL,                      ReturnResultsHandler),
-            (settings.START_BACKUP_URL,                 StartBackupHandler),
-            (settings.PROGRESS_URL,                     ShowProgressHandler),
-            (settings.INVALID_CREDENTIALS_URL,          InvalidCredentialsHandler),
-            ("/completed",                              CompletedHandler),
-            ("/auth",                                   AuthHandler),
-            ("/oauth2callback",                         OAuthCallbackHandler),
-        ], debug=False)
-    util.run_wsgi_app(application)
-    logging.debug("main(): <End>")
-    logservice.flush()
-
-def profile_main():
-    # From https://developers.google.com/appengine/kb/commontasks#profiling
-    # This is the main function for profiling
-    # We've renamed our original main() above to real_main()
-    import cProfile, pstats, StringIO
-    prof = cProfile.Profile()
-    prof = prof.runctx("real_main()", globals(), locals())
-    stream = StringIO.StringIO()
-    stats = pstats.Stats(prof, stream=stream)
-    stats.sort_stats("time")  # Or cumulative
-    stats.print_stats(80)  # 80 = how many to print
-    # The rest is optional.
-    stats.print_callees()
-    stats.print_callers()
-    logging.info("Profile data:\n%s", stream.getvalue())
-    logservice.flush()
-    
-main = real_main
-
-if __name__ == "__main__":
-    main()

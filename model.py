@@ -18,7 +18,7 @@
 
 """Classes to represent Tasks data"""
 
-from apiclient.oauth2client import appengine
+from oauth2client import appengine
 
 from google.appengine.ext import db
 import datetime
@@ -40,20 +40,24 @@ class ProcessTasksJob(db.Model):
         
     """
     user = db.UserProperty(indexed=False)
-    credentials = appengine.CredentialsProperty(indexed=False)
     
     # Used to include/exclude retrieved tasks which are completed and/or deleted and/or hidden
     include_completed = db.BooleanProperty(indexed=False, default=False)
     include_deleted = db.BooleanProperty(indexed=False, default=False)
     include_hidden = db.BooleanProperty(indexed=False, default=False)
     
-    # Set automatically when entity is created. Indicates when job was started (i.e., snapshot time)
-    # Also used to track if task exceeds maximum allowed, so we can display message to user
-    job_start_timestamp = db.DateTimeProperty(auto_now_add=True, indexed=False)
+    # Indicates when job was created (i.e., when /startbackup is called)
+    job_created_timestamp = db.DateTimeProperty(auto_now_add=True, indexed=False)
     
-    # Job status, to display to user and control web page and foreground app behaviour
-    # status = db.StringProperty(indexed=False, choices=('starting', 'initialising', 'building', 'completed', 'importing', 'import_completed', 'error'), default='starting')
-    status = db.StringProperty(indexed=False, choices=(constants.ExportJobStatus.ALL_VALUES), default=constants.ExportJobStatus.STARTING)
+    # Indicates when job was started by worker (i.e., snapshot time)
+    # Also used to track if task exceeds maximum allowed, so we can display message to user
+    job_start_timestamp = db.DateTimeProperty(indexed=False)
+    
+    # When job progress was last updated. Used to ensure that backup job hasn't stalled
+    job_progress_timestamp = db.DateTimeProperty(auto_now_add=True, indexed=False) 
+    
+    # Job status, controls web page, worker and foreground app behaviour
+    status = db.StringProperty(indexed=False, choices=(constants.ExportJobStatus.ALL_VALUES), default=constants.ExportJobStatus.TO_BE_STARTED)
     
     # Total number of tasks backed up. Used to display progress to user. Updated when an entire tasklist has been backed up
     total_progress = db.IntegerProperty(indexed=False, default=0) 
@@ -61,12 +65,15 @@ class ProcessTasksJob(db.Model):
     # Number of tasks in current tasklist. Used to display progress to user. Updated every 'n' seconds
     tasklist_progress = db.IntegerProperty(indexed=False, default=0) 
     
-    # When job progress was last updated. Used to ensure that backup job hasn't stalled
-    job_progress_timestamp = db.DateTimeProperty(auto_now_add=True, indexed=False) 
-    
+    # Error message from worker to user
     error_message = db.StringProperty(indexed=False, default='')
 
+    # Message from worker to user, indicating what worker is doing
     message = db.StringProperty(indexed=False, default='')
+    
+    # Count of number of time this job has been started
+    # This is used to prevent infinite loops of a job keeps dying
+    number_of_job_starts = db.IntegerProperty(indexed=False, default=0) 
 
     
 

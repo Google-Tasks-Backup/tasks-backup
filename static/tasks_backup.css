@@ -212,6 +212,10 @@ legend
   margin-bottom: 6px !important;
 }
 
+.small-break-top{
+  margin-top: 6px !important;
+}
+
 .medium-break {
   margin-top: 10px !important;
   margin-bottom: 5px !important;
@@ -236,7 +240,7 @@ legend
 }
 
 .logout-link {
-  margin-left: 20px;
+  margin-left: 10px;
   font-size: smaller;
 }
 
@@ -250,6 +254,7 @@ legend
   font-size: 12pt;
   font-weight: bold;
   padding-right: 10px;
+  margin-top: 8px;
   margin-bottom: 20px;
 }
 

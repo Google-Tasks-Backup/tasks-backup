@@ -28,8 +28,8 @@ import gflags
 import logging
 import urllib
 
-from anyjson import simplejson
 from errors import HttpError
+from oauth2client.anyjson import simplejson
 
 FLAGS = gflags.FLAGS
 
@@ -161,7 +161,8 @@ class BaseModel(Model):
     Returns:
       The query parameters properly encoded into an HTTP URI query string.
     """
-    params.update({'alt': self.alt_param})
+    if self.alt_param is not None:
+      params.update({'alt': self.alt_param})
     astuples = []
     for key, value in params.iteritems():
       if type(value) == type([]):
@@ -207,7 +208,7 @@ class BaseModel(Model):
         return self.no_content_response
       return self.deserialize(content)
     else:
-      logging.debug('apiclient/BaseModel.response: Content from bad request was: %s' % content)
+      logging.debug('Content from bad request was: %s' % content)
       raise HttpError(resp, content)
 
   def serialize(self, body_value):
@@ -222,7 +223,8 @@ class BaseModel(Model):
     _abstract()
 
   def deserialize(self, content):
-    """Perform the actual deserialization from response string to Python object.
+    """Perform the actual deserialization from response string to Python
+    object.
 
     Args:
       content: string, the body of the HTTP response
@@ -268,6 +270,44 @@ class JsonModel(BaseModel):
     return {}
 
 
+class RawModel(JsonModel):
+  """Model class for requests that don't return JSON.
+
+  Serializes and de-serializes between JSON and the Python
+  object representation of HTTP request, and returns the raw bytes
+  of the response body.
+  """
+  accept = '*/*'
+  content_type = 'application/json'
+  alt_param = None
+
+  def deserialize(self, content):
+    return content
+
+  @property
+  def no_content_response(self):
+    return ''
+
+
+class MediaModel(JsonModel):
+  """Model class for requests that return Media.
+
+  Serializes and de-serializes between JSON and the Python
+  object representation of HTTP request, and returns the raw bytes
+  of the response body.
+  """
+  accept = '*/*'
+  content_type = 'application/json'
+  alt_param = 'media'
+
+  def deserialize(self, content):
+    return content
+
+  @property
+  def no_content_response(self):
+    return ''
+
+
 class ProtocolBufferModel(BaseModel):
   """Model class for protocol buffers.
 
@@ -285,8 +325,8 @@ class ProtocolBufferModel(BaseModel):
     de-serialized using the given protocol buffer class.
 
     Args:
-      protocol_buffer: The protocol buffer class used to de-serialize a response
-          from the API.
+      protocol_buffer: The protocol buffer class used to de-serialize a
+      response from the API.
     """
     self._protocol_buffer = protocol_buffer
 
@@ -299,3 +339,47 @@ class ProtocolBufferModel(BaseModel):
   @property
   def no_content_response(self):
     return self._protocol_buffer()
+
+
+def makepatch(original, modified):
+  """Create a patch object.
+
+  Some methods support PATCH, an efficient way to send updates to a resource.
+  This method allows the easy construction of patch bodies by looking at the
+  differences between a resource before and after it was modified.
+
+  Args:
+    original: object, the original deserialized resource
+    modified: object, the modified deserialized resource
+  Returns:
+    An object that contains only the changes from original to modified, in a
+    form suitable to pass to a PATCH method.
+
+  Example usage:
+    item = service.activities().get(postid=postid, userid=userid).execute()
+    original = copy.deepcopy(item)
+    item['object']['content'] = 'This is updated.'
+    service.activities.patch(postid=postid, userid=userid,
+      body=makepatch(original, item)).execute()
+  """
+  patch = {}
+  for key, original_value in original.iteritems():
+    modified_value = modified.get(key, None)
+    if modified_value is None:
+      # Use None to signal that the element is deleted
+      patch[key] = None
+    elif original_value != modified_value:
+      if type(original_value) == type({}):
+        # Recursively descend objects
+        patch[key] = makepatch(original_value, modified_value)
+      else:
+        # In the case of simple types or arrays we just replace
+        patch[key] = modified_value
+    else:
+      # Don't add anything to patch if there's no change
+      pass
+  for key in modified:
+    if key not in original:
+      patch[key] = modified[key]
+
+  return patch

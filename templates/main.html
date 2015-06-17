@@ -22,40 +22,66 @@ This is the Django template for the main page where the user chooses backup opti
         <title>{{ app_title }}</title>
         <link rel="stylesheet" type="text/css" href="/static/tasks_backup.css" />
         <link rel="shortcut icon" type="image/x-icon" href="/static/favicon.ico" />
-        <link rel="icon" type="image/x-icon" href="/static/favicon.ico" />
         <script type="text/javascript" src="/static/jquery.js"></script>
         <script type="text/javascript" src="/static/popup.js"></script>
         <script type="text/javascript">
 
+            {% include "inc_cookies.js" %}
+            
             function disableButton() {
-                document.getElementById("start_backup").value = "Starting backup (this may take several minutes) ...";
-                document.getElementById("start_backup").innerHTML = "Starting backup (this may take several minutes) ...";
+                document.getElementById("start_backup").value = "Retrieving tasks (this may take several minutes) ...";
+                document.getElementById("start_backup").innerHTML = "Retrieving tasks (this may take several minutes) ...";
                 document.getElementById("start_backup").disabled = true;
             }
             
+            
+            function saveCheckboxState(obj) {
+                setCookie(obj.id, boolToStr(obj.checked), 3650);
+            }
+            
+            function setSavedCheckboxState(objId, defaultState) {
+                cookieStr = getCookie(objId);
+                if (cookieStr === null && typeof(defaultState) == "boolean") {
+                    document.getElementById(objId).checked = defaultState;
+                } else {
+                    document.getElementById(objId).checked = strToBool(cookieStr);
+                }
+            }
+            
+            function saveSelectedIndex(obj) {
+                if (obj.selectedIndex != obj._savedIndex) {
+                    // Save the value as a cookie
+                    setCookie(obj.id + "_idx", obj.selectedIndex, 3650);
+                    obj._savedIndex = obj.selectedIndex;
+                }
+            
+            }
+
+            function setSavedSelectedIndex(objId) {
+                idx = getCookie(objId + "_idx");
+                if (idx) {
+                    document.getElementById(objId).selectedIndex = idx;
+                }
+            }
+
+            function setSavedStates() {
+                setSavedCheckboxState("include_completed", true);
+                setSavedCheckboxState("include_hidden");
+                setSavedCheckboxState("include_deleted");
+            }
+            
+            
         </script>
-        <script type="text/javascript">
-
-          var _gaq = _gaq || [];
-          _gaq.push(['_setAccount', 'UA-30118203-1']);
-          _gaq.push(['_trackPageview']);
-
-          (function() {
-            var ga = document.createElement('script'); ga.type = 'text/javascript'; ga.async = true;
-            ga.src = ('https:' == document.location.protocol ? 'https://ssl' : 'http://www') + '.google-analytics.com/ga.js';
-            var s = document.getElementsByTagName('script')[0]; s.parentNode.insertBefore(ga, s);
-          })();
-
-        </script>
+        {% include "inc_google_analytics.html" %}
     </head>
 
-<body>
+<body onload="setSavedStates();">
 
-{% if is_authorized %}
-    <div class="usertitle">
-        Authorised user: {{ user_email }} <span class="logout-link">[ <a href="{{ logout_url }}">Log out</a> ]</span>
-    </div>
-{% endif %}
+    {% include "inc_user_header.html" %}
+
+    {% if display_link_to_production_server %}
+        {% include "inc_limited_access_server_msg.html" %}
+    {% endif %}
 
     <noscript>
         <br />
@@ -80,7 +106,8 @@ This is the Django template for the main page where the user chooses backup opti
                         </tr>
                         <tr>
                             <td>
-                                <input type="checkbox" name="include_completed" value="True" checked="checked" >
+                                <input type="checkbox" name="include_completed" id="include_completed" value="True"
+                                    onclick="saveCheckboxState(this);" onkeypress="saveCheckboxState(this);">
                                     &nbsp;Include completed tasks?
                                 </input>
                                 <img class="popupTrigger" id="help-completed" src="/static/help.png" alt="Display help">
@@ -111,7 +138,8 @@ This is the Django template for the main page where the user chooses backup opti
                         </tr>
                         <tr>
                             <td>
-                                <input type="checkbox" name="include_deleted" value="True" >
+                                <input type="checkbox" name="include_deleted" id="include_deleted" value="True" 
+                                    onclick="saveCheckboxState(this);" onkeypress="saveCheckboxState(this);">
                                     &nbsp;Include deleted tasks?
                                 </input>
                                 <img class="popupTrigger" id="help-deleted" src="/static/help.png" alt="Display help">
@@ -147,7 +175,8 @@ This is the Django template for the main page where the user chooses backup opti
                         </tr>
                         <tr>
                             <td>
-                                <input type="checkbox" name="include_hidden" value="True" >
+                                <input type="checkbox" name="include_hidden" id="include_hidden" value="True" 
+                                    onclick="saveCheckboxState(this);" onkeypress="saveCheckboxState(this);">
                                     &nbsp;Include hidden tasks?
                                 </input>
                                 <img class="popupTrigger" id="help-hidden" src="/static/help.png" alt="Display help">
@@ -181,12 +210,12 @@ This is the Django template for the main page where the user chooses backup opti
                     <!--<div class="small-break take-note-larger">
                        Please only click once.
                     </div>-->
-                    <input type="submit" value="Start backup" id="start_backup" class="big-button" ></input> 
+                    <input type="submit" value="Retrieve tasks" id="start_backup" class="big-button" ></input> 
                     <div class="instructions">
-                        When you click the button to start the backup, you will be redirected to a page which will update regularly to show progress of the background process as it retrieves tasks from the Google server
+                        When you click the button to start the export, you will be redirected to a page which will update regularly to show progress of the background process as it retrieves tasks from the Google server
                     </div>
                     <div class="instructions">
-                        The amount of time taken to generate the backup depends on various factors, 
+                        The amount of time taken to retrieve all the tasks from the server depends on various factors, 
                         including server load and the total number of tasks. 
                         At a rough estimate, the system processes 50-150 tasks per second. 
                         This means that a task list with 5,000 tasks could take around 2 minutes.
@@ -197,28 +226,7 @@ This is the Django template for the main page where the user chooses backup opti
         
     <br />
 
-	<div class="project-footer">
-        <div class="break">
-            Version {{ app_version }} ({{ upload_timestamp }})
-        </div>
-		<div class="break">
-			Questions or comments? Go to <a href="http://{{ url_discussion_group }}">{{ url_discussion_group }}</a>
-			or email <a href="mailto:{{ email_discussion_group }}">{{ email_discussion_group }}</a>
-		</div>
-		<div class="break">
-			Please report bugs or suggest improvements at <a href="http:/{{ url_issues_page }}">{{ url_issues_page }}</a>
-		</div>
-		<div class="break">
-			Source code for this project is at <a href="http://{{ url_source_code }}">{{ url_source_code }}</a>
-		</div>
-        <div class="break">
-            {{ app_title }} uses cookies for two purposes;
-            <ul>
-                <li>To track your authorisation credentials between pages. This ensure that you (and only you) can get the results of your backup request.</li>
-                <li><a href="http://www.google.com/analytics/">Google Analytics</a> is used to track usage such as; number of unique visitors, location, browser type, operating system. </li>
-            </ul>
-        </div>
-	</div>
+    {% include "inc_project_footer.html" %}
     
 	<div class="backgroundPopup"></div>
 

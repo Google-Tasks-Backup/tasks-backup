@@ -1,0 +1,5 @@
+{% if user_email and logout_url %}
+    <div class="usertitle">
+        {{ user_email }} <span class="logout-link">[ <a href="{{ logout_url }}">Log out</a> ]</span>
+    </div>
+{% endif %}
