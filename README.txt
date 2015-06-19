@@ -1,3 +1,8 @@
+Google Tasks Backup is used to allow a user to back up their Google Tasks 
+in a variety of formats.
+
+========================
+
 This project is based on google-tasks-porter by dwightguth@google.com
 It appears that google-tasks-porter stalled in the latter part of 2011. In
 2012, Julie Smith created Google Tasks Backup (GTB), partly based on some of
@@ -29,9 +34,11 @@ need to create/modify the following files with your own values;
   Copy host_settings-dummy.py to host_settings.py and follow the instructions
     in that file for obtaining and inserting your own client ID and secret values.
 
-  Set values for 'version' and 'application' in app.yaml
+  Copy app-dummy.yaml to app.yaml and set values for 'version' and 'application'
   
   Set the 'version' and 'upload_timestamp' values in appversion.py
     This is the version information that is displayed to the user on every webpage.
     
+  Change the Google Analytics ID in /templates/inc_google_analytics.html {line 4}
+    If you do not wish to use Google Analytics, delete everything in that file
 

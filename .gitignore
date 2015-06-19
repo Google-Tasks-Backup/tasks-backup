@@ -4,6 +4,8 @@
 
 settings.py
 host_settings.py
+app.yaml
+Changes since last commit.txt
 
 
 #############
@@ -27,6 +29,3 @@ $RECYCLE.BIN/
 #############
 
 *.py[cod]
-
-
-app-dummy.yaml
