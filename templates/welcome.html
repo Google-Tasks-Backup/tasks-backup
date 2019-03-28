@@ -35,7 +35,7 @@ Extensively modified by Julie Smith, 2012
                 document.getElementById("authorise_button").value = "Authorising, please wait (this may take up to one minute) ...";
                 document.getElementById("authorise_button").innerHTML = "Authorising, please wait (this may take up to one minute) ...";
                 document.getElementById("authorise_button").disabled = true;
-                dest = "https://" + window.location.hostname + "{{ url_main_page }}";
+                dest = "https://" + window.location.host + "{{ url_main_page }}";
                 //alert("dest = '" + dest + "'");
                 window.location.href = dest;
             }
@@ -65,6 +65,8 @@ Extensively modified by Julie Smith, 2012
         </div>
     {% endif %}
 
+    {% include "inc_mar_2019_subtasks_warning.html" %}
+    
     {% if msg == "ACCOUNT_ERROR" or msg == "TIMEOUT" %}
         <div class="break">
             <br />
@@ -139,7 +141,7 @@ Extensively modified by Julie Smith, 2012
         </div>
         {% if user_email %}
             <button id="authorise_button" class="big-button" type="button" 
-                    onclick="window.location.href = 'https://' + window.location.hostname + '{{ url_main_page }}'">Main menu</button>
+                    onclick="window.location.href = 'https://' + window.location.host + '{{ url_main_page }}'">Main menu</button>
         {% else %}
             <button id="authorise_button" class="big-button" type="button" onclick="authorise();">Authorise</button>
         {% endif %}

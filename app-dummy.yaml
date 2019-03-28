@@ -12,30 +12,46 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# When testing, only use Major and Minor (e.g., 'test-gtb-0-9')
-#   Where 0 is the Major and 2 is the Minor
-#   Test version is then accessible via http://test-gtb-0-9-dot-tasks-backup.appspot.com
-# When going live, use the full version number (e.g., 'gtb-0-9-123')
-#   Where 0 is the Major, 9 is the Minor and 123 is the Revision
-#version: test-gtb-0-10
-version: gtb-0-10-006
+# version: live
+version: test
 
-# ===== Production server ======
-application: my-tasks-backup
+application: MY_APPLICATION_NAME
 
-# ===== Test server ======
-#application: my-test-tasks-backup
 
-# ===== Local host ==========
-#application: tasks-backup-local
-
+instance_class: B4
+basic_scaling:
+  max_instances: 10
+  idle_timeout: 14m
+  
+  
+skip_files:
+- ^\.hg*$
+- ^\.pylintrc$
+- ^\.idea
+- ^\.vs
+- ^\.vscode
+- ^archive$
+- ^bin
+- ^obj
+- ^testing
+- ^venv
+- ^\.hg\\.*$
+- ^\.tags*
+- ^(.*/)?.*~$
+- ^(.*/)?.*\.py[co]$
+- ^(.*/)?\..*$
+- ^!.*$
+- ^.*\.pyc$
+- ^.*\.bak$
+- ^[Tt]humbs\.db$
+- ^test.*$
 
 threadsafe: no
 runtime: python27
 api_version: 1
 
-# Static files remain cached by the browser for 1 hour
-# default_expiration: "1h"
+# Static files remain cached by the browser for 5 min
+default_expiration: "5m"
 
 libraries:
 - name: django

@@ -17,54 +17,76 @@
 # 27 Jan 2012;
 # Google Tasks Backup (tasks-backup) created by Julie Smith, based on Google Tasks Porter
 
+# pylint: disable=too-many-lines
+
 """Main web application handler for Google Tasks Backup."""
 
 # Orig __author__ = "dwightguth@google.com (Dwight Guth)"
 __author__ = "julie.smith.1999@gmail.com (Julie Smith)"
 
 
+
+# ------------------------
+# Standard library imports
+# ------------------------
 import logging
 import os
 import pickle
-import sys
 import gc
-import cgi
 import time
-from urlparse import urljoin
+import operator
+import datetime
+
+from collections import Counter
+# from urlparse import urljoin
+
+
+# ------------------------
+# Google Appengine imports
+# ------------------------
+from google.appengine.api import mail
+from google.appengine.api import taskqueue
+from google.appengine.api import users
+from google.appengine.api import mail_errors # To catch InvalidSenderError
+from google.appengine.api import logservice # To flush logs
+from google.appengine.api import urlfetch
+from google.appengine.api.app_identity import get_application_id
+from google.appengine.ext import db
+from google.appengine.ext.webapp import template
+from google.appengine.runtime import apiproxy_errors
+import webapp2
+
+# ----------------------------
+# Application-specific imports
+# ----------------------------
+import model
+import settings
+# appversion.version is set before the upload process to keep the version number consistent
+import appversion 
+import host_settings
+import shared # Code which is common between tasks-backup.py and worker.py
+import constants
+
+# ---------------------
+# Local library imports
+# ---------------------
+# Import apiclient errors so that we can process HttpError
+# from .apiclient import errors as apiclient_errors
+from oauth2client.appengine import OAuth2Decorator
+
+
 
 
 # Fix for DeadlineExceeded, because "Pre-Call Hooks to UrlFetch Not Working"
-#     Based on code from https://groups.google.com/forum/#!msg/google-appengine/OANTefJvn0A/uRKKHnCKr7QJ
-from google.appengine.api import urlfetch
-real_fetch = urlfetch.fetch
+#     Based on code from https://groups.google.com/forum/#!msg/google-appengine/OANTefJvn0A/uRKKHnCKr7QJ # pylint: disable=line-too-long
+real_fetch = urlfetch.fetch # pylint: disable=invalid-name
 def fetch_with_deadline(url, *args, **argv):
     argv['deadline'] = settings.URL_FETCH_TIMEOUT
     return real_fetch(url, *args, **argv)
 urlfetch.fetch = fetch_with_deadline
 
-import httplib2
-from oauth2client.appengine import OAuth2Decorator
-
-import webapp2
 
 
-from google.appengine.api import mail
-from google.appengine.api import memcache
-from google.appengine.api import taskqueue
-from google.appengine.api import users
-from google.appengine.api import apiproxy_stub_map
-from google.appengine.ext import db
-from google.appengine.ext.webapp import template
-from google.appengine.runtime import apiproxy_errors
-from google.appengine.runtime import DeadlineExceededError
-from google.appengine.api import urlfetch_errors
-from google.appengine.api import mail_errors # To catch InvalidSenderError
-from google.appengine.api import logservice # To flush logs
-from google.appengine.api.app_identity import get_application_id
-
-
-# Import apiclient errors so that we can process HttpError
-from apiclient import errors as apiclient_errors
 
 
 logservice.AUTOFLUSH_EVERY_SECONDS = 5
@@ -72,33 +94,160 @@ logservice.AUTOFLUSH_EVERY_BYTES = None
 logservice.AUTOFLUSH_EVERY_LINES = 5
 logservice.AUTOFLUSH_ENABLED = True
 
-import Cookie
 
-import datetime
-from datetime import timedelta
-import csv
+MSG = "Authorisation error. Please report this error to " + settings.url_issues_page
 
-
-
-# Application-specific imports
-import model
-import settings
-import appversion # appversion.version is set before the upload process to keep the version number consistent
-import shared # Code which is common between tasks-backup.py and worker.py
-import constants
-import host_settings
-
-msg = "Authorisation error. Please report this error to " + settings.url_issues_page
-
-auth_decorator = OAuth2Decorator(client_id=host_settings.CLIENT_ID,
+auth_decorator = OAuth2Decorator( # pylint: disable=invalid-name
+                                 client_id=host_settings.CLIENT_ID,
                                  client_secret=host_settings.CLIENT_SECRET,
                                  scope=host_settings.SCOPE,
                                  user_agent=host_settings.USER_AGENT,
-                                 message=msg)
-                            
+                                 message=MSG)
+
+
+
+def fix_tasks_order(tasklists): # pylint:disable=too-many-locals
+    """ Fix the order of tasks within the 'tasklists' list,
+        as the tasks returned from the Google Tasks server are out of sequence.
+        
+        Reorders tasks in each tasklist so that subtasks appear under
+        the respective parents, and in correct sibling order.
+    """
+    
+    fn_name = "fix_tasks_order()"
+
+    total_num_subtasks = 0
+    total_num_tasks = 0
+    num_tasklists = 0
+    num_empty_tasklists = 0
+    depth_counter = Counter()
+    
+
+    def process_task(tasks_sorted, tasks_grouped_by_parent_id, task, depth):
+        """ Recursively process tasks and (optional) subtasks.
+            Add task to 'tasks_sorted' list in order, and grouped by parent.
+        """
+        
+        depth_counter[depth] += 1
+        
+        task[u'depth'] = depth
+            
+        tasks_sorted.append(task)
+            
+        # Process tasks for which this ID is the parent
+        task_id = task.get('id', None)
+        list_of_subtasks = tasks_grouped_by_parent_id.get(task_id, None)
+        if list_of_subtasks:
+            # Task has subtasks
+            for subtask in list_of_subtasks:
+                process_task(tasks_sorted, tasks_grouped_by_parent_id, subtask, 
+                             depth + 1)
+
+
+    for tasklist_dict in tasklists:
+        num_tasklists += 1
+        
+        # tasklist_title = tasklist_dict['title']
+        # logging.debug("%s: Fixing '%s'", fn_name, tasklist_title)
+            
+        if 'tasks' not in tasklist_dict:
+            num_empty_tasklists += 1
+            # logging.debug("%s: %s", fn_name, "Empty tasklist: No 'tasks' in tasklist")
+            continue
+            
+        tasks_unsorted = tasklist_dict['tasks']
+            
+        # -----------------------------------
+        # Process all the tasks in a tasklist
+        # -----------------------------------
+        
+        # tasks_unsorted contains tasks in "random" order:
+        #   subtasks may appear in the list before the subtask's parent task
+        
+        # ------------------------
+        # Group tasks by parent ID
+        # ------------------------
+        # Root tasks will have '' parent
+        tasks_grouped_by_parent_id = {} # New tasklist, so start with an empty dict
+        # all_tasks_by_id = {}
+        for task_dict in tasks_unsorted:
+            total_num_tasks += 1
+            parent_id = task_dict.get('parent', '') # Will be '' for root tasks
+            if parent_id:
+                # This is a subtask
+                total_num_subtasks += 1
+            if parent_id not in tasks_grouped_by_parent_id:
+                # Creat a new list for 'parent_id'
+                tasks_grouped_by_parent_id[parent_id] = []
+            # Add this task to list of sibling tasks (keyed by parent_id)
+            tasks_grouped_by_parent_id[parent_id].append(task_dict)
+        
+        # --------------------------------------
+        # Sort each group of tasks by 'position'
+        # --------------------------------------
+        #   String indicating the position of the task among its sibling tasks 
+        #   under the same parent task or at the top level. 
+        #   If this string is greater than another task's corresponding position 
+        #   string according to lexicographical ordering, the task is positioned 
+        #   after the other task under the same parent task (or at the top level).    
+        # Each group contains all the siblings below a given parent (or root)
+        for parent_id, list_of_tasks_dicts in tasks_grouped_by_parent_id.iteritems():
+            # Sort all the siblings in 'list_of_tasks' by 'position'
+            list_of_tasks_dicts.sort(key=operator.itemgetter('position'))
+            
+        # -------------
+        # Create a new sorted list of tasks
+        # -------------
+        tasks_sorted = []
+
+        # Start by processing all root tasks
+        # If a root task has children, process_task() will be called recursively to process the subtasks
+        root_tasks_list = tasks_grouped_by_parent_id['']
+        for root_task in root_tasks_list:
+            process_task(tasks_sorted, tasks_grouped_by_parent_id, root_task, 
+                         depth=0)
+            
+        tasklist_dict['tasks'] = tasks_sorted
+
+    logging.info("%s: %s", fn_name,
+        "Processed {:,} tasks in {:,} tasklists".format(
+            total_num_tasks,
+            num_tasklists))
+    if num_empty_tasklists:
+        logging.info("%s: There were %d empty tasklists", fn_name, num_empty_tasklists)
+    logging.info("%s: %s", fn_name, 
+        "There were {:,} sub-tasks ({:.2%})".format(
+            total_num_subtasks, 
+            total_num_subtasks * 1.0 / total_num_tasks))
+
+    num_tasks_greater_than_depth1 = 0
+    for depth, count in sorted(depth_counter.iteritems()):
+        if depth > 1:
+            num_tasks_greater_than_depth1 += count
+        
+        logging.info("%s: %s", fn_name,
+            "    Depth {}: {:>6,}  {:>7.2%}".format(
+            depth, 
+            count,
+            count * 1.0 / total_num_tasks))
+        
+    if num_tasks_greater_than_depth1:
+        logging.info("%s: %s", fn_name,
+            "    {:,} sub-tasks have depth greater than 1. That is;".format(
+                num_tasks_greater_than_depth1))
+            
+        logging.info("%s: %s", fn_name,
+            "          {:.2%} of all sub-tasks".format(
+                num_tasks_greater_than_depth1 * 1.0 / total_num_subtasks))
+            
+        logging.info("%s: %s", fn_name,
+            "          {:.2%} of all tasks".format(
+                num_tasks_greater_than_depth1 * 1.0 / total_num_tasks))
+
+
                             
     
-class WelcomeHandler(webapp2.RequestHandler):
+class WelcomeHandler(webapp2.RequestHandler): # pylint: disable=too-few-public-methods
     """ Displays an introductory web page, explaining what the app does and providing link to authorise.
     
         This page can be viewed even if the user is not logged in.
@@ -114,12 +263,12 @@ class WelcomeHandler(webapp2.RequestHandler):
         logservice.flush()
         
         try:
-            display_link_to_production_server = False
+            display_link_to_production_server = False # pylint: disable=invalid-name
             if not self.request.host in settings.PRODUCTION_SERVERS and settings.DISPLAY_LINK_TO_PRODUCTION_SERVER:
                 logging.debug(fn_name + "Running on limited-access server '" + unicode(self.request.host) + 
                     "', displaying link to production server")
                 logservice.flush()
-                display_link_to_production_server = True
+                display_link_to_production_server = True # pylint: disable=invalid-name
             
             user = users.get_current_user()
             user_email = None
@@ -133,7 +282,7 @@ class WelcomeHandler(webapp2.RequestHandler):
                         # Allow test user to see normal page content
                         logging.debug(fn_name + "TEST: Allow test user [" + unicode(user_email) + "] to see normal page content")
                         logservice.flush()
-                        display_link_to_production_server = False
+                        display_link_to_production_server = False # pylint: disable=invalid-name
                 
                 logging.debug(fn_name + "User is logged in, so displaying username and logout link")
                 is_admin_user = users.is_current_user_admin()
@@ -148,6 +297,7 @@ class WelcomeHandler(webapp2.RequestHandler):
                                'host_msg' : host_settings.HOST_MSG,
                                'url_home_page' : settings.MAIN_PAGE_URL,
                                'product_name' : host_settings.PRODUCT_NAME,
+                               'is_admin_user' : is_admin_user,
                                'user_email' : user_email,
                                'url_main_page' : settings.MAIN_PAGE_URL,
                                'msg': self.request.get('msg'),
@@ -164,7 +314,7 @@ class WelcomeHandler(webapp2.RequestHandler):
             logging.debug(fn_name + "<End>" )
             logservice.flush()
             
-        except Exception, e:
+        except Exception, e: # pylint: disable=broad-except,invalid-name
             logging.exception(fn_name + "Caught top-level exception")
             shared.serve_outer_exception_message(self, e)
             logging.debug(fn_name + "<End> due to exception" )
@@ -190,15 +340,15 @@ class MainHandler(webapp2.RequestHandler):
             user_email = user.email()
             is_admin_user = users.is_current_user_admin()
             
-            display_link_to_production_server = False
+            display_link_to_production_server = False # pylint: disable=invalid-name
             if not self.request.host in settings.PRODUCTION_SERVERS:
                 logging.debug(fn_name + "Running on limited-access server: " + unicode(self.request.host))
                 logservice.flush()
                 if settings.DISPLAY_LINK_TO_PRODUCTION_SERVER:
-                    display_link_to_production_server = True
+                    display_link_to_production_server = True # pylint: disable=invalid-name
                 if shared.is_test_user(user_email):
                     # Allow test user to see normal page
-                    display_link_to_production_server = False
+                    display_link_to_production_server = False # pylint: disable=invalid-name
                     logging.info(fn_name + "Allowing test user [" + unicode(user_email) + "] on limited access server")
                     logservice.flush()
                 else:
@@ -227,7 +377,6 @@ class MainHandler(webapp2.RequestHandler):
                                'email_discussion_group' : settings.email_discussion_group,
                                'url_issues_page' : settings.url_issues_page,
                                'url_source_code' : settings.url_source_code,
-                               'logout_url': users.create_logout_url(settings.WELCOME_PAGE_URL),
                                'app_version' : appversion.version,
                                'upload_timestamp' : appversion.upload_timestamp}
                                
@@ -235,7 +384,7 @@ class MainHandler(webapp2.RequestHandler):
             self.response.out.write(template.render(path, template_values))
             logging.debug(fn_name + "<End>" )
             logservice.flush()
-        except Exception, e:
+        except Exception, e: # pylint: disable=broad-except,invalid-name
             logging.exception(fn_name + "Caught top-level exception")
             shared.serve_outer_exception_message(self, e)
             logging.debug(fn_name + "<End> due to exception" )
@@ -344,7 +493,7 @@ class StartBackupHandler(webapp2.RequestHandler):
                 
             self._start_backup(tasks_backup_job)
             
-        except Exception, e:
+        except Exception, e: # pylint: disable=broad-except,invalid-name
             logging.exception(fn_name + "Caught top-level exception")
             shared.serve_outer_exception_message(self, e)
             logging.error(fn_name + "<End> due to exception" )
@@ -355,7 +504,7 @@ class StartBackupHandler(webapp2.RequestHandler):
             
         
     @auth_decorator.oauth_required
-    def post(self):
+    def post(self): # pylint:disable=too-many-statements
         """ Handles POST request to settings.START_BACKUP_URL, which starts the backup process. """
         
         fn_name = "StartBackupHandler.post(): "
@@ -442,7 +591,7 @@ class StartBackupHandler(webapp2.RequestHandler):
             logging.debug(fn_name + "<End>")
             logservice.flush()
             
-        except Exception, e:
+        except Exception, e: # pylint: disable=broad-except,invalid-name
             logging.exception(fn_name + "Caught top-level exception")
             shared.serve_outer_exception_message(self, e)
             logging.debug(fn_name + "<End> due to exception" )
@@ -450,7 +599,7 @@ class StartBackupHandler(webapp2.RequestHandler):
 
             
     @auth_decorator.oauth_required        
-    def _start_backup(self, tasks_backup_job):
+    def _start_backup(self, tasks_backup_job): # pylint: disable=too-many-statements
         """Place the backup job request on the taskqueue.
         
            The worker will retrieve the job details from the DB record.
@@ -469,8 +618,8 @@ class StartBackupHandler(webapp2.RequestHandler):
             
             # Add the request to the tasks queue, passing in the user's email so that the task can access the
             # database record
-            q = taskqueue.Queue(settings.PROCESS_TASKS_REQUEST_QUEUE_NAME)
-            t = taskqueue.Task(url=settings.WORKER_URL, params={settings.TASKS_QUEUE_KEY_NAME : user_email}, method='POST')
+            tq_q = taskqueue.Queue(settings.PROCESS_TASKS_REQUEST_QUEUE_NAME)
+            tq_t = taskqueue.Task(url=settings.WORKER_URL, params={settings.TASKS_QUEUE_KEY_NAME : user_email}, method='POST')
             logging.debug(fn_name + "Adding task to " + str(settings.PROCESS_TASKS_REQUEST_QUEUE_NAME) + 
                 " queue, for " + str(user_email))
             logservice.flush()
@@ -479,10 +628,10 @@ class StartBackupHandler(webapp2.RequestHandler):
             while retry_count > 0:
                 retry_count = retry_count - 1
                 try:
-                    q.add(t)
+                    tq_q.add(tq_t)
                     break
                     
-                except Exception, e:
+                except Exception, e: # pylint: disable=broad-except,invalid-name
                     tasks_backup_job.job_progress_timestamp = datetime.datetime.now()
                     tasks_backup_job.message = 'Waiting for server ...'
                     
@@ -539,7 +688,7 @@ class StartBackupHandler(webapp2.RequestHandler):
             logging.debug(fn_name + "<end>")
             logservice.flush()
     
-        except Exception, e:
+        except Exception, e: # pylint: disable=broad-except,invalid-name
             logging.exception(fn_name + "Caught top-level exception")
             shared.serve_outer_exception_message(self, e)
             logging.debug(fn_name + "<End> due to exception" )
@@ -551,7 +700,7 @@ class ShowProgressHandler(webapp2.RequestHandler):
     """Handler to display progress to the user """
     
     @auth_decorator.oauth_required
-    def get(self):
+    def get(self): # pylint: disable=too-many-locals,too-many-branches,too-many-statements
         """Display the progress page, which includes a refresh meta-tag to recall this page every n seconds"""
         
         fn_name = "ShowProgressHandler.get(): "
@@ -564,14 +713,14 @@ class ShowProgressHandler(webapp2.RequestHandler):
                 
             user_email = user.email()
 
-            display_link_to_production_server = False
+            display_link_to_production_server = False # pylint: disable=invalid-name
             if not self.request.host in settings.PRODUCTION_SERVERS:
                 # logging.debug(fn_name + "Running on limited-access server")
                 if settings.DISPLAY_LINK_TO_PRODUCTION_SERVER:
-                    display_link_to_production_server = True
+                    display_link_to_production_server = True # pylint: disable=invalid-name
                 if shared.is_test_user(user_email):
                     # Allow test user to see normal page
-                    display_link_to_production_server = False
+                    display_link_to_production_server = False # pylint: disable=invalid-name
                 else:
                     logging.info(fn_name + "Rejecting non-test user [" + str(user_email) + "] on limited access server")
                     logservice.flush()
@@ -739,7 +888,7 @@ class ShowProgressHandler(webapp2.RequestHandler):
             logging.debug(fn_name + "<End>")
             logservice.flush()
             
-        except Exception, e:
+        except Exception, e: # pylint: disable=broad-except,invalid-name
             logging.exception(fn_name + "Caught top-level exception")
             shared.serve_outer_exception_message(self, e)
             logging.debug(fn_name + "<End> due to exception" )
@@ -749,7 +898,7 @@ class ShowProgressHandler(webapp2.RequestHandler):
         
 class ReturnResultsHandler(webapp2.RequestHandler):
     """Handler to return results to user in the requested format """
-    
+        
     @auth_decorator.oauth_required
     def get(self):
         """ If user attempts to go direct to /results, they come in a a GET request, 
@@ -774,7 +923,7 @@ class ReturnResultsHandler(webapp2.RequestHandler):
             self.redirect(settings.PROGRESS_URL)
             logging.debug(fn_name + "<End>")
             logservice.flush()
-        except Exception, e:
+        except Exception, e: # pylint: disable=broad-except,invalid-name
             logging.exception(fn_name + "Caught top-level exception")
             shared.serve_outer_exception_message(self, e)
             logging.debug(fn_name + "<End> due to exception" )
@@ -782,7 +931,7 @@ class ReturnResultsHandler(webapp2.RequestHandler):
     
     
     @auth_decorator.oauth_required
-    def post(self):
+    def post(self): # pylint: disable=too-many-locals,too-many-branches,too-many-statements
         """ Return results to the user, in format chosen by user """
         fn_name = "ReturnResultsHandler.post(): "
         
@@ -798,26 +947,25 @@ class ReturnResultsHandler(webapp2.RequestHandler):
             # logging.debug(self.request.cookies)
             # logservice.flush()
                 
-        # except Exception, e:
+        # except Exception, e: # pylint: disable=broad-except,invalid-name
             # logging.exception(fn_name + "Exception retrieving request headers")
             # logservice.flush()
             
       
-        try:
+        try: # pylint: disable=too-many-nested-blocks
             user = users.get_current_user()
             
             user_email = user.email()
-            is_test_user = shared.is_test_user(user_email)
             
             
-            display_link_to_production_server = False
+            display_link_to_production_server = False # pylint: disable=invalid-name
             if not self.request.host in settings.PRODUCTION_SERVERS:
                 # logging.debug(fn_name + "Running on limited-access server")
                 if settings.DISPLAY_LINK_TO_PRODUCTION_SERVER:
-                    display_link_to_production_server = True
+                    display_link_to_production_server = True # pylint: disable=invalid-name
                 if shared.is_test_user(user_email):
                     # Allow test user to see normal page
-                    display_link_to_production_server = False
+                    display_link_to_production_server = False # pylint: disable=invalid-name
                 else:
                     logging.info(fn_name + "Rejecting non-test user [" + str(user_email) + "] on limited access server")
                     logservice.flush()
@@ -885,6 +1033,13 @@ class ReturnResultsHandler(webapp2.RequestHandler):
             tasklists = pickle.loads(rebuilt_pkl)
             rebuilt_pkl = None # Not needed, so release it
             
+            # ==========================================================
+            # Fix the order of tasks, and add 'depth' value to each task
+            # ==========================================================
+            # Reorder tasks in each tasklist so that subtasks appear under
+            # the respective parents, and in correct sibling order
+            fix_tasks_order(tasklists)
+            
               
             # User selected format to export as
             # Note: If format == 'html_raw', we will display the web page rather than return a file (or send email)
@@ -909,7 +1064,7 @@ class ReturnResultsHandler(webapp2.RequestHandler):
             display_using_localtime = (self.request.get('display_using_localtime') == 'True')
             display_offset_hours_str = self.request.get('display_offset_hours')
             
-            logging.debug(fn_name + "Selected format = " + str(export_format))
+            logging.info(fn_name + "Selected export format = " + str(export_format))
             logservice.flush()
             
             if export_format == 'html_raw':
@@ -946,7 +1101,7 @@ class ReturnResultsHandler(webapp2.RequestHandler):
                         " hours offset for localtime")
                     logservice.flush()
                     adjust_timestamps = True
-                except Exception, e:
+                except Exception, e: # pylint: disable=broad-except,invalid-name
                     # Should never happen, because the value is set by <option> values on the HTML form 
                     logging.error(fn_name + "Error converting offset hours form value [" +
                         str(offset_hours_str) + "] to a float value, so using zero offset: " + shared.get_exception_msg(e))
@@ -977,7 +1132,7 @@ class ReturnResultsHandler(webapp2.RequestHandler):
                     due_date_limit = datetime.date(int(self.request.get('due_year')),
                                                 int(self.request.get('due_month')), 
                                                 int(self.request.get('due_day'))) 
-                except Exception, e:
+                except Exception, e: # pylint: disable=broad-except,invalid-name
                     due_date_limit = datetime.date(datetime.MINYEAR,1,1)
                     logging.exception(fn_name + "Error interpretting due date limit from browser. Using " + str(due_date_limit))
                     logservice.flush()
@@ -1001,7 +1156,7 @@ class ReturnResultsHandler(webapp2.RequestHandler):
             # logging.debug(tasklists)
             # logservice.flush()
             # ---------------------------------------------------------------------------------------------
-            #    Calculate and add 'depth' property (and add/modify elements for html_raw if required)
+            #    Add/modify elements for html_raw if required)
             # ---------------------------------------------------------------------------------------------
             for tasklist in tasklists:
                 # if shared.is_test_user(user_email) and settings.DUMP_DATA:
@@ -1011,7 +1166,9 @@ class ReturnResultsHandler(webapp2.RequestHandler):
                     # logservice.flush()
                 
                 # If there are no tasks in a tasklist, Google returns a dictionary containing just 'title'
-                # That is, there is no 'tasks' element in the tasklist dictionary if there are no tasks.
+                # In that case, worker.py doesn't add a 'tasks' element in the tasklist dictionary
+                # if there are no tasks for a tasklist.
+                
                 tasks = tasklist.get(u'tasks')
                 if not tasks:
                     # No tasks in tasklist
@@ -1023,84 +1180,9 @@ class ReturnResultsHandler(webapp2.RequestHandler):
                 num_tasks = len(tasks)
                 if num_tasks > 0: # Non-empty tasklist
                     task_idx = 0
-                    possible_parent_ids = []
-                    possible_parent_is_active = []
                     
                     while task_idx < num_tasks:
                         task = tasks[task_idx]
-                        # By default, assume parent is valid
-                        task[u'parent_is_active'] = True
-                        depth = 0 # Default to root task
-
-                        if task.has_key(u'parent'):
-                            if task[u'parent'] in possible_parent_ids:
-                                idx = possible_parent_ids.index(task[u'parent'])
-                                try:
-                                    task[u'parent_is_active'] = possible_parent_is_active[idx]
-                                except Exception, e:
-                                    logging.exception("idx = " + str(idx) + ", id = " + task[u'id'] + ", parent = " + 
-                                        task[u'parent'] + ", [" + task[u'title'] + "]")
-                                    logservice.flush()
-                                    # if shared.is_test_user(user_email):
-                                        # # DEBUG
-                                        # logging.debug(fn_name + "TEST: possible_parent_ids ==>")
-                                        # logging(possible_parent_ids)
-                                        # logging.debug(fn_name + "TEST: possible_parent_is_active ==>")
-                                        # logging(possible_parent_is_active)
-                                        # logservice.flush()
-                                depth = idx + 1
-                                
-                                
-                                # Remove parent tasks which are deeper than current parent
-                                del(possible_parent_ids[depth:])
-                                del(possible_parent_is_active[depth:])
-                                    
-                                if task[u'id'] not in possible_parent_ids:
-                                    # This task may have sub-tasks, so add to list of possible  parents
-                                    possible_parent_ids.append(task[u'id'])
-                                    task_is_active = not (task.has_key(u'deleted') or task.has_key(u'hidden'))
-                                    possible_parent_is_active.append(task_is_active)
-                            else:
-                                task[u'parent_is_active'] = False
-                                if task.has_key(u'deleted') or task.has_key(u'hidden'):
-                                    # Can't calculate depth of hidden and deleted tasks, if parent doesn't exist.
-                                    # This usually happens if parent is deleted whilst child is hidden or deleted (see below)
-                                    depth = -1
-                                    total_num_orphaned_hidden_or_deleted_tasks = total_num_orphaned_hidden_or_deleted_tasks + 1
-                                else:
-                                    # Non-deleted/non-hidden task with invalid parent.
-                                    # This "orphan" non-hidden/non-deleted task has an unknown depth, since it's parent no longer exists,
-                                    # (or the completed parent was not exported - see below). 
-                                    # (1) The parent task may have been deleted or moved.
-                                    #       One way this can happen:
-                                    #           Start with A/B/C/D
-                                    #           Delete D
-                                    #           Delete C
-                                    #           Restore D from Trash
-                                    #     This task is NOT displayed in any view by Google!
-                                    # (2) This can also happen if a completed task has incomplete subtasks (which should not logically happen),
-                                    #     and the user choses not to import completed tasks. In that case the incomplete subtask's completed 
-                                    #     parent has not been imported, so GTB reports it as an orphaned (invalid) task.
-                                    if display_invalid_tasks or export_format in ['raw', 'raw1', 'raw2', 'py', 'log']:
-                                        depth = -99
-                                        total_num_invalid_tasks = total_num_invalid_tasks + 1
-                                    else:
-                                        # Remove the invalid task
-                                        tasks.pop(task_idx)
-                                        # Adjust indexes to compensate for removed item
-                                        task_idx = task_idx - 1
-                                        num_tasks = num_tasks - 1
-                                    
-                        else:
-                            # This is a parentless (root) task;
-                            #   It is therefore the end of any potential sub-task tree
-                            #   It could be the parent of a future task
-                            possible_parent_ids = [task[u'id']]
-                            task_is_active = not (task.has_key(u'deleted') or task.has_key(u'hidden'))
-                            possible_parent_is_active = [task_is_active]
-                            depth = 0
-                        
-                        task[u'depth'] = depth
                         
                         if adjust_timestamps:
                             # Adjust timestamps to reflect local time instead of server's UTC
@@ -1116,31 +1198,29 @@ class ReturnResultsHandler(webapp2.RequestHandler):
                         task_idx = task_idx + 1   
                         
                         
-                        """
-                        TODO: Ensure that all text is correctly tabbed according to depth
-                        if export_format == 'tabbed_text':
-                            tabs = '\t'*depth
-                            task[u'tabs'] = tabs
-                            if task.has_key(u'notes') and task[u'notes']:
-                                notes_lines = task[u'notes'].split('\n')
-                                notes = ''
-                                line_end = ''
-                                for note_line in notes_lines:
-                                    notes += line_end + tabs + note_line
-                                    line_end = '\n'
-                                
-                                
-                                
-                                
-                                
-                                
-                                notes_lines = notes.split()
-                                notes = ''
-                                for note_line in notes_lines:
-                                    notes += tabs + note_line + '\n'
-                                task[u'notes'] = notes
-                        """
                         
+                        # TODO: Ensure that all text is correctly tabbed according to depth
+                        # if export_format == 'tabbed_text':
+                        #     tabs = '\t'*depth
+                        #     task[u'tabs'] = tabs
+                        #     if task.has_key(u'notes') and task[u'notes']:
+                        #         notes_lines = task[u'notes'].split('\n')
+                        #         notes = ''
+                        #         line_end = ''
+                        #         for note_line in notes_lines:
+                        #             notes += line_end + tabs + note_line
+                        #             line_end = '\n'
+                        #         
+                        #         
+                        #         
+                        #         
+                        #         
+                        #         
+                        #         notes_lines = notes.split()
+                        #         notes = ''
+                        #         for note_line in notes_lines:
+                        #             notes += tabs + note_line + '\n'
+                        #         task[u'notes'] = notes
                         
 
                     # Add extra properties for HTML view;
@@ -1188,7 +1268,7 @@ class ReturnResultsHandler(webapp2.RequestHandler):
                                                 # Display only if task is does not have a due date
                                                 display = True
                                                 tasklist_has_tasks_to_display = True
-                                    except Exception, e:
+                                    except Exception, e: # pylint: disable=broad-except,invalid-name
                                         logging.exception(fn_name + "Exception determining if task is due")
                                         # DEBUG:
                                         logging.debug(fn_name + "Task ==>")
@@ -1230,12 +1310,11 @@ class ReturnResultsHandler(webapp2.RequestHandler):
                             
                             # Delete unused properties to reduce memory usage, to improve the likelihood of being able to 
                             # successfully render very big tasklists
-                            #     Unused properties: kind, id, etag, selfLink, parent, position, depth, parent_is_active
+                            #     Unused properties: kind, id, etag, selfLink, parent, position, depth
                             # 'kind', 'id', 'etag' are not used or displayed
                             # 'parent' is no longer needed, because we now use the indent property to display task/sub-task relationships
                             # 'position' is not needed because we rely on the fact that tasks are returned in position order
                             # 'depth' is no longer needed, because we use indent to determine how far in to render the task
-                            # 'parent_is_active' only used when building the tasklist
                             if task.has_key(u'kind'):
                                 del(task[u'kind'])
                             if task.has_key(u'id'):
@@ -1250,8 +1329,6 @@ class ReturnResultsHandler(webapp2.RequestHandler):
                                 del(task[u'position'])
                             if task.has_key(u'depth'):
                                 del(task[u'depth'])
-                            if task.has_key(u'parent_is_active'):
-                                del(task[u'parent_is_active'])
 
                         if tasklist_has_tasks_to_display:
                             tasklist[u'tasklist_has_tasks_to_display'] = True
@@ -1345,7 +1422,7 @@ class ReturnResultsHandler(webapp2.RequestHandler):
             gc.collect()
             logging.debug(fn_name + "<End>")
             logservice.flush()
-        except Exception, e:
+        except Exception, e: # pylint: disable=broad-except,invalid-name
             logging.exception(fn_name + "Caught top-level exception")
             
             self.response.headers["Content-Type"] = "text/html; charset=utf-8"
@@ -1353,16 +1430,17 @@ class ReturnResultsHandler(webapp2.RequestHandler):
                 # Clear "Content-Disposition" so user will see error in browser.
                 # If not removed, output goes to file (if error generated after "Content-Disposition" was set),
                 # and user would not see the error message!
-                del self.response.headers["Content-Disposition"]
-            except Exception, e:
-                logging.debug(fn_name + "Unable to delete 'Content-Disposition' from headers: " + shared.get_exception_msg(e))
+                if self.response.headers and "Content-Disposition" in self.response.headers:
+                    del self.response.headers["Content-Disposition"]
+            except Exception, ie: # pylint: disable=broad-except,invalid-name
+                logging.debug(fn_name + "Error deleting 'Content-Disposition' from headers: " + shared.get_exception_msg(ie))
             self.response.clear() 
             shared.serve_outer_exception_message(self, e)
             logging.debug(fn_name + "<End> due to exception" )
             logservice.flush()
 
         
-    def _send_email_using_template(self, template_values, export_format, user_email, output_filename_base):
+    def _send_email_using_template(self, template_values, export_format, user_email, output_filename_base): # pylint: disable=too-many-locals,too-many-statements
         """ Send an email, formatted according to the specified .txt template file
             Currently supports export_format = 'RTM' (Remember The Milk)
         """
@@ -1395,11 +1473,10 @@ class ReturnResultsHandler(webapp2.RequestHandler):
         # According to "C:\Program Files\Google\google_appengine\google\appengine\api\mail.py", 
         #   end_mail() doesn't return any value, but can throw InvalidEmailError when invalid email address provided
         send_try_count = 0
-        MAX_SEND_TRY_COUNT = 2
+        MAX_SEND_TRY_COUNT = 2 # pylint: disable=invalid-name
         while send_try_count < MAX_SEND_TRY_COUNT:
             msg1 = None
             msg2 = None
-            msg3 = None
             send_try_count += 1
             
             try:
@@ -1409,9 +1486,9 @@ class ReturnResultsHandler(webapp2.RequestHandler):
                                body=email_body)
                                
                 if shared.is_test_user(user_email):
-                  logging.debug(fn_name + "TEST: Email sent to %s" % user_email)
+                    logging.debug(fn_name + "TEST: Email sent to %s" % user_email)
                 else:
-                  logging.debug(fn_name + "Email sent")
+                    logging.debug(fn_name + "Email sent")
                   
                 shared.serve_message_page(self, "Email sent to " + str(user_email), 
                     show_back_button=True, back_button_text="Continue", show_heading_messages=False)
@@ -1433,7 +1510,7 @@ class ReturnResultsHandler(webapp2.RequestHandler):
                 logservice.flush()
                 return
                 
-            except mail_errors.InvalidSenderError, e:
+            except mail_errors.InvalidSenderError, e: # pylint: disable=invalid-name
                 if send_try_count < MAX_SEND_TRY_COUNT:
                     logging.warning(fn_name + "Unable to send email from " + unicode(sender))
                     sender = host_settings.APP_TITLE + "@" + get_application_id() + ".appspotmail.com"
@@ -1445,7 +1522,7 @@ class ReturnResultsHandler(webapp2.RequestHandler):
                     msg1 = "Sorry, unable to send email"
                     msg2 = shared.get_exception_msg(e)
             
-            except Exception, e:
+            except Exception, e: # pylint: disable=broad-except,invalid-name
                 if send_try_count < MAX_SEND_TRY_COUNT:
                     logging.warning(fn_name + "Unable to send email from " + unicode(sender) +
                         " Will try again ... [" + shared.get_exception_msg(e) + "]")
@@ -1489,9 +1566,9 @@ class ReturnResultsHandler(webapp2.RequestHandler):
 
         path = os.path.join(os.path.dirname(__file__), constants.PATH_TO_TEMPLATES, template_filename)
         if shared.is_test_user(template_values['user_email']):
-          logging.debug(fn_name + "TEST: Writing %s format to %s" % (export_format, output_filename))
+            logging.debug(fn_name + "TEST: Writing %s format to %s" % (export_format, output_filename))
         else:
-          logging.debug(fn_name + "Writing %s format" % export_format)
+            logging.debug(fn_name + "Writing %s format" % export_format)
         self.response.out.write(template.render(path, template_values))
         logging.debug(fn_name + "<End>")
         logservice.flush()
@@ -1516,9 +1593,9 @@ class ReturnResultsHandler(webapp2.RequestHandler):
         
         path = os.path.join(os.path.dirname(__file__), constants.PATH_TO_TEMPLATES, template_filename)
         if shared.is_test_user(template_values['user_email']):
-          logging.debug(fn_name + "TEST: Writing %s format to %s" % (export_format, output_filename))
+            logging.debug(fn_name + "TEST: Writing %s format to %s" % (export_format, output_filename))
         else:
-          logging.debug(fn_name + "Writing %s format" % export_format)
+            logging.debug(fn_name + "Writing %s format" % export_format)
         self.response.out.write(template.render(path, template_values))
         logging.debug(fn_name + "<End>")
         logservice.flush()
@@ -1542,9 +1619,9 @@ class ReturnResultsHandler(webapp2.RequestHandler):
         
         path = os.path.join(os.path.dirname(__file__), constants.PATH_TO_TEMPLATES, template_filename)
         if shared.is_test_user(template_values['user_email']):
-          logging.debug(fn_name + "TEST: Writing %s format to %s" % (export_format, output_filename))
+            logging.debug(fn_name + "TEST: Writing %s format to %s" % (export_format, output_filename))
         else:
-          logging.debug(fn_name + "Writing %s format" % export_format)
+            logging.debug(fn_name + "Writing %s format" % export_format)
         # TODO: Output in a manner suitable for downloading from an Android phone
         #       Currently sends source of HTML page as output_filename
         #       Perhaps try Content-Type = "application/octet-stream" ???
@@ -1625,7 +1702,7 @@ class ReturnResultsHandler(webapp2.RequestHandler):
         logservice.flush()
 
         
-    def _write_raw_file(self, file_content, export_format, output_filename_base, file_extension, content_type="text/plain", content_prefix=None):
+    def _write_raw_file(self, file_content, export_format, output_filename_base, file_extension, content_type="text/plain", content_prefix=None): # pylint: disable=too-many-arguments
         """ Write file_content to a file.
         
             file_content            Contents to be written to file
@@ -1655,7 +1732,7 @@ class ReturnResultsHandler(webapp2.RequestHandler):
         logservice.flush()
 
         
-    def _write_html_raw(self, template_values):
+    def _write_html_raw(self, template_values): # pylint: disable=too-many-locals,too-many-branches,too-many-statements
         """ Manually build an HTML representation of the user's tasks.
         
             This method creates the page manually, which uses significantly less memory than using Django templates.
@@ -1807,7 +1884,7 @@ class ReturnResultsHandler(webapp2.RequestHandler):
             tl_num = 1
             for tasklist in tasklists:
                 tasklist_title = tasklist.get(u'title')
-                if len(tasklist_title.strip()) == 0:
+                if not tasklist_title.strip():
                     tasklist_title = "<Unnamed Tasklist>"
                 tasklist_title = shared.escape_html(tasklist_title)
                 
@@ -1839,7 +1916,7 @@ class ReturnResultsHandler(webapp2.RequestHandler):
                             continue
                     
                         task_title = task.get(u'title', "<No Task Title>")
-                        if len(task_title.strip()) == 0:
+                        if not task_title.strip():
                             task_title = "<Unnamed Task>"
                         task_title = shared.escape_html(task_title)
                         
@@ -2012,16 +2089,16 @@ class RobotsHandler(webapp2.RequestHandler):
             self.response.out.write("Disallow: /\n")
        
 
-def urlfetch_timeout_hook(service, call, request, response):
-    if call != 'Fetch':
-        return
+# def urlfetch_timeout_hook(service, call, request, response):
+    # if call != 'Fetch':
+        # return
 
-    # Make the default deadline 30 seconds instead of 5.
-    if not request.has_deadline():
-        request.set_deadline(30.0)
+    # # Make the default deadline 30 seconds instead of 5.
+    # if not request.has_deadline():
+        # request.set_deadline(30.0)
         
         
-app = webapp2.WSGIApplication(        
+app = webapp2.WSGIApplication( # pylint: disable=invalid-name
     [
         ("/robots.txt",                             RobotsHandler),
         (settings.MAIN_PAGE_URL,                    MainHandler),
@@ -2031,4 +2108,3 @@ app = webapp2.WSGIApplication(
         (settings.PROGRESS_URL,                     ShowProgressHandler),
         (auth_decorator.callback_path,              auth_decorator.callback_handler()),
     ], debug=False)
-

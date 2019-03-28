@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+#!/usr/bin/python2.5
 #
 # Copyright 2012 Julie Smith.  All Rights Reserved.
 #
@@ -14,14 +14,67 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+# Rename this file as settings.py and set the URLs and email addresses
+# in the "APP-SPECIFIC SETTINGS" and "DEBUG SETTINGS" sections
 
-url_discussion_group = "groups.google.com/group/tasks-backup"
+# Rename this file as 'settings.py' and set appropriate values for
+#   MY-APP-ID
+#   MY-GROUP-NAME
+#   MY.EMAIL.ADDRESS
+#   TEST.EMAIL.ADDRESS
 
-email_discussion_group = "tasks-backup@googlegroups.com"
 
-url_issues_page = "github.com/Google-Tasks-Backup/tasks-backup/issues"
+# ============================================
+#     +++ Change these settings: Start +++
+# ============================================
 
-url_source_code = "github.com/Google-Tasks-Backup/tasks-backup"
+# ---------------------------------
+#   APP-SPECIFIC SETTINGS: Start
+# ---------------------------------
+url_discussion_group = "groups.google.com/group/MY-GROUP-NAME"
+
+email_discussion_group = "MY-GROUP-NAME@googlegroups.com"
+
+url_issues_page = "code.google.com/p/MY-APP-ID/issues/list"
+
+url_source_code = "code.google.com/p/MY-APP-ID/source/browse/"
+
+# List of hostname(s) of the production server(s). Used to identify if app is running on production server.
+# The first in the list is used as the URL to direct user to production server.
+# This is primarily used when testing GTI on a non-production server, but we want to see what it
+# would look like on the production server. It is also used when using a subdomain of the main server,
+# e.g. test1.import-tasks.appspot.com
+PRODUCTION_SERVERS = ['MY-APP-ID.appspot.com', 'test.MY-APP-ID.appspot.com']
+
+# -------------------------------
+#   APP-SPECIFIC SETTINGS: End
+# -------------------------------
+
+# ---------------------------
+#    DEBUG SETTINGS: Start
+# ---------------------------
+# Display log menu option on the Progress page if user is in SPECIAL_USERS
+SHOW_LOG_OPTION_USERS = ["Test.User@gmail.com", "another.user@gmail.com"]
+
+# Extra detailed and/or personal details may be logged when user is one of the test accounts
+TEST_ACCOUNTS = ["MY.EMAIL.ADDRESS@gmail.com", "TEST.EMAIL.ADDRESS@gmail.com"]
+
+# Logs dumps of raw data for test users when True
+DUMP_DATA = False
+
+# If True, and app is not running on one of the PRODUCTION_SERVERS, display message to user which includes
+# link to the production server, and do not display any active content to the user.
+DISPLAY_LINK_TO_PRODUCTION_SERVER = True
+
+# -------------------------
+#    DEBUG SETTINGS: End
+# -------------------------
+
+# ==========================================
+#     --- Change these settings: End ---
+# ==========================================
+
+
 
 # Must match name in queue.yaml
 PROCESS_TASKS_REQUEST_QUEUE_NAME = 'process-tasks-request'
@@ -44,12 +97,6 @@ WORKER_URL = '/worker'
 
 DB_KEY_TASKS_BACKUP_DATA = 'tasks_backup_data'
 
-# The number of seconds to wait before a URL fetch times out.
-# The deault timeout is 5 seconds, but that results in significant numbers
-# of DeadlineExceededError, especially when retrieving credentials.
-# Hopefully, increasing the timeout will reduce the number of DeadlineExceededError
-#   Used as a parameter to fetch_with_deadline()
-URL_FETCH_TIMEOUT = 12
 
 # Number of times to try server actions
 # Exceptions are usually due to DeadlineExceededError on individual API calls
@@ -57,6 +104,14 @@ URL_FETCH_TIMEOUT = 12
 # WORKER_API_RETRY_SLEEP_DURATION or FRONTEND_API_RETRY_SLEEP_DURATION seconds 
 # before trying the 2nd last and last retries.
 NUM_API_TRIES = 4
+
+# The number of seconds to wait before a URL fetch times out.
+# The deault timeout is 5 seconds, but that results in significant numbers
+# of DeadlineExceededError, especially when retrieving credentials.
+# Hopefully, increasing the timeout will reduce the number of DeadlineExceededError
+#   Used as a parameter to fetch_with_deadline()
+URL_FETCH_TIMEOUT = 12
+
 
 # Number of seconds for worker to sleep for the last 2 API retries
 # This affects how often the job progress is updated, so MAX_JOB_PROGRESS_INTERVAL
@@ -77,6 +132,10 @@ FRONTEND_API_RETRY_SLEEP_DURATION = 18
 # Must be less than 3600*24 (the number of seconds in one day)
 MAX_TIME_ALLOWED_FOR_JOB_TO_START = 900
 
+
+# If the user has more than this number of tasks, display a warning message that
+# displaying as an HTML page may fail
+LARGE_LIST_HTML_WARNING_LIMIT = 20000
 
 # If the job hasn't been updated in MAX_JOB_PROGRESS_INTERVAL seconds, assume that the job has stalled, 
 # and display error message and stop refreshing progress.html
@@ -100,37 +159,5 @@ PROGRESS_PAGE_REFRESH_INTERVAL = 6
 # e.g., for a 3rd level subtask, indent would be 3 * TASK_INDENT
 TASK_INDENT = 40
 
-
-# If the user has more than this number of tasks, display a warning message that
-# displaying as an HTML page may fail
-LARGE_LIST_HTML_WARNING_LIMIT = 20000
-
-
-
-# ###############################################
-#                  Debug settings
-# ###############################################
-
-# Extra detailed and/or personal details may be logged when user is one of the test accounts
-# These are also the only accounts allowed to access LIMITED_ACCESS_SERVERS
-TEST_ACCOUNTS = ["Test1@gmail.com", "Test2@gmail.com", "Test3@gmail.com"]
-
-
-# List of hostname(s) of the production server(s). Used to identify if app is running on production server.
-# The first in the list is used as the URL to direct user to production server.
-# This is primarily used when testing GTI on a non-production server, but we want to see what it
-# would look like on the production server. It is also used when using a subdomain of the main server,
-# e.g. test1.import-tasks.appspot.com
-PRODUCTION_SERVERS = ['tasks-backup.appspot.com', 'test-gtb-0-9-dot-tasks-backup.appspot.com', 'localhost']
-
-# If True, and app is not running on one of the PRODUCTION_SERVERS, display message to user which includes
-# link to the production server. Do not display any active content to the user.
-DISPLAY_LINK_TO_PRODUCTION_SERVER = True
-
-# Display log menu option on the Progress page if user is in SHOW_LOG_OPTION_USERS
-SHOW_LOG_OPTION_USERS = ["Test.User@gmail.com", "another.user@gmail.com"]
-
-# Logs dumps of raw data for test users when True
-DUMP_DATA = False
 
 
