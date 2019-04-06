@@ -173,6 +173,16 @@ def fix_tasks_order(tasklists): # pylint:disable=too-many-locals
         for task_dict in tasks_unsorted:
             total_num_tasks += 1
             parent_id = task_dict.get('parent', '') # Will be '' for root tasks
+            if parent_id is None:
+                # JS 2019-04-04; The spec at
+                #   https://developers.google.com/tasks/v1/reference/tasks#resource
+                # for the 'parent' property says;
+                #   "This field is omitted if it is a top-level task"
+                # Just in case Google sets the parent property to None
+                # for a root task (instead of omitting the property), 
+                # we set parent_id to '' so that root tasks can still be accessed
+                # by the '' key in tasks_grouped_by_parent_id.
+                parent_id = ''
             if parent_id:
                 # This is a subtask
                 total_num_subtasks += 1
@@ -200,6 +210,13 @@ def fix_tasks_order(tasklists): # pylint:disable=too-many-locals
         # -------------
         tasks_sorted = []
 
+        if not '' in tasks_grouped_by_parent_id:
+            # No root tasks in this tasklist
+            logging.warning("%s: There are no root tasks in tasklist (no tasks with '' parent ID)", fn_name)
+            logging.warning("%s:     'tasks_grouped_by_parent_id' contains %d non-root parent IDs", 
+                fn_name, len(tasks_grouped_by_parent_id))
+            continue
+            
         # Start by processing all root tasks
         # If a root task has children, process_task() will be called recursively to process the subtasks
         root_tasks_list = tasks_grouped_by_parent_id['']
@@ -215,31 +232,56 @@ def fix_tasks_order(tasklists): # pylint:disable=too-many-locals
             num_tasklists))
     if num_empty_tasklists:
         logging.info("%s: There were %d empty tasklists", fn_name, num_empty_tasklists)
+        
+    if total_num_tasks:
+        avg_subtasks = total_num_subtasks * 1.0 / total_num_tasks
+    else:
+        # Prevent divide by zero
+        avg_subtasks = 0.0
+        
     logging.info("%s: %s", fn_name, 
         "There were {:,} sub-tasks ({:.2%})".format(
             total_num_subtasks, 
-            total_num_subtasks * 1.0 / total_num_tasks))
+            avg_subtasks))
 
     num_tasks_greater_than_depth1 = 0
     for depth, count in sorted(depth_counter.iteritems()):
         if depth > 1:
             num_tasks_greater_than_depth1 += count
         
+        if total_num_tasks:
+            avg_subtasks = count * 1.0 / total_num_tasks
+        else:
+            # Prevent divide by zero
+            avg_subtasks = 0.0
+        
         logging.info("%s: %s", fn_name,
             "    Depth {}: {:>6,}  {:>7.2%}".format(
             depth, 
             count,
-            count * 1.0 / total_num_tasks))
+            avg_subtasks))
         
     if num_tasks_greater_than_depth1:
         logging.info("%s: %s", fn_name,
             "    {:,} sub-tasks have depth greater than 1. That is;".format(
                 num_tasks_greater_than_depth1))
             
+        if total_num_subtasks:
+            avg_subtasks = num_tasks_greater_than_depth1 * 1.0 / total_num_subtasks
+        else:
+            # Prevent divide by zero
+            avg_subtasks = 0.0
+        
         logging.info("%s: %s", fn_name,
             "          {:.2%} of all sub-tasks".format(
-                num_tasks_greater_than_depth1 * 1.0 / total_num_subtasks))
+                avg_subtasks))
             
+        if total_num_tasks:
+            avg_subtasks = num_tasks_greater_than_depth1 * 1.0 / total_num_tasks
+        else:
+            # Prevent divide by zeero
+            avg_subtasks = 0.0
+        
         logging.info("%s: %s", fn_name,
             "          {:.2%} of all tasks".format(
                 num_tasks_greater_than_depth1 * 1.0 / total_num_tasks))
@@ -749,8 +791,9 @@ class ShowProgressHandler(webapp2.RequestHandler):
             # Retrieve the DB record for this user
             tasks_backup_job = model.ProcessTasksJob.get_by_key_name(user_email)
             if tasks_backup_job is None:
-                # If no DB record (e.g., first time user), redirect to /main
-                logging.warning(fn_name + "No DB record for " + user_email + " so redirecting to " + 
+                # If no DB record (e.g., first time user who went direct to /progress),
+                # redirect to WELCOME_PAGE_URL
+                logging.info(fn_name + "No DB record for " + user_email + " so redirecting to " + 
                     settings.WELCOME_PAGE_URL)
                 logging.debug(fn_name + "<End> (No DB record)")
                 logservice.flush()
