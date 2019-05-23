@@ -18,6 +18,9 @@ ignore-patterns=
 init-hook=import sys; 
   sys.path.append(r"C:\Program Files (x86)\Google\google_appengine")
   sys.path.append(r"C:\Program Files (x86)\Google\google_appengine\lib\webapp2-2.5.2")
+  
+#  sys.path.append(r"C:\Program Files (x86)\Google\google_appengine\lib\apiclient")
+#  sys.path.append(r"C:\Program Files (x86)\Google\google_appengine\lib\oauth2client")
 
 # Use multiple processes to speed up Pylint.
 jobs=1
@@ -242,7 +245,8 @@ good-names=i,
            k,
            ex,
            Run,
-           _
+           _,
+           dt
 
 # Include a hint for the correct naming format with invalid-name
 include-naming-hint=no

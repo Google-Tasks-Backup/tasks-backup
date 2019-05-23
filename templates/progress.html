@@ -326,11 +326,11 @@ the selections that the user made when they started the backup.
                 <img class="popupClose" border="0" src="/static/close.png" alt="Close">
                 <div class="clear medium-break">
                     This backup is a snapshot of tasks as at {{ job_start_timestamp }} UTC 
-                    and will not reflect changes made after that time. 
-                    You will need to rerun <a href="{{ url_main_page }}" >{{ app_title }}</a>
-                    to create a new backup.
+                    and will not reflect changes to Google Tasks made after that time. 
+                    <a class="no-visited-highlight" href="{{ url_main_page }}" >Click here</a> to create a new backup.
                 </div>
             </div>
+            
             {% if include_completed %}
                 <br/>
                 <span class="comment">Includes completed tasks</span>
@@ -345,6 +345,28 @@ the selections that the user made when they started the backup.
             {% if include_deleted %}
                 <br/>
                 <span class="comment">Includes deleted tasks</span>
+            {% endif %}
+                        
+            {% if possibly_very_stale_data %}
+                <div class="warning-box take-note-larger medium-gap-top small-break">
+                    <div class="take-note-larger">
+                        <span class="take-note-larger">CAUTION: This backup snapshot was made {{ since_msg }}</span>.
+                    </div>
+                    <div class="take-note nice-gap-top">
+                        If you want to export or display tasks created or modified since {{ job_start_timestamp_str }},<br> 
+                        please <a class="take-note-larger no-visited-highlight" href="{{ url_main_page }}">click here to create a new backup</a>
+                    </div>
+                </div>
+            {% else %}
+                {% if possibly_stale_data %}
+                    <div class="take-note-larger medium-gap-top small-break">
+                        NOTE: This backup snapshot was made {{ since_msg }}.
+                    </div>
+                    <div class="take-note nice-gap-top">
+                        If you want to export or display tasks created or modified since {{ job_start_timestamp_str }},<br> 
+                        please <a class="no-visited-highlight" href="{{ url_main_page }}">click here to create a new backup</a>
+                    </div>
+                {% endif %}
             {% endif %}
         </div>
     {% else %}
@@ -951,6 +973,26 @@ the selections that the user made when they started the backup.
                                 <input type="checkbox" name="display_updated_date_field" value="True" >
                                     &nbsp;Display updated date field?
                                 
+                            </li>
+                        </ul>
+                        
+                        <div class="selection-column-header">Sort order</div>
+                        <ul class="format-selection">
+                            <li>
+                                <input id="html_sort_order_default" type="radio" name="html_sort_order" value=""  checked="checked" />
+                                <label for="html_sort_order_default">Default order</label>
+                            </li>
+                            <li>
+                                <input id="html_sort_order_due_date" type="radio" name="html_sort_order" value="due_date"/>
+                                <label for="html_sort_order_due_date">Sort by due date (earliest first)</label>
+                            </li>
+                            <li>
+                                <input id="html_sort_order_due_date_reverse" type="radio" name="html_sort_order" value="due_date_reverse"/>
+                                <label for="html_sort_order_due_date_reverse">Sort by due date (latest first)</label>
+                            </li>
+                            <li>
+                                <input id="html_sort_order_alphabetically" type="radio" name="html_sort_order" value="alphabetically"/>
+                                <label for="html_sort_order_alphabetically">Sort alphabetically</label>
                             </li>
                         </ul>
                     </div>

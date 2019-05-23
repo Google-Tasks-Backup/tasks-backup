@@ -19,53 +19,38 @@
 # This module contains code whis is common between classes, modules or related projects
 # Can't use the name common, because there is already a module named common
 
-
-# Fix for DeadlineExceeded, because "Pre-Call Hooks to UrlFetch Not Working"
-#     Based on code from https://groups.google.com/forum/#!msg/google-appengine/OANTefJvn0A/uRKKHnCKr7QJ
-from google.appengine.api import urlfetch
-real_fetch = urlfetch.fetch
-def fetch_with_deadline(url, *args, **argv):
-    argv['deadline'] = settings.URL_FETCH_TIMEOUT
-    return real_fetch(url, *args, **argv)
-urlfetch.fetch = fetch_with_deadline
-
-
-from oauth2client import appengine
-from google.appengine.api import users
-from google.appengine.api import logservice # To flush logs
-from google.appengine.ext import db
-from google.appengine.api import memcache
-from google.appengine.ext import webapp
-from google.appengine.ext.webapp import template
-
-from oauth2client import client
-from apiclient import discovery
-
-# Import from error so that we can process HttpError
-from apiclient import errors as apiclient_errors
-from google.appengine.api import urlfetch_errors
-
-import unicodedata
-
-import httplib2
 import Cookie
 import cgi
 import sys
 import os
 import traceback
 import logging
-import pickle
-import time
 import datetime
 from urlparse import urljoin
+import unicodedata
+
+
+from google.appengine.api import logservice # To flush logs
+from google.appengine.api import mail
+from google.appengine.api import urlfetch
+from google.appengine.api.app_identity import get_application_id
+from google.appengine.ext.webapp import template
 
 
 # Project-specific imports
-import model
 import settings
 import constants
 import appversion # appversion.version is set before the upload process to keep the version number consistent
 import host_settings
+
+
+# Fix for DeadlineExceeded, because "Pre-Call Hooks to UrlFetch Not Working"
+#     Based on code from https://groups.google.com/forum/#!msg/google-appengine/OANTefJvn0A/uRKKHnCKr7QJ
+real_fetch = urlfetch.fetch # pylint: disable=invalid-name
+def fetch_with_deadline(url, *args, **argv):
+    argv['deadline'] = settings.URL_FETCH_TIMEOUT
+    return real_fetch(url, *args, **argv)
+urlfetch.fetch = fetch_with_deadline
 
 
 logservice.AUTOFLUSH_EVERY_SECONDS = 5
@@ -73,17 +58,17 @@ logservice.AUTOFLUSH_EVERY_BYTES = None
 logservice.AUTOFLUSH_EVERY_LINES = 5
 logservice.AUTOFLUSH_ENABLED = True
 
+
+
 class DailyLimitExceededError(Exception):
     """ Thrown by get_credentials() when HttpError indicates that daily limit has been exceeded """
     
     msg = "Daily limit exceeded. Please try again after midnight Pacific Standard Time."
     
-    def __init__(self, msg = None):
+    def __init__(self, msg = None): # pylint: disable=super-init-not-called
         if msg:
             self.msg = msg
             
-    def __repr__(self):
-        return msg;
     
 
 def set_cookie(res, key, value='', max_age=None,
@@ -121,64 +106,68 @@ def delete_cookie(res, key):
     set_cookie(res, key, '', -1)
     
     
-def format_exception_info(maxTBlevel=5):
+def format_exception_info(max_tb_level=5):
     cla, exc, trbk = sys.exc_info()
-    excName = cla.__name__
+    exc_name = cla.__name__
     try:
-        excArgs = exc.__dict__["args"]
+        exc_args = exc.__dict__["args"]
     except KeyError:
-        excArgs = "<no args>"
-    excTb = traceback.format_tb(trbk, maxTBlevel)
-    return (excName, excArgs, excTb)
+        exc_args = "<no args>"
+    exc_tb = traceback.format_tb(trbk, max_tb_level)
+    return (exc_name, exc_args, exc_tb)
          
 
-def get_exception_name(maxTBlevel=5):
-    cla, exc, trbk = sys.exc_info()
-    excName = cla.__name__
-    return str(excName)
+def get_exception_name():
+    cla, _, _ = sys.exc_info()
+    exc_name = cla.__name__
+    return str(exc_name)
          
 
-# def get_exception_msg(e, maxTBlevel=5):
-    # cla, exc, trbk = sys.exc_info()
-    # excName = cla.__name__
-    # return str(excName) + ": " + str(e)
-           
-def get_exception_msg(e = None):
+def get_exception_msg(ex = None):
     """ Return string containing exception type and message
     
         args:
-            e       [OPTIONAL] An exception type
+            ex       [OPTIONAL] An exception type
             
-        If e is specified, and is of an Exception type, this method returns a 
+        If ex is specified, and is of an Exception type, this method returns a 
         string in the format "Type: Msg" 
         
-        If e is not specified, or cannot be parsed, "Type: Msg" is
+        If ex is not specified, or cannot be parsed, "Type: Msg" is
         returned for the most recent exception
     """
-        
-    # Store current exception msg, in case building msg for e causes an exception
-    cla, exc, trbk = sys.exc_info()
-    if cla:
-        excName = cla.__name__
-        ex_msg = unicode(excName) + ": " + unicode(exc.message)
-    else:
-        ex_msg = "No exception occured"
     
-    if e:
-        msg = ''
+    line_num = u''
+    msg = u''
+    ex_msg = u"No exception occured"
+        
+    # Store current exception msg, in case building msg for ex causes an exception
+    cla, exc, trbk = sys.exc_info()
+    try:
+        line_num = trbk.tb_lineno
+    except: # pylint: disable=bare-except
+        pass
+    if cla:
+        exc_name = cla.__name__
+        if line_num:
+            ex_msg = u"{}: {} at line {}".format(exc_name, exc.message, line_num)
+        else:
+            ex_msg = u"{}: {}".format(exc_name, exc.message)
+    
+    if ex:
         try:
-            msg = unicode(e)
-            excName = e.__class__.__name__
+            e_msg = unicode(ex)
+            exc_name = ex.__class__.__name__
             
-            return str(excName) + ": " + msg
+            msg = "{}: {}".format(exc_name, e_msg)
             
-        except Exception, e1:
-            # Unable to parse passed-in exception 'e', so returning the most recent
+        except: # pylint: disable=bare-except
+            # Unable to parse passed-in exception 'ex', so returning the most recent
             # exception when this method was called
-            return "Most recent exception = " + ex_msg + " (" + msg + ")"
-            
-    else:
-         return ex_msg           
+            msg = u"Unable to process 'ex'. Most recent exception = " + ex_msg
+
+    if msg:
+        return msg
+    return ex_msg
 
          
 def is_test_user(user_email):
@@ -186,7 +175,7 @@ def is_test_user(user_email):
   
         Used when testing to ensure that only test user's details and sensitive data are logged.
     """
-    return (user_email.lower() in (email.lower() for email in settings.TEST_ACCOUNTS))
+    return (user_email.lower() in (email.lower() for email in settings.TEST_ACCOUNTS)) # pylint: disable=superfluous-parens
   
 
 def dump_obj(obj):
@@ -287,26 +276,47 @@ def serve_message_page(self,
         self.response.out.write(template.render(path, template_values))
         logging.debug(fn_name + "<End>" )
         logservice.flush()
-    except Exception, e:
+    except Exception as ex: # pylint: disable=broad-except
         logging.exception(fn_name + "Caught top-level exception")
-        serve_outer_exception_message(self, e)
+        serve_outer_exception_message(self, ex)
         logging.debug(fn_name + "<End> due to exception" )
         logservice.flush()
     
 
-def serve_outer_exception_message(self, e):
+def serve_outer_exception_message(self, ex):
     """ Display an Oops message when something goes very wrong. 
     
         This is called from the outer exception handler of major methods (such as get/post handlers)
     """
     fn_name = "serve_outer_exception_message: "
     
-    self.response.out.write("""Oops! Something went terribly wrong.<br />%s<br /><br />This system is in beta, and is being activeley developed.<br />Please report any errors to <a href="http://%s">%s</a> so that they can be fixed. Thank you.""" % 
-        ( get_exception_msg(e), settings.url_issues_page, settings.url_issues_page))
+    # self.response.out.write("""Oops! Something went terribly wrong.<br />%s<br /><br />This system is in beta, and is being actively developed.<br />Please report any errors to <a href="http://%s">%s</a> so that they can be fixed. Thank you.""" % 
+        # ( get_exception_msg(ex), settings.url_issues_page, settings.url_issues_page))
         
+    
+    # NOTE: We are writing raw HTML here, as we don't know what may have happened. 
+    # The tasks_backup.css has not been loaded, so we don't have access to our standard CSS classes, etc.
+    self.response.out.write("""
+        Oops! Something went terribly wrong:<br />
+        {exception_msg}<br />
+        <br />
+        Please report this error
+        <ul>
+            <li>via Github at <a href="http://{url_issues_page}">{url_issues_page}</a></li>
+            <li>or via the discussion group at <a href="http://{url_discussion_group}">{url_discussion_group}</a></li> 
+            <li>or via email to <a href="mailto:{email_discussion_group}">{email_discussion_group}</a></li>
+        </ul>
+        so that it can be fixed. Thank you.
+            """.format(
+                    exception_msg=get_exception_msg(ex),
+                    url_issues_page=settings.url_issues_page,
+                    url_discussion_group=settings.url_discussion_group,
+                    email_discussion_group=settings.email_discussion_group))
         
-    logging.error(fn_name + get_exception_msg(e))
+    logging.error(fn_name + get_exception_msg(ex))
     logservice.flush()
+
+    send_email_to_support("Served outer exception message", get_exception_msg(ex))
 
     
 def reject_non_test_user(self):
@@ -327,10 +337,10 @@ def reject_non_test_user(self):
         show_heading_messages=False)
                     
                     
-def format_datetime_as_str(d, format_str, date_only=False, prefix=''):
+def format_datetime_as_str(dt, format_str, date_only=False, prefix=''):
     """ Attempts to convert datetime to a string.
     
-        d               datetime object
+        dt              datetime object
         format_str      format string to be used by strftime
         date_only       If true, and strftime fails on the datetime object, then return a simplified date-only string
                         If false, and strftime fails on the datetime object, then return a simplified date & time string
@@ -348,7 +358,7 @@ def format_datetime_as_str(d, format_str, date_only=False, prefix=''):
     
     try:
         datetime_str = ''
-        if d == None:
+        if dt is None:
             # The original datestamp was '0000-01-01T00:00:00.000Z' which is stored as None,
             # so return a human-friendly representation of zero-date (i.e., '0000-01-01 00:00:00' or '0000-01-01')
             if date_only:
@@ -357,27 +367,29 @@ def format_datetime_as_str(d, format_str, date_only=False, prefix=''):
                 datetime_str = constants.ZERO_DATETIME_STRING
         else:
             try:
-                datetime_str = d.strftime(format_str)
-            except Exception, e:
+                datetime_str = dt.strftime(format_str)
+            except Exception: # pylint: disable=broad-except
                 try:
-                    # Can't be formatted, so try to convert to a meaningfull string manually
+                    # Can't be formatted, so try to convert to a meaningful string manually
                     # This ignores the passed-in format string, but should at least provide something useful
                     if date_only:
-                        datetime_str = "%04d-%02d-%02d" % (d.year,d.month,d.day)
+                        datetime_str = "%04d-%02d-%02d" % (dt.year,dt.month,dt.day)
                     else:
-                        datetime_str = "%04d-%02d-%02d %02d:%02d:%02d" % (d.year,d.month,d.day,d.hour,d.minute, d.second)
-                except Exception, e:
+                        datetime_str = "%04d-%02d-%02d %02d:%02d:%02d" % (
+                            dt.year,dt.month,dt.day,dt.hour,dt.minute, dt.second)
+                except Exception: # pylint: disable=broad-except
                     # Can't be converted (this should never happen)
                     logging.warning(fn_name + "Unable to convert datetime object; returning empty string")
                     return ''
         return prefix + datetime_str
         
-    except Exception, e:
+    except Exception: # pylint: disable=broad-except
         logging.exception(fn_name + "Error processing datetime object; returning empty string")
         return ''
         
     
-def convert_RFC3339_string_to_datetime(datetime_str, field_name, date_only=False):
+def convert_RFC3339_string_to_datetime( # pylint: disable=invalid-name
+    datetime_str, field_name, date_only=False):
     """ Attempt to convert the RFC 3339 datetime string to a valid datetime object.
     
         If the field value cannot be parsed, return a default '1900-01-01 00:00:00' value.
@@ -430,42 +442,42 @@ def convert_RFC3339_string_to_datetime(datetime_str, field_name, date_only=False
             # This prevents exceptions later when other modules try to display a datetime
             # that is outside the valid range for strftime(), such as dates before 1900.
             try:
-                test_date_str = d.strftime('%H:%M:%S %a, %d %b %Y')
-            except Exception, e:
+                _ = d.strftime('%H:%M:%S %a, %d %b %Y')
+            except Exception as ex: # pylint: disable=broad-except
                 d = datetime.datetime(1900,1,1,0,0,0)
                 logging.warning(fn_name + "Unable to convert '" + field_name + "' string '" + str(datetime_str) + 
                     "' to a datetime that can be displayed by strftime, so using " + str(d) + 
-                    ": " + get_exception_msg(e))
+                    ": " + get_exception_msg(ex))
                 logservice.flush()
             
-        except ValueError, e:
+        except ValueError as ve:
             # Minimum datestamp that can be parsed by strptime or displayed by strftime is 1900-01-01
             d = datetime.datetime(1900,1,1,0,0,0)
             logging.warning(fn_name + "Invalid '" + field_name + "' timestamp (" + str(datetime_str) + 
                 "), so using " + str(d) + 
-                ": " + get_exception_msg(e))
+                ": " + get_exception_msg(ve))
             logservice.flush()
             
-        except Exception, e:
+        except Exception as ex: # pylint: disable=broad-except
             logging.exception(fn_name + "Unable to parse '" + field_name + "' value '" + str(datetime_str) + 
                 "' as a datetime")
             logservice.flush()
-            raise e
+            raise ex
                 
-    except Exception, e:
+    except Exception as ex: # pylint: disable=broad-except
         # Catch all, in case we can't even process or display datetime_str
         logging.exception(fn_name + "Unable to parse '" + field_name + "' value")
         try:
             logging.error(fn_name + "Invalid value was '" + str(datetime_str) + "'")
-        except Exception, e:
-            logging.error(fn_name + "Unable to log invalid value: " + get_exception_msg(e))
+        except Exception: # pylint: disable=broad-except
+            logging.error(fn_name + "Error parsing datetime string, and unable to log invalid value: " + 
+                get_exception_msg(ex))
         logservice.flush()
-        raise e
+        raise ex
         
     if d and date_only:
         return d.date()
-    else:
-        return d
+    return d
         
         
 def set_timestamp(task, field_name, date_only=False):
@@ -489,35 +501,134 @@ def set_timestamp(task, field_name, date_only=False):
             try:
                 datetime_str = task[field_name]
                 task[field_name] = convert_RFC3339_string_to_datetime(datetime_str, field_name, date_only)
-            except Exception, e:
+            except Exception as ex: # pylint: disable=broad-except
                 try:
                     logging.error(fn_name + "Unable to parse '" + field_name + 
                         "' datetime field value '" + str(datetime_str) + "', so deleting field: " +
-                        get_exception_msg(e))
-                except Exception, e:
+                        get_exception_msg(ex))
+                except Exception: # pylint: disable=broad-except
                     # In case logging the value causes an exception, log without value
                     logging.error(fn_name + "Unable to parse '" + field_name + 
                         "' datetime field value, and unable to log field value, so deleting field: " +
-                        get_exception_msg(e))
+                        get_exception_msg(ex))
                         
                 # Delete the field which has the un-parseable value
                 try:
-                    del(task[field_name])
-                except Exception, e:
-                    logging.error(fn_name + "Unable to delete '" + field_name + "': " + get_exception_msg(e))
+                    del task[field_name]
+                except Exception as ex2: # pylint: disable=broad-except
+                    logging.error(fn_name + "Unable to delete '" + field_name + "': " + get_exception_msg(ex2))
                 logservice.flush()
                 
-    except Exception, e:
+    except Exception: # pylint: disable=broad-except
         # This should never happen
         logging.exception(fn_name + "Error attempting to set '" + field_name + "' datetime field value, so deleting field")
         # Delete the field which caused the exception
         try:
-            del(task[field_name])
-        except Exception, e:
-            logging.error(fn_name + "Unable to delete '" + field_name + "': " + get_exception_msg(e))
+            del task[field_name]
+        except Exception as ex4: # pylint: disable=broad-except
+            logging.error(fn_name + "Unable to delete '" + field_name + "': " + get_exception_msg(ex4))
         logservice.flush()
                   
                   
 def convert_unicode_to_str(ustr):
     return unicodedata.normalize('NFKD', ustr).encode('ascii','ignore')                  
     
+    
+def since_msg(job_start_timestamp):
+    """ Returns a human-friendly string indicating how long ago job_start_timestamp was """
+    
+    msg = ""
+    job_execution_time = datetime.datetime.now() - job_start_timestamp
+
+    mins = int(job_execution_time.total_seconds() / 60)
+    hrs = mins / 60.0
+    days = hrs / 24.0
+
+    if mins < 10:
+        # Don't display the actual time if less than 10 minutes,
+        # because the actual backup job may take several minutes
+        msg = " just now"
+    elif mins < 60:
+        # Round to the nearest 5 minutes for the first hour
+        mins = round(mins / 5.0) * 5 
+        msg = " {:g} minutes ago".format(mins)
+    elif hrs < 2:
+        # Round to the nearest 1/4 hr for the first 2 hrs
+        hrs = round(hrs * 4) / 4
+        if hrs == 1:
+            msg = " an hour ago"
+        else:
+            msg = " {:g} hours ago".format(hrs)
+    elif hrs < 6:
+        # Round to the nearest 1/2 hr for the first 6 hrs
+        hrs = round(hrs * 2) / 2
+        msg = " {:g} hours ago".format(hrs)
+    elif hrs <= 24:
+        # Return whole hours for the first 24 hours
+        msg = " {} hours ago".format(int(hrs))
+    elif days <= 14:
+        days = round(days * 2) / 2
+        if days == 1:
+            msg = " 1 day ago"
+        elif days < 2:
+            # Return the nearest 1/2 day for the first 2 days
+            msg = " {:g} days ago".format(days)
+        else:
+            # Return whole days for up to 14 days
+            days = int(days)
+            msg = " {} days ago".format(days)
+    elif days < 7 * 8:
+        # Return whole weeks for up 8 weeks
+        weeks = int(round(days / 7.0))
+        if weeks == 1:
+            msg = " a week ago"
+        else:
+            msg = " {} weeks ago".format(weeks)
+    elif days < 366:
+        # More than 8 weeks, so return whole months    
+        months = int(round(days / 31.0))
+        msg = " {} months ago".format(months)
+    else:
+        years = days / 365.0
+        if years < 3:
+            years = round(years * 2) / 2 # Round to 1/2 year 
+            if years == 1:
+                msg = " a year ago"
+            else:
+                msg = " {:g} years ago".format(years)
+        else:
+            years = int(years)
+            msg = " more than {} years ago".format(years)
+       
+    return msg
+    
+    
+def send_email_to_support(subject, msg):
+    fn_name = "send_email_to_support: "
+    
+    try:
+        # TODO: Add date & time (or some random, unique ID) to subject so each subject is unique,
+        # so that Gmail doesn't put them all in one conversation
+        subject=host_settings.APP_TITLE + u" ERROR - " + subject
+        
+        if not settings.SUPPORT_EMAIL_ADDRESS:
+            logging.info(fn_name + "No support email address, so email not sent:")
+            logging.info(fn_name + "    Subject = {}".format(subject))
+            logging.info(fn_name + "    Msg = {}".format(msg))
+            return
+            
+        logging.info(fn_name + "Sending support email:")
+        logging.info(fn_name + "    Subject = {}".format(subject))
+        logging.info(fn_name + "    Msg = {}".format(msg))
+        
+        sender = host_settings.APP_TITLE + " <noreply@" + get_application_id() + ".appspotmail.com>"
+        
+        mail.send_mail(sender=sender,
+            to=settings.SUPPORT_EMAIL_ADDRESS,
+            subject=subject,
+            body=msg)
+    
+    except: # pylint: disable=bare-except
+        logging.exception(fn_name + "Error sending support email")
+        # logging.info(fn_name + "    Subject = {}".format(subject))
+        # logging.info(fn_name + "    Msg = {}".format(msg))

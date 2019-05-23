@@ -39,6 +39,12 @@ url_issues_page = "code.google.com/p/MY-APP-ID/issues/list"
 
 url_source_code = "code.google.com/p/MY-APP-ID/source/browse/"
 
+# Email address to which critical errors are emailed
+# If blank, no email will be sent
+SUPPORT_EMAIL_ADDRESS = ""
+
+
+
 # List of hostname(s) of the production server(s). Used to identify if app is running on production server.
 # The first in the list is used as the URL to direct user to production server.
 # This is primarily used when testing GTI on a non-production server, but we want to see what it
@@ -122,7 +128,7 @@ WORKER_API_RETRY_SLEEP_DURATION = 45
 # Number of seconds for frontend to sleep for the last API retries
 # The total amount of time allowed for a page response is 60 seconds. 
 # An API call times out after 5 seconds, so 4 API tries is up to 20 seconds
-# The API_RETRY_SLEEP_DURATION should be less than 
+# The FRONTEND_API_RETRY_SLEEP_DURATION should be less than 
 # (60 - (NUM_API_TRIES - 2) * 5 - (2 * (5 + FRONTEND_API_RETRY_SLEEP_DURATION)))
 # i.e., if NUM_API_TRIES = 4, FRONTEND_API_RETRY_SLEEP_DURATION should be LESS than 20 sec
 FRONTEND_API_RETRY_SLEEP_DURATION = 18
@@ -148,9 +154,9 @@ MAX_JOB_PROGRESS_INTERVAL = 125
 # To prevent infinite loop of a 'bad' backup job, we only allow the job to be started MAX_NUM_JOB_STARTS times.
 MAX_NUM_JOB_STARTS = 3
 
-# Update number of tasks in tasklist every TASK_COUNT_UPDATE_INTERVAL seconds
+# Update number of tasks in tasklist every PROGRESS_UPDATE_INTERVAL seconds
 # This prevents excessive Datastore Write Operations which can exceed quota
-TASK_COUNT_UPDATE_INTERVAL = 5
+PROGRESS_UPDATE_INTERVAL = 5
 
 # Refresh progress page every PROGRESS_PAGE_REFRESH_INTERVAL seconds
 PROGRESS_PAGE_REFRESH_INTERVAL = 6
@@ -159,5 +165,11 @@ PROGRESS_PAGE_REFRESH_INTERVAL = 6
 # e.g., for a 3rd level subtask, indent would be 3 * TASK_INDENT
 TASK_INDENT = 40
 
+
+# Make the "since" message and "create new backup" link bold if data is more than POSSIBLY_STALE_WARNING_HOURS hours old.
+POSSIBLY_STALE_WARNING_HOURS = 2
+# Make the "since" message and "create new backup" link bold and larger if data is more than POSSIBLY_VERY_STALE_WARNING_HOURS hours old.
+# NOTE: POSSIBLY_VERY_STALE_WARNING_HOURS must be larger than POSSIBLY_STALE_WARNING_HOURS
+POSSIBLY_VERY_STALE_WARNING_HOURS = 24
 
 

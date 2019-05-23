@@ -11,3 +11,10 @@
 {
     display: none !important;
 }
+
+@media print {
+    .print_keep_together {
+        break-inside: avoid;
+    }
+}
+

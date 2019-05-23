@@ -20,29 +20,16 @@ __author__ = "julie.smith.1999@gmail.com (Julie Smith)"
 
 import logging
 import os
-import sys
-import cgi
-import pickle
 import datetime
 
 import webapp2
 
 
-from google.appengine.ext import db
 from google.appengine.ext.webapp import template
-from google.appengine.runtime import apiproxy_errors
-from google.appengine.runtime import DeadlineExceededError
-from google.appengine.api import urlfetch_errors
 from google.appengine.api import logservice # To flush logs
 from google.appengine.api.app_identity import get_application_id
 
-import httplib2
 from oauth2client.appengine import OAuth2Decorator
-
-logservice.AUTOFLUSH_EVERY_SECONDS = 5
-logservice.AUTOFLUSH_EVERY_BYTES = None
-logservice.AUTOFLUSH_EVERY_LINES = 5
-logservice.AUTOFLUSH_ENABLED = True
 
 
 # Application-specific imports
@@ -54,13 +41,19 @@ import constants
 import host_settings
 
 
-msg = "Authorisation error. Please report this error to " + settings.url_issues_page
+logservice.AUTOFLUSH_EVERY_SECONDS = 5
+logservice.AUTOFLUSH_EVERY_BYTES = None
+logservice.AUTOFLUSH_EVERY_LINES = 5
+logservice.AUTOFLUSH_ENABLED = True
 
-auth_decorator = OAuth2Decorator(client_id=host_settings.CLIENT_ID,
+
+AUTH_ERR_MSG = "Authorisation error. Please report this error to " + settings.url_issues_page
+auth_decorator = OAuth2Decorator( # pylint: disable=invalid-name
+                                 client_id=host_settings.CLIENT_ID,
                                  client_secret=host_settings.CLIENT_SECRET,
                                  scope=host_settings.SCOPE,
                                  user_agent=host_settings.USER_AGENT,
-                                 message=msg)
+                                 message=AUTH_ERR_MSG)
                             
                             
   
@@ -95,27 +88,27 @@ class DownloadStatsHandler(webapp2.RequestHandler):
             logging.debug(fn_name + "<End>" )
             logservice.flush()
             
-        except Exception, e:
+        except Exception as ex: # pylint: disable=broad-except
             logging.exception(fn_name + "Caught top-level exception")
             
             self.response.headers["Content-Type"] = "text/html; charset=utf-8"
             try:
-                # Clear "Content-Disposition" so user will see error in browser.
-                # If not removed, output goes to file (if error generated after "Content-Disposition" was set),
-                # and user would not see the error message!
-                del self.response.headers["Content-Disposition"]
-            except Exception, e1:
-                logging.debug(fn_name + "Unable to delete 'Content-Disposition' from headers (may not be a problem, because header may not have had it set): " + shared.get_exception_msg(e1))
+                if "Content-Disposition" in self.response.headers:
+                    # Clear "Content-Disposition" so user will see error in browser.
+                    # If not removed, output goes to file (if error generated after "Content-Disposition" was set),
+                    # and user would not see the error message!
+                    del self.response.headers["Content-Disposition"]
+            except Exception as ex1: # pylint: disable=broad-except
+                logging.debug(fn_name + "Unable to delete 'Content-Disposition' from headers (may not be a problem, because header may not have had it set): " + shared.get_exception_msg(ex1))
             self.response.clear() 
             
-            self.response.out.write("""Oops! Something went terribly wrong.<br />%s<br />Please report this error to <a href="http://code.google.com/p/tasks-backup/issues/list">code.google.com/p/tasks-backup/issues/list</a>""" % shared.get_exception_msg(e))
+            self.response.out.write("""Oops! Something went terribly wrong.<br />%s<br />Please report this error to <a href="http://code.google.com/p/tasks-backup/issues/list">code.google.com/p/tasks-backup/issues/list</a>""" % shared.get_exception_msg(ex))
             logging.debug(fn_name + "<End> due to exception" )
             logservice.flush()
     
     
 
-app = webapp2.WSGIApplication(
+app = webapp2.WSGIApplication( # pylint: disable=invalid-name
     [
         ('/admin/stats', DownloadStatsHandler),
     ], debug=False)        
-

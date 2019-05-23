@@ -18,10 +18,9 @@
 
 """Classes to represent Tasks data"""
 
-from oauth2client import appengine
-
 from google.appengine.ext import db
-import datetime
+
+from oauth2client import appengine
 
 import constants
 

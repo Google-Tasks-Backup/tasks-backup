@@ -10,4 +10,5 @@ archive
 bin/*
 obj/*
 venv/*
-
+! Current changes.txt
+.*_orig

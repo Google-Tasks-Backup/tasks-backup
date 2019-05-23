@@ -16,7 +16,7 @@
 
 # This module contains any value, especially strings, that is referenced in more than one location.
 
-class ExportJobStatus(object):
+class ExportJobStatus(object): # pylint: disable=too-few-public-methods
     # CAUTION: The Django progress.html template uses string literals when checking the status value. 
     # If these values are changed, then the progress.html must also be changed
     TO_BE_STARTED = 'Starting' # Job has been created (request places on task queue)
@@ -46,4 +46,3 @@ ZERO_DATETIME_STRING = '0000-01-01 00:00:00'
 
 # This is how we display ZERO_RFC3339_DATETIME_STRING to the user for date-only fields such as 'due'
 ZERO_DATE_STRING = '0000-01-01'
-

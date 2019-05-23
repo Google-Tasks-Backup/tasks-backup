@@ -59,20 +59,21 @@ import webapp2
 # ----------------------------
 # Application-specific imports
 # ----------------------------
-import model
-import settings
+import model # pylint: disable=relative-import
+import settings # pylint: disable=relative-import
 # appversion.version is set before the upload process to keep the version number consistent
-import appversion 
-import host_settings
-import shared # Code which is common between tasks-backup.py and worker.py
-import constants
+import appversion # pylint: disable=relative-import
+import host_settings # pylint: disable=relative-import
+# The shared module contains code which is common between tasks-backup.py and worker.py
+import shared # pylint: disable=relative-import
+import constants # pylint: disable=relative-import
 
 # ---------------------
 # Local library imports
 # ---------------------
 # Import apiclient errors so that we can process HttpError
 # from .apiclient import errors as apiclient_errors
-from oauth2client.appengine import OAuth2Decorator
+from oauth2client.appengine import OAuth2Decorator # pylint: disable=relative-import
 
 
 
@@ -81,6 +82,7 @@ from oauth2client.appengine import OAuth2Decorator
 #     Based on code from https://groups.google.com/forum/#!msg/google-appengine/OANTefJvn0A/uRKKHnCKr7QJ # pylint: disable=line-too-long
 real_fetch = urlfetch.fetch # pylint: disable=invalid-name
 def fetch_with_deadline(url, *args, **argv):
+    """ Set a deadline for fetch """
     argv['deadline'] = settings.URL_FETCH_TIMEOUT
     return real_fetch(url, *args, **argv)
 urlfetch.fetch = fetch_with_deadline
@@ -95,18 +97,86 @@ logservice.AUTOFLUSH_EVERY_LINES = 5
 logservice.AUTOFLUSH_ENABLED = True
 
 
-MSG = "Authorisation error. Please report this error to " + settings.url_issues_page
+AUTH_ERR_MSG = "Authorisation error. Please report this error to " + settings.url_issues_page
 
 auth_decorator = OAuth2Decorator( # pylint: disable=invalid-name
                                  client_id=host_settings.CLIENT_ID,
                                  client_secret=host_settings.CLIENT_SECRET,
                                  scope=host_settings.SCOPE,
                                  user_agent=host_settings.USER_AGENT,
-                                 message=MSG)
+                                 message=AUTH_ERR_MSG)
 
+                                 
+# Translate the 'html_sort_order' value to a human friendly message
+HTML_SORT_ORDER_STRINGS = {
+    "due_date"          : "by due date (earliest first)",
+    "due_date_reverse"  : "by due date (latest first)",
+    "alphabetically"    : "alphabetically, by task title"
+}
 
+                                 
+def sort_tasks(tasklists, sort_order):
+    """ Sort the tasks in each tasklist according to sort_order
+    
+    This is used when export_format == 'html_raw', to sort tasks when displaying as a web page.
+    
+    sort_order may be 'alphabetically', 'due_date' or 'due_date_reverse'
+    """
 
-def fix_tasks_order(tasklists): # pylint:disable=too-many-locals
+    fn_name = "sort_tasks()"
+    
+    sort_key2 = ''
+    missing_key2_value = ''
+    reverse=False
+    
+    if not sort_order:
+        # Don't change the default sort order
+        return
+        
+    if sort_order == 'due_date':
+        sort_key = 'due'
+        missing_key_value = datetime.date.max # Tasks with no due date are sorted after any tasks with a due date
+        # Sort key #2 sorts tasks alphabetically by title if they have the same due date
+        sort_key2 = 'title'
+        missing_key2_value = ''
+    elif sort_order == 'due_date_reverse':
+        sort_key = 'due'
+        missing_key_value = datetime.date.min # Tasks with no due date are sorted after any tasks with a due date
+        # Sort key #2 sorts tasks alphabetically by title if they have the same due date
+        sort_key2 = 'title'
+        missing_key2_value = ''
+        reverse = True
+    elif sort_order == 'alphabetically':
+        sort_key = 'title'
+        missing_key_value = ''
+    else:
+        raise ValueError("Invalid sort_order '{}'".format(sort_order))
+    
+    logging.info("%s: Sorting tasks by '%s'", fn_name, sort_order)    
+    
+    for tasklist_dict in tasklists:
+            
+        if 'tasks' not in tasklist_dict:
+            # Ignore empty tasklist
+            continue
+
+        tasks = tasklist_dict['tasks']
+        
+        if sort_key2:
+            sorted_tasks = sorted(tasks, 
+                key=lambda x: (x.get(sort_key, missing_key_value), x.get(sort_key2, missing_key2_value)),
+                reverse=reverse)
+        else:
+            sorted_tasks = sorted(tasks, 
+                key=lambda x: x.get(sort_key, missing_key_value),
+                reverse=reverse)
+            
+        tasklist_dict['tasks'] = sorted_tasks
+
+        
+        
+
+def fix_tasks_order(tasklists): # pylint:disable=too-many-locals,too-many-statements,too-many-branches
     """ Fix the order of tasks within the 'tasklists' list,
         as the tasks returned from the Google Tasks server are out of sequence.
         
@@ -210,7 +280,7 @@ def fix_tasks_order(tasklists): # pylint:disable=too-many-locals
         # -------------
         tasks_sorted = []
 
-        if not '' in tasks_grouped_by_parent_id:
+        if '' not in tasks_grouped_by_parent_id:
             # No root tasks in this tasklist
             logging.warning("%s: There are no root tasks in tasklist (no tasks with '' parent ID)", fn_name)
             logging.warning("%s:     'tasks_grouped_by_parent_id' contains %d non-root parent IDs", 
@@ -754,6 +824,15 @@ class ShowProgressHandler(webapp2.RequestHandler):
             user = users.get_current_user()
                 
             user_email = user.email()
+            
+            # The nickname appears to be what is used in the header of each GAE log entry,
+            # between the IP address and the timestamp.
+            # When searching for log entries relating to a user, search by nickname.
+            # According to https://cloud.google.com/appengine/docs/standard/python/refdocs/google.appengine.api.users#google.appengine.api.users.User
+            #   The nickname will be a unique, human readable identifier for this user 
+            #   with respect to this application. It will be an email address for some users, 
+            #   and part of the email address for some users.
+            user_nickname = user.nickname()
 
             display_link_to_production_server = False # pylint: disable=invalid-name
             if not self.request.host in settings.PRODUCTION_SERVERS:
@@ -782,11 +861,15 @@ class ShowProgressHandler(webapp2.RequestHandler):
             error_message = None
             progress = 0
             job_start_timestamp = None
-            job_execution_time = None
+            time_since_job_started = None
             include_completed = False
             include_deleted = False
             include_hidden = False
             job_msg = ''
+            job_start_timestamp_str = ''
+            since_msg = ''
+            possibly_stale_data = False
+            possibly_very_stale_data = False
             
             # Retrieve the DB record for this user
             tasks_backup_job = model.ProcessTasksJob.get_by_key_name(user_email)
@@ -801,9 +884,9 @@ class ShowProgressHandler(webapp2.RequestHandler):
                 return
             else:            
                 # total_progress is only updated once all the tasks have been retrieved in a single tasklist.
-                # tasklist_progress is updated every settings.TASK_COUNT_UPDATE_INTERVAL seconds within the retrieval process
+                # tasklist_progress is updated every settings.PROGRESS_UPDATE_INTERVAL seconds within the retrieval process
                 # for each tasklist. This ensures progress updates happen at least every
-                # settings.TASK_COUNT_UPDATE_INTERVAL seconds,
+                # settings.PROGRESS_UPDATE_INTERVAL seconds,
                 # which wouldn't happen if it takes a long time to retrieve a large number of tasks in a single tasklist.
                 # So, the current progress = total_progress + tasklist_progress
                 status = tasks_backup_job.status
@@ -811,9 +894,29 @@ class ShowProgressHandler(webapp2.RequestHandler):
                 progress = tasks_backup_job.total_progress + tasks_backup_job.tasklist_progress
                 job_start_timestamp = tasks_backup_job.job_start_timestamp
                 if job_start_timestamp:
-                    job_execution_time = datetime.datetime.now() - job_start_timestamp
+                    time_since_job_started = datetime.datetime.now() - job_start_timestamp
+                    job_start_timestamp_str = job_start_timestamp.strftime('%H:%M UTC on %a %d %b %Y')
+                    since_msg = shared.since_msg(job_start_timestamp)
+                    hrs_since_job_started = time_since_job_started.total_seconds() / 3600.0
+                    
+                    if hrs_since_job_started > settings.POSSIBLY_VERY_STALE_WARNING_HOURS:
+                        # WARNING: Data is more than POSSIBLY_VERY_STALE_WARNING_HOURS hours old
+                        logging.info("{} POSSIBLY VERY STALE DATA: Tasks were retrieved from server {} for {}".format(
+                            fn_name, since_msg, user_nickname))
+                        logging.debug("{} hrs_since_job_started = {}, POSSIBLY_VERY_STALE_WARNING_HOURS = {}".format(
+                            fn_name, hrs_since_job_started, settings.POSSIBLY_VERY_STALE_WARNING_HOURS))
+                        # The progress page will display a caution, telling the user that data is old
+                        possibly_very_stale_data = True
+                    elif hrs_since_job_started > settings.POSSIBLY_STALE_WARNING_HOURS:
+                        # CAUTION: Data is more than POSSIBLY_STALE_WARNING_HOURS hours old
+                        logging.info("{} POSSIBLY STALE DATA: Tasks were retrieved from server {} for {}".format(
+                            fn_name, since_msg, user_nickname))
+                        logging.debug("{} hrs_since_job_started = {}, POSSIBLY_STALE_WARNING_HOURS = {}".format(
+                            fn_name, hrs_since_job_started, settings.POSSIBLY_STALE_WARNING_HOURS))
+                        # The progress page will display a note, telling the user that data is old
+                        possibly_stale_data = True
                 else:
-                    job_execution_time = None
+                    time_since_job_started = None
                 time_since_job_was_requested = datetime.datetime.now() - tasks_backup_job.job_created_timestamp
                 include_completed = tasks_backup_job.include_completed
                 include_deleted = tasks_backup_job.include_deleted
@@ -856,8 +959,8 @@ class ShowProgressHandler(webapp2.RequestHandler):
                         logging.error(fn_name + "Last job progress update was " + str(time_since_last_update.seconds) +
                             " seconds ago.")
                             
-                        if job_execution_time:
-                            logging.info(fn_name + "Job was started by worker " + str(job_execution_time.seconds) + 
+                        if time_since_job_started:
+                            logging.info(fn_name + "Job was started by worker " + str(time_since_job_started.seconds) + 
                                 " seconds ago at " + str(job_start_timestamp) + " UTC")
                         else:
                             logging.error(fn_name + "Job has not been started yet by worker")
@@ -881,13 +984,13 @@ class ShowProgressHandler(webapp2.RequestHandler):
                         return
             
             if status == constants.ExportJobStatus.EXPORT_COMPLETED:
-                logging.info(fn_name + "Retrieved " + str(progress) + " tasks for " + str(user_email))
+                logging.info(fn_name + "Snapshot contains " + str(progress) + " tasks for " + str(user_nickname))
             elif status == constants.ExportJobStatus.TO_BE_STARTED:
                 # Job hasn't been started yet, so no progress or job start time
-                logging.debug(fn_name + "Backup for " + str(user_email) + ", requested at " + str(tasks_backup_job.job_created_timestamp) + " UTC, hasn't started yet.")
+                logging.debug(fn_name + "Backup for " + str(user_nickname) + ", requested at " + str(tasks_backup_job.job_created_timestamp) + " UTC, hasn't started yet.")
             else:
                 logging.debug(fn_name + "Status = " + str(status) + ", progress = " + str(progress) + 
-                    " for " + str(user_email) + ", worker started at " + str(job_start_timestamp) + " UTC")
+                    " for " + str(user_nickname) + ", worker started at " + str(job_start_timestamp) + " UTC")
             
             if error_message:
                 logging.warning(fn_name + "Error message: " + str(error_message))
@@ -910,6 +1013,10 @@ class ShowProgressHandler(webapp2.RequestHandler):
                                'include_deleted' : include_deleted,
                                'include_hidden' : include_hidden,
                                'job_msg' : job_msg,
+                               'possibly_stale_data' : possibly_stale_data,
+                               'possibly_very_stale_data' : possibly_very_stale_data,
+                               'since_msg' : since_msg,
+                               'job_start_timestamp_str' : job_start_timestamp_str,
                                'error_message' : error_message,
                                'job_start_timestamp' : job_start_timestamp,
                                'refresh_interval' : settings.PROGRESS_PAGE_REFRESH_INTERVAL,
@@ -950,7 +1057,8 @@ class ReturnResultsHandler(webapp2.RequestHandler):
             The user may also be redirected here after auth_decorator authenticated a user in the post() method,
             because the post-authorisation redirection lands on the GET, not the POST
             
-            If we are here due to re-authentication, the web page uses JavaScript to action the user's original selection
+            If we are here due to re-authentication, the /progress web page uses JavaScript 
+            to action the user's original selection
         """
         fn_name = "ReturnResultsHandler.get(): "
         logging.debug(fn_name + "<Start>")
@@ -999,6 +1107,7 @@ class ReturnResultsHandler(webapp2.RequestHandler):
             user = users.get_current_user()
             
             user_email = user.email()
+            user_nickname = user.nickname()
             
             
             display_link_to_production_server = False # pylint: disable=invalid-name
@@ -1038,6 +1147,39 @@ class ReturnResultsHandler(webapp2.RequestHandler):
                 include_deleted = tasks_backup_job.include_deleted
                 include_hidden = tasks_backup_job.include_hidden
                 total_progress = tasks_backup_job.total_progress
+
+            time_since_job_started = None
+            job_start_timestamp_str = ''
+            since_msg = ''
+            possibly_very_stale_data = False
+            possibly_stale_data = False
+            job_start_timestamp = tasks_backup_job.job_start_timestamp
+            if job_start_timestamp:
+                time_since_job_started = datetime.datetime.now() - job_start_timestamp
+                job_start_timestamp_str = job_start_timestamp.strftime('%H:%M UTC on %a %d %b %Y')
+                since_msg = shared.since_msg(job_start_timestamp)
+                hrs_since_job_started = time_since_job_started.total_seconds() / 3600.0
+                
+                if hrs_since_job_started > settings.POSSIBLY_VERY_STALE_WARNING_HOURS:
+                    # WARNING: Data is more than POSSIBLY_VERY_STALE_WARNING_HOURS hours old
+                    logging.info("{} POSSIBLY VERY STALE DATA: Tasks were retrieved from server {} for {}".format(
+                        fn_name, since_msg, user_nickname))
+                    logging.debug("{} hrs_since_job_started = {}, POSSIBLY_VERY_STALE_WARNING_HOURS = {}".format(
+                        fn_name, hrs_since_job_started, settings.POSSIBLY_VERY_STALE_WARNING_HOURS))
+                    # The progress page will display a caution, telling the user that data is old
+                    possibly_very_stale_data = True
+                elif hrs_since_job_started > settings.POSSIBLY_STALE_WARNING_HOURS:
+                    # CAUTION: Data is more than POSSIBLY_STALE_WARNING_HOURS hours old
+                    logging.info("{} POSSIBLY STALE DATA: Tasks were retrieved from server {} for {}".format(
+                        fn_name, since_msg, user_nickname))
+                    logging.debug("{} hrs_since_job_started = {}, POSSIBLY_STALE_WARNING_HOURS = {}".format(
+                        fn_name, hrs_since_job_started, settings.POSSIBLY_STALE_WARNING_HOURS))
+                    # The progress page will display a note, telling the user that data is old
+                    possibly_stale_data = True
+            else:
+                time_since_job_started = None
+
+
                 
             # Retrieve the data DB record(s) for this user
             #logging.debug(fn_name + "Retrieving details for " + str(user_email))
@@ -1049,9 +1191,7 @@ class ReturnResultsHandler(webapp2.RequestHandler):
                                             "ORDER BY idx ASC",
                                             db.Key.from_path(settings.DB_KEY_TASKS_BACKUP_DATA, user_email))
 
-            num_records = tasklists_records.count()
-            
-            if num_records is None:
+            if not tasklists_records or not tasklists_records.count():
                 # There should be at least one record, since we will only execute this function if ProcessTasksJob.status == completed
                 # Possibly user got here by doing a POST without starting a backup request first 
                 # (e.g. page refresh from an old job)
@@ -1064,6 +1204,8 @@ class ReturnResultsHandler(webapp2.RequestHandler):
                 # TODO: Display better error page. Perhaps _serve_retry_page ????
                 self.response.set_status(412, "No data for this user. Please retry backup request.")
                 return
+            
+            num_records = tasklists_records.count()
             
             rebuilt_pkl = ""
             for tasklists_record in tasklists_records:
@@ -1101,6 +1243,8 @@ class ReturnResultsHandler(webapp2.RequestHandler):
             display_hidden_tasks = (self.request.get('display_hidden_tasks') == 'True')
             display_deleted_tasks = (self.request.get('display_deleted_tasks') == 'True')
             due_selection = self.request.get('due_selection')
+            html_sort_order = self.request.get('html_sort_order')
+            html_sort_order_str = HTML_SORT_ORDER_STRINGS.get(html_sort_order, '') # Friendly name. Empty if user chose 'default'
             
             export_using_localtime = (self.request.get('export_using_localtime') == 'True')
             export_offset_hours_str = self.request.get('export_offset_hours')
@@ -1349,7 +1493,14 @@ class ReturnResultsHandler(webapp2.RequestHandler):
                                 depth = 0
                             # Set number of pixels to indent task by, as a string,
                             # to use in style="padding-left:nnn" in HTML pages
-                            task[u'indent'] = str(depth * settings.TASK_INDENT).strip()
+                            
+                            if html_sort_order:
+                                # Do not indent when sorting by a specific key.
+                                # It makes no sense to indent subtasks when they are no longer 
+                                # directly below their parent.
+                                task[u'indent'] = '0'
+                            else:
+                                task[u'indent'] = str(depth * settings.TASK_INDENT).strip()
                             
                             # Delete unused properties to reduce memory usage, to improve the likelihood of being able to 
                             # successfully render very big tasklists
@@ -1359,23 +1510,37 @@ class ReturnResultsHandler(webapp2.RequestHandler):
                             # 'position' is not needed because we rely on the fact that tasks are returned in position order
                             # 'depth' is no longer needed, because we use indent to determine how far in to render the task
                             if task.has_key(u'kind'):
-                                del(task[u'kind'])
+                                del task[u'kind']
                             if task.has_key(u'id'):
-                                del(task[u'id'])
+                                del task[u'id']
                             if task.has_key(u'etag'):
-                                del(task[u'etag'])
+                                del task[u'etag']
                             if task.has_key(u'selfLink'):
-                                del(task[u'selfLink'])
+                                del task[u'selfLink']
                             if task.has_key(u'parent'):
-                                del(task[u'parent'])
+                                del task[u'parent']
                             if task.has_key(u'position'):
-                                del(task[u'position'])
+                                del task[u'position']
                             if task.has_key(u'depth'):
-                                del(task[u'depth'])
+                                del task[u'depth']
 
                         if tasklist_has_tasks_to_display:
                             tasklist[u'tasklist_has_tasks_to_display'] = True
-            
+                            
+            sort_err_msg = ''
+            if export_format == 'html_raw' and html_sort_order:
+                # TODO: Move the try..catch from sort_tasks() to here
+                #   If there is an exception, change html_sort_order_str to indicate that sort failed
+                try:
+                    logging.info("%sUser has chosen to sort displayed tasks %s", fn_name, html_sort_order_str)
+                    sort_tasks(tasklists, html_sort_order)
+                except Exception as sort_ex:    
+                    logging.exception("%s: Exception sorting tasks with sort_order '%s'", fn_name, html_sort_order)
+                    sort_err_msg = "Error sorting tasks by sort order '{html_sort_order}': {sort_ex}".format(
+                            html_sort_order=html_sort_order, 
+                            sort_ex=sort_ex)
+                
+                
             logservice.flush()
             logging.debug(fn_name + "Number of tasks = " + str(total_progress))
             logging.debug(fn_name + "    total_num_orphaned_hidden_or_deleted_tasks = " + 
@@ -1421,6 +1586,12 @@ class ReturnResultsHandler(webapp2.RequestHandler):
                                'display_completed_date_field' : display_completed_date_field, # Chosen at progress page
                                'display_due_date_field' : display_due_date_field, # Chosen at progress page
                                'display_updated_date_field' : display_updated_date_field, # Chosen at progress page
+                               'html_sort_order_str' : html_sort_order_str, # Chosen at progress page
+                               'sort_err_msg' : sort_err_msg,
+                               'possibly_stale_data' : possibly_stale_data,
+                               'possibly_very_stale_data' : possibly_very_stale_data,
+                               'since_msg' : since_msg,
+                               'job_start_timestamp_str' : job_start_timestamp_str,
                                'user_email' : user_email, 
                                'now' : datetime.datetime.now(),
                                'job_start_timestamp' : job_start_timestamp,
@@ -1821,6 +1992,7 @@ class ReturnResultsHandler(webapp2.RequestHandler):
         display_completed_date_field = template_values.get('display_completed_date_field')
         display_updated_date_field = template_values.get('display_updated_date_field')
         display_due_date_field = template_values.get('display_due_date_field')
+        html_sort_order_str = template_values.get('html_sort_order_str', '')
         
         # Project info &/or common project values
         job_start_timestamp = template_values.get('job_start_timestamp')
@@ -1831,6 +2003,17 @@ class ReturnResultsHandler(webapp2.RequestHandler):
         url_source_code = template_values.get('url_source_code')
         app_title = template_values.get('app_title')
         app_version = template_values.get('app_version')
+        sort_err_msg = template_values.get('sort_err_msg', '')
+        since_msg = template_values.get('since_msg', '')
+        job_start_timestamp_str = template_values.get('job_start_timestamp_str', '')
+        possibly_very_stale_data = template_values.get('possibly_very_stale_data', False)
+        possibly_stale_data = template_values.get('possibly_stale_data', False)
+        
+        # TESTING +++
+        # logging.debug(fn_name + "TESTING: template_values = ")
+        # for k, v in template_values.iteritems():
+            # logging.debug("TESTING:     '{}' : {}".format(k, repr(v)))
+        # TESTING ---
         
         logging.debug(fn_name + "Writing HTML page")
         logservice.flush()
@@ -1879,6 +2062,34 @@ class ReturnResultsHandler(webapp2.RequestHandler):
         self.response.out.write("""<div class="no-print" style="float: right;"><button onclick="window.print()" class="back-button"  value="Print page">Print page</button></div>""")
         self.response.out.write("""<div style="clear: both;"></div>""")
         self.response.out.write("""</div>""") # Closing div to contain Back and Print buttons on same row
+
+        if possibly_very_stale_data:
+            self.response.out.write("""
+                <div class="warning-box take-note-larger medium-gap-top small-break">
+                    <div class="take-note-larger">
+                        <span class="take-note-larger">CAUTION: This backup snapshot was made {since_msg}</span>.
+                    </div>
+                    <div class="take-note nice-gap-top no-print">
+                        If you want to display tasks created or modified since {job_start_timestamp_str},<br> 
+                        please <a class="take-note-larger no-visited-highlight" href="{url_main_page}">click here to create a new backup</a>
+                    </div>
+                </div>""".format(
+                    since_msg=since_msg,
+                    job_start_timestamp_str=job_start_timestamp_str,
+                    url_main_page=settings.MAIN_PAGE_URL))
+        elif possibly_stale_data:
+            self.response.out.write("""
+                <div class="take-note-larger medium-gap-top small-break">
+                    NOTE: This backup snapshot was made {since_msg}.
+                </div>
+                <div class="take-note nice-gap-top no-print">
+                    If you want to display tasks created or modified since {job_start_timestamp_str},<br> 
+                    please <a class="no-visited-highlight" href="{url_main_page}">click here to create a new backup</a>
+                </div>""".format(
+                    since_msg=since_msg,
+                    job_start_timestamp_str=job_start_timestamp_str,
+                    url_main_page=settings.MAIN_PAGE_URL))
+        
         
         num_tasklists = len(tasklists)
         if num_tasklists > 0:
@@ -1888,6 +2099,7 @@ class ReturnResultsHandler(webapp2.RequestHandler):
             self.response.out.write(""" as at """)
             self.response.out.write(job_start_timestamp)
             self.response.out.write(""" UTC</h2>""")
+            
             if num_display_tasks == total_progress:
                 self.response.out.write("""<div>Retrieved """ + str(num_tasklists) + """ task lists.</div>""")
             else:
@@ -1923,6 +2135,32 @@ class ReturnResultsHandler(webapp2.RequestHandler):
                 # User chose to display invalid tasks (progress page)
                 self.response.out.write("""<div class="comment">""" + str(num_invalid_tasks_to_display) + """ parentless, invalid or corrupted tasks</div>""")
             self.response.out.write("""</div>""")
+
+            if sort_err_msg:
+                self.response.out.write("""
+                    <div class="warning-box report_error">
+                        <div class="take-note-larger">
+                            {sort_err_msg}
+                        </div>
+                        <div class="nice-gap-top">
+                            Please report this error
+                            <ul>
+                                <li>via Github at <a href="http://{url_issues_page}">{url_issues_page}</a></li>
+                                <li>or via the discussion group at <a href="http://{url_discussion_group}">{url_discussion_group}</a></li> 
+                                <li>or via email to <a href="mailto:{email_discussion_group}">{email_discussion_group}</a></li>
+                            </ul>
+                            so that it can be fixed. Thank you.
+                        </div>
+                    </div>
+                        """.format(
+                                sort_err_msg=sort_err_msg,
+                                url_issues_page=settings.url_issues_page,
+                                url_discussion_group=settings.url_discussion_group,
+                                email_discussion_group=settings.email_discussion_group))
+            else:
+                if html_sort_order_str:
+                    # Human friendly value; e.g. "by due date" or "alphabetically, by task title"
+                    self.response.out.write("""<h2>Sorted {}</h2>""".format(html_sort_order_str))
             
             tl_num = 1
             for tasklist in tasklists:
@@ -2007,7 +2245,7 @@ class ReturnResultsHandler(webapp2.RequestHandler):
                         
                         self.response.out.write("""<div style="padding-left:""")
                         self.response.out.write(task_indent)
-                        self.response.out.write("""px" class="task-html1 """)
+                        self.response.out.write("""px" class="task-html1 print_keep_together """)
                         self.response.out.write(dim_class)
                         # Note, additional double-quote (4 total), as the class= attribute is 
                         # terminated with a double-quote after the class name
@@ -2069,10 +2307,13 @@ class ReturnResultsHandler(webapp2.RequestHandler):
                             </div>""")
                 
                 self.response.out.write("""<hr />""")
-                
-            self.response.out.write("""
+            
+            if utc_suffix_str:
+                # The utc_suffix_str is only set when the retrieved time is UTC. 
+                # If the user selects adjust_timestamps, utc_suffix_str is empty.
+                self.response.out.write("""
                     <div class="break">
-                        NOTE: Due, Updated and Completed dates and times are UTC, because that is how Google stores them.
+                        NOTE: Dates and times are UTC (as stored by Google).
                     </div>""")
                     
         else:
@@ -2115,7 +2356,8 @@ class ReturnResultsHandler(webapp2.RequestHandler):
     
 
 class RobotsHandler(webapp2.RequestHandler):
-
+    """ Handle request for robots.txt """
+    
     def get(self):
         """If not running on production server, return robots.txt with disallow all
            to prevent search engines indexing test servers.
