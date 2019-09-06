@@ -305,7 +305,7 @@ the selections that the user made when they started the backup.
         </div>
     {% endif %}
 
-    {% include "inc_mar_2019_subtasks_warning.html" %}
+    {# include "inc_mar_2019_subtasks_warning.html" #}
     
     {% if msg %}
         <div class="break">
@@ -994,6 +994,16 @@ the selections that the user made when they started the backup.
                                 <input id="html_sort_order_alphabetically" type="radio" name="html_sort_order" value="alphabetically"/>
                                 <label for="html_sort_order_alphabetically">Sort alphabetically</label>
                             </li>
+                            {% if include_completed %}
+                                <li>
+                                    <input id="html_sort_order_completion_date" type="radio" name="html_sort_order" value="completion_date"/>
+                                    <label for="html_sort_order_completion_date">Sort by completion date (earliest completed first)</label>
+                                </li>
+                                <li>
+                                    <input id="html_sort_order_completion_date_reverse" type="radio" name="html_sort_order" value="completion_date_reverse"/>
+                                    <label for="html_sort_order_completion_date_reverse">Sort by completion date (most recently completed first)</label>
+                                </li>
+                            {% endif %}
                         </ul>
                     </div>
                 </div>

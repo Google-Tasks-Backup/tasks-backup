@@ -632,3 +632,33 @@ def send_email_to_support(subject, msg):
         logging.exception(fn_name + "Error sending support email")
         # logging.info(fn_name + "    Subject = {}".format(subject))
         # logging.info(fn_name + "    Msg = {}".format(msg))
+
+
+def is_truthy(val):
+    """ Returns True if val has a value that could be interpretted as True.
+
+    An empty string returns False.
+
+    Note that for checkbox inputs in HTML forms;
+        If the field element has a value attribute specified,
+            then let value be the value of that attribute;
+        otherwise,
+            let value be the string "on".
+        If checkbox isn't checked then it doesn't contribute to the data sent on form submission.
+
+        So when getting the checkbox value in a POST handler, if value hasn't been set
+            val = self.request.get('element_name', '')
+        val will be 'on' if checkbox is checked, or empty string if checkbox is unchecked
+    """
+    
+    if val is None:
+        return False
+
+    if isinstance(val, bool):
+        return val
+
+    try:
+        return val.lower() in ['true', 'yes', 'y', 't', 'on', 'enable', 'enabled', 'checked', '1']
+    except: # pylint: disable=bare-except
+        logging.warning("Unable to parse '%s', so returning False", str(val))
+        return False

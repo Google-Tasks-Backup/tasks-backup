@@ -107,11 +107,13 @@ auth_decorator = OAuth2Decorator( # pylint: disable=invalid-name
                                  message=AUTH_ERR_MSG)
 
                                  
-# Translate the 'html_sort_order' value to a human friendly message
+# Map the 'html_sort_order' value to a human friendly message
 HTML_SORT_ORDER_STRINGS = {
-    "due_date"          : "by due date (earliest first)",
-    "due_date_reverse"  : "by due date (latest first)",
-    "alphabetically"    : "alphabetically, by task title"
+    "due_date"                  : "by due date (earliest first)",
+    "due_date_reverse"          : "by due date (latest first)",
+    "alphabetically"            : "alphabetically, by task title",
+    "completion_date"           : "by completion date (earliest completed first)",
+    "completion_date_reverse"   : "by completion date (most recently completed first)"
 }
 
                                  
@@ -127,7 +129,7 @@ def sort_tasks(tasklists, sort_order):
     
     sort_key2 = ''
     missing_key2_value = ''
-    reverse=False
+    reverse = False
     
     if not sort_order:
         # Don't change the default sort order
@@ -149,6 +151,21 @@ def sort_tasks(tasklists, sort_order):
     elif sort_order == 'alphabetically':
         sort_key = 'title'
         missing_key_value = ''
+    elif sort_order == 'completion_date':
+        # Tasks are sorted by the 'completed' timestamp, earliest completed first.
+        # Tasks with no 'completed' value are sorted after any tasks with a 'completed' value
+        sort_key = 'completed'
+        missing_key_value = datetime.datetime.max # Tasks with no 'completed' value are sorted after any tasks with a 'completed' value
+        sort_key2 = 'title'
+        missing_key2_value = ''
+    elif sort_order == 'completion_date_reverse':
+        # Tasks are sorted by the 'completed' timestamp, most recently completed first.
+        # Tasks with no 'completed' value are sorted after any tasks with a 'completed' value
+        sort_key = 'completed'
+        missing_key_value = datetime.datetime.min
+        sort_key2 = 'title'
+        missing_key2_value = ''
+        reverse = True
     else:
         raise ValueError("Invalid sort_order '{}'".format(sort_order))
     
@@ -182,6 +199,8 @@ def fix_tasks_order(tasklists): # pylint:disable=too-many-locals,too-many-statem
         
         Reorders tasks in each tasklist so that subtasks appear under
         the respective parents, and in correct sibling order.
+        
+        Also set each task's 'depth' value.
     """
     
     fn_name = "fix_tasks_order()"
@@ -195,7 +214,9 @@ def fix_tasks_order(tasklists): # pylint:disable=too-many-locals,too-many-statem
 
     def process_task(tasks_sorted, tasks_grouped_by_parent_id, task, depth):
         """ Recursively process tasks and (optional) subtasks.
+        
             Add task to 'tasks_sorted' list in order, and grouped by parent.
+            Set each task's 'depth' value.
         """
         
         depth_counter[depth] += 1
@@ -214,7 +235,7 @@ def fix_tasks_order(tasklists): # pylint:disable=too-many-locals,too-many-statem
                              depth + 1)
 
 
-    for tasklist_dict in tasklists:
+    for tasklist_dict in tasklists: # pylint: disable=too-many-nested-blocks
         num_tasklists += 1
         
         # tasklist_title = tasklist_dict['title']
@@ -237,7 +258,14 @@ def fix_tasks_order(tasklists): # pylint:disable=too-many-locals,too-many-statem
         # ------------------------
         # Group tasks by parent ID
         # ------------------------
-        # Root tasks will have '' parent
+        # Root tasks will (should) have '' parent
+        # JS 2019-06-03; There have been some instances where users have had
+        # no tasks with an empty parent. i.e., no root tasks!
+        # In the most recent example (2019-06-03 06:54:50.026 AEST), 
+        # 'tasks_grouped_by_parent_id' contains 7 non-root parent IDs, and the
+        # user had not exported hidden or deleted tasks, so I do not know
+        # how these could exist. There should have been at least one 
+        # root parent.
         tasks_grouped_by_parent_id = {} # New tasklist, so start with an empty dict
         # all_tasks_by_id = {}
         for task_dict in tasks_unsorted:
@@ -275,16 +303,78 @@ def fix_tasks_order(tasklists): # pylint:disable=too-many-locals,too-many-statem
             # Sort all the siblings in 'list_of_tasks' by 'position'
             list_of_tasks_dicts.sort(key=operator.itemgetter('position'))
             
-        # -------------
+        # ---------------------------------
         # Create a new sorted list of tasks
-        # -------------
+        # ---------------------------------
         tasks_sorted = []
 
         if '' not in tasks_grouped_by_parent_id:
+            # ------------------------------
             # No root tasks in this tasklist
+            # ------------------------------
+            # This can happen if:
+            #   (a) A root-level parent task is marked as completed using a third party app [1], 
+            #   AND
+            #   (b) The user chooses to export without including completed tasks
+            #
+            # [1] It is up to the client as to what happens to subtasks when a parent is marked as completed. 
+            # For example, CalenGoo only marks the parent as 'complete', and doesn't alter the subtasks in any way.
+            # If using the Tasks panel in Gmail or Calendar, marking a parent task as 'complete'
+            # also sets the 'hidden' flag on the parent, and marks all children as 'complete' and 'hidden', 
+            # and removes the 'parent' property from all children. 
+            
             logging.warning("%s: There are no root tasks in tasklist (no tasks with '' parent ID)", fn_name)
             logging.warning("%s:     'tasks_grouped_by_parent_id' contains %d non-root parent IDs", 
                 fn_name, len(tasks_grouped_by_parent_id))
+                
+            # TESTING +++
+            # DEBUG: Additional logging to help find why/how we have a tasklist with no root task(s)
+            try:
+                parent_ids = tasks_grouped_by_parent_id.keys()
+                for parent_id, tasks_with_same_parent in tasks_grouped_by_parent_id.iteritems():
+                    logging.info("{}DEBUG: Found {:,} tasks with parent ID '{}'".format(
+                        fn_name,
+                        len(tasks_with_same_parent),
+                        parent_id))
+                        
+                    # Check if any of the tasks in this group of tasks (grouped by parent ID)
+                    # is the parent of another group
+                    for child_task in tasks_with_same_parent:
+                        child_task_id = child_task['id']
+                        child_task_parent_id = child_task.get('parent', '') # Should be '' for root tasks
+                        if child_task_id in parent_ids:
+                            if child_task_parent_id:
+                                logging.info("{}DEBUG: Child task '{}' in group of tasks with parent ID '{}' is a parent, and has a parent '{}'".format(
+                                    fn_name,
+                                    child_task_id,
+                                    parent_id,
+                                    child_task_parent_id))
+                            else:
+                                logging.info("{}DEBUG: Child task '{}' in group of tasks with parent ID '{}' is a parent".format(
+                                    fn_name,
+                                    child_task_id,
+                                    parent_id))
+                    # Check if there is a task with ID == parent_id
+                    if not any(d['id'] == parent_id for d in tasks_unsorted):
+                        logging.error("{}DEBUG: {} tasks have parent ID '{}', but no task with that ID exists in this tasklist".format(
+                            fn_name,
+                            len(tasks_grouped_by_parent_id[parent_id]),
+                            parent_id))
+                    # TODO: Check if a task with that parent task ID exists in another tasklist (should never happen)
+                    
+                    
+            except Exception as ex: # pylint: disable=broad-except
+                logging.exception(fn_name + "Error logging details of tasklist with no root tasks: " + shared.get_exception_msg(ex))
+                
+            # -------------------------------------
+            # KLUDGE: Set 'depth' of all tasks to 0
+            # -------------------------------------
+            logging.warning(fn_name + "No root tasks in tasklist, so setting depth of all tasks to zero")
+            for task in tasklist_dict['tasks']:
+                task['depth'] = 0
+            
+            # TESTING ---
+            
             continue
             
         # Start by processing all root tasks
@@ -371,7 +461,7 @@ class WelcomeHandler(webapp2.RequestHandler): # pylint: disable=too-few-public-m
 
         fn_name = "WelcomeHandler.get(): "
 
-        logging.debug(fn_name + "<Start> (app version %s)" %appversion.version )
+        logging.debug(fn_name + "<Start> (app version %s)" %appversion.version)
         logservice.flush()
         
         try:
@@ -423,13 +513,13 @@ class WelcomeHandler(webapp2.RequestHandler): # pylint: disable=too-few-public-m
                                
             path = os.path.join(os.path.dirname(__file__), constants.PATH_TO_TEMPLATES, "welcome.html")
             self.response.out.write(template.render(path, template_values))
-            logging.debug(fn_name + "<End>" )
+            logging.debug(fn_name + "<End>")
             logservice.flush()
             
         except Exception, e: # pylint: disable=broad-except,invalid-name
             logging.exception(fn_name + "Caught top-level exception")
             shared.serve_outer_exception_message(self, e)
-            logging.debug(fn_name + "<End> due to exception" )
+            logging.debug(fn_name + "<End> due to exception")
             logservice.flush()
     
 
@@ -443,7 +533,7 @@ class MainHandler(webapp2.RequestHandler):
 
         fn_name = "MainHandler.get(): "
 
-        logging.debug(fn_name + "<Start> (app version %s)" %appversion.version )
+        logging.debug(fn_name + "<Start> (app version %s)" %appversion.version)
         logservice.flush()
         
         try:
@@ -494,12 +584,12 @@ class MainHandler(webapp2.RequestHandler):
                                
             path = os.path.join(os.path.dirname(__file__), constants.PATH_TO_TEMPLATES, "main.html")
             self.response.out.write(template.render(path, template_values))
-            logging.debug(fn_name + "<End>" )
+            logging.debug(fn_name + "<End>")
             logservice.flush()
         except Exception, e: # pylint: disable=broad-except,invalid-name
             logging.exception(fn_name + "Caught top-level exception")
             shared.serve_outer_exception_message(self, e)
-            logging.debug(fn_name + "<End> due to exception" )
+            logging.debug(fn_name + "<End> due to exception")
             logservice.flush()
     
        
@@ -539,7 +629,7 @@ class StartBackupHandler(webapp2.RequestHandler):
                     logging.info(fn_name + "Rejecting non-test user [" + str(user_email) + "] on limited access server")
                     logservice.flush()
                     shared.reject_non_test_user(self)
-                    logging.debug(fn_name + "<End> (restricted access)" )
+                    logging.debug(fn_name + "<End> (restricted access)")
                     logservice.flush()
                     return
             
@@ -599,7 +689,7 @@ class StartBackupHandler(webapp2.RequestHandler):
                     # for this job has died, so log an error and start a new backup job.
                     logging.error(fn_name + "It appears that a previous job requested by " + str(user_email) + 
                         " at " + str(tasks_backup_job.job_created_timestamp) + " has stalled.")
-                    logging.info(fn_name + "Previous worker started at " + str(tasks_backup_job.job_start_timestamp) + " and last job progress update was " + str(time_since_last_update.seconds) + " seconds ago." )
+                    logging.info(fn_name + "Previous worker started at " + str(tasks_backup_job.job_start_timestamp) + " and last job progress update was " + str(time_since_last_update.seconds) + " seconds ago.")
                     logging.info(fn_name + "Starting a new backup job")
                     logservice.flush()
                 
@@ -608,7 +698,7 @@ class StartBackupHandler(webapp2.RequestHandler):
         except Exception, e: # pylint: disable=broad-except,invalid-name
             logging.exception(fn_name + "Caught top-level exception")
             shared.serve_outer_exception_message(self, e)
-            logging.error(fn_name + "<End> due to exception" )
+            logging.error(fn_name + "<End> due to exception")
             logservice.flush()
 
         logging.debug(fn_name + "<End>")
@@ -635,7 +725,7 @@ class StartBackupHandler(webapp2.RequestHandler):
                     logging.info(fn_name + "Rejecting non-test user [" + str(user_email) + "] on limited access server")
                     logservice.flush()
                     shared.reject_non_test_user(self)
-                    logging.debug(fn_name + "<End> (restricted access)" )
+                    logging.debug(fn_name + "<End> (restricted access)")
                     logservice.flush()
                     return
             
@@ -674,7 +764,7 @@ class StartBackupHandler(webapp2.RequestHandler):
                         # for this job has died, so log an error and start a new backup job.
                         logging.error(fn_name + "It appears that a previous job requested by " + str(user_email) + 
                             " at " + str(tasks_backup_job.job_created_timestamp) + " has stalled.")
-                        logging.info(fn_name + "Previous worker started at " + str(tasks_backup_job.job_start_timestamp) + " and last job progress update was " + str(time_since_last_update.seconds) + " seconds ago." )
+                        logging.info(fn_name + "Previous worker started at " + str(tasks_backup_job.job_start_timestamp) + " and last job progress update was " + str(time_since_last_update.seconds) + " seconds ago.")
                         logging.info(fn_name + "Starting a new backup job")
                         logservice.flush()
                     
@@ -687,14 +777,14 @@ class StartBackupHandler(webapp2.RequestHandler):
             tasks_backup_job = model.ProcessTasksJob(key_name=user_email)
             tasks_backup_job.user = user
             tasks_backup_job.job_type = 'export'
-            tasks_backup_job.include_completed = (self.request.get('include_completed') == 'True')
-            tasks_backup_job.include_deleted = (self.request.get('include_deleted') == 'True')
-            tasks_backup_job.include_hidden = (self.request.get('include_hidden') == 'True')
+            tasks_backup_job.include_completed = shared.is_truthy(self.request.get('include_completed'))
+            tasks_backup_job.include_deleted = shared.is_truthy(self.request.get('include_deleted'))
+            tasks_backup_job.include_hidden = shared.is_truthy(self.request.get('include_hidden'))
             tasks_backup_job.job_created_timestamp = datetime.datetime.now()
             tasks_backup_job.put()
 
-            logging.debug(fn_name + "include_hidden = " + str(tasks_backup_job.include_hidden) +
-                                    ", include_completed = " + str(tasks_backup_job.include_completed) +
+            logging.debug(fn_name + "include_completed = " + str(tasks_backup_job.include_completed) +
+                                    ", include_hidden = " + str(tasks_backup_job.include_hidden) +
                                     ", include_deleted = " + str(tasks_backup_job.include_deleted))
             logservice.flush()
             
@@ -706,7 +796,7 @@ class StartBackupHandler(webapp2.RequestHandler):
         except Exception, e: # pylint: disable=broad-except,invalid-name
             logging.exception(fn_name + "Caught top-level exception")
             shared.serve_outer_exception_message(self, e)
-            logging.debug(fn_name + "<End> due to exception" )
+            logging.debug(fn_name + "<End> due to exception")
             logservice.flush()
 
             
@@ -803,7 +893,7 @@ class StartBackupHandler(webapp2.RequestHandler):
         except Exception, e: # pylint: disable=broad-except,invalid-name
             logging.exception(fn_name + "Caught top-level exception")
             shared.serve_outer_exception_message(self, e)
-            logging.debug(fn_name + "<End> due to exception" )
+            logging.debug(fn_name + "<End> due to exception")
             logservice.flush()
     
     
@@ -1041,7 +1131,7 @@ class ShowProgressHandler(webapp2.RequestHandler):
         except Exception, e: # pylint: disable=broad-except,invalid-name
             logging.exception(fn_name + "Caught top-level exception")
             shared.serve_outer_exception_message(self, e)
-            logging.debug(fn_name + "<End> due to exception" )
+            logging.debug(fn_name + "<End> due to exception")
             logservice.flush()
         
 
@@ -1077,7 +1167,7 @@ class ReturnResultsHandler(webapp2.RequestHandler):
         except Exception, e: # pylint: disable=broad-except,invalid-name
             logging.exception(fn_name + "Caught top-level exception")
             shared.serve_outer_exception_message(self, e)
-            logging.debug(fn_name + "<End> due to exception" )
+            logging.debug(fn_name + "<End> due to exception")
             logservice.flush()
     
     
@@ -1320,13 +1410,13 @@ class ReturnResultsHandler(webapp2.RequestHandler):
                                                 int(self.request.get('due_month')), 
                                                 int(self.request.get('due_day'))) 
                 except Exception, e: # pylint: disable=broad-except,invalid-name
-                    due_date_limit = datetime.date(datetime.MINYEAR,1,1)
+                    due_date_limit = datetime.date(datetime.MINYEAR, 1, 1)
                     logging.exception(fn_name + "Error interpretting due date limit from browser. Using " + str(due_date_limit))
                     logservice.flush()
             else:
                 due_date_limit = None
             if export_format == 'html_raw':
-                logging.debug(fn_name + "due_selection = '" + str(due_selection) + "', due_date_limit = " + str(due_date_limit) )
+                logging.debug(fn_name + "due_selection = '" + str(due_selection) + "', due_date_limit = " + str(due_date_limit))
                 logservice.flush()
             
             num_completed_tasks = 0
@@ -1650,7 +1740,7 @@ class ReturnResultsHandler(webapp2.RequestHandler):
                 logging.debug(fn_name + "Error deleting 'Content-Disposition' from headers: " + shared.get_exception_msg(ie))
             self.response.clear() 
             shared.serve_outer_exception_message(self, e)
-            logging.debug(fn_name + "<End> due to exception" )
+            logging.debug(fn_name + "<End> due to exception")
             logservice.flush()
 
         
@@ -1675,7 +1765,7 @@ class ReturnResultsHandler(webapp2.RequestHandler):
         path = os.path.join(os.path.dirname(__file__), constants.PATH_TO_TEMPLATES, template_filename)
         email_body = template.render(path, template_values)
         
-        sender=user_email
+        sender = user_email
 
         # sender = "zzzz@logic-a-to-b.com"
         # logging.debug(fn_name + "DEBUG: Sending using invalid email address " + sender)
@@ -1717,7 +1807,7 @@ class ReturnResultsHandler(webapp2.RequestHandler):
                 shared.serve_message_page(self, msg1, msg2,
                     show_custom_button=True, 
                     custom_button_text='Return to menu', 
-                    custom_button_url = settings.RESULTS_URL,
+                    custom_button_url=settings.RESULTS_URL,
                     show_heading_messages=True,
                     template_file="message.html")    
                 logging.debug(fn_name + "<End> (due to OverQuotaError)")
@@ -1726,7 +1816,8 @@ class ReturnResultsHandler(webapp2.RequestHandler):
                 
             except mail_errors.InvalidSenderError, e: # pylint: disable=invalid-name
                 if send_try_count < MAX_SEND_TRY_COUNT:
-                    logging.warning(fn_name + "Unable to send email from " + unicode(sender))
+                    # This can happen if the user has a non-Gmail email address, so just log as info
+                    logging.info(fn_name + "Unable to send email from " + unicode(sender))
                     sender = host_settings.APP_TITLE + "@" + get_application_id() + ".appspotmail.com"
                     logging.debug(fn_name + "Will retry sending from " + unicode(sender))
                     logservice.flush()
@@ -1751,7 +1842,7 @@ class ReturnResultsHandler(webapp2.RequestHandler):
                 shared.serve_message_page(self, msg1, msg2,
                     show_custom_button=True, 
                     custom_button_text='Return to menu', 
-                    custom_button_url = settings.RESULTS_URL,
+                    custom_button_url=settings.RESULTS_URL,
                     show_heading_messages=True,
                     template_file="message.html")    
                 logging.debug(fn_name + "<End> (due to exception)")
@@ -2339,12 +2430,14 @@ class ReturnResultsHandler(webapp2.RequestHandler):
                         Source code for this project is at <a href="http://%(url_source_code)s">%(url_source_code)s</a>
                     </div>
                 </div>""" %
-                { 'url_discussion_group' : url_discussion_group,
-                  'email_discussion_group' : email_discussion_group,
-                  'url_issues_page' : url_issues_page,
-                  'url_source_code' : url_source_code,
-                  'app_title' : host_settings.APP_TITLE,
-                  'app_version' : app_version }
+                { 
+                    'url_discussion_group' : url_discussion_group,
+                    'email_discussion_group' : email_discussion_group,
+                    'url_issues_page' : url_issues_page,
+                    'url_source_code' : url_source_code,
+                    'app_title' : host_settings.APP_TITLE,
+                    'app_version' : app_version 
+                }
             )
 
         self.response.out.write("""</body></html>""")
@@ -2385,11 +2478,11 @@ class RobotsHandler(webapp2.RequestHandler):
         
 app = webapp2.WSGIApplication( # pylint: disable=invalid-name
     [
-        ("/robots.txt",                             RobotsHandler),
-        (settings.MAIN_PAGE_URL,                    MainHandler),
-        (settings.WELCOME_PAGE_URL,                 WelcomeHandler),
-        (settings.RESULTS_URL,                      ReturnResultsHandler),
-        (settings.START_BACKUP_URL,                 StartBackupHandler),
-        (settings.PROGRESS_URL,                     ShowProgressHandler),
-        (auth_decorator.callback_path,              auth_decorator.callback_handler()),
+        ("/robots.txt",                RobotsHandler),        # pylint: disable=bad-whitespace
+        (settings.MAIN_PAGE_URL,       MainHandler),          # pylint: disable=bad-whitespace
+        (settings.WELCOME_PAGE_URL,    WelcomeHandler),       # pylint: disable=bad-whitespace
+        (settings.RESULTS_URL,         ReturnResultsHandler), # pylint: disable=bad-whitespace
+        (settings.START_BACKUP_URL,    StartBackupHandler),   # pylint: disable=bad-whitespace
+        (settings.PROGRESS_URL,        ShowProgressHandler),  # pylint: disable=bad-whitespace
+        (auth_decorator.callback_path, auth_decorator.callback_handler()),
     ], debug=False)

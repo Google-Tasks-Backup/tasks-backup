@@ -65,9 +65,10 @@ This is the Django template for the main page where the user chooses backup opti
             }
 
             function setSavedStates() {
+                // Default false for hidden and deleted
                 setSavedCheckboxState("include_completed", true);
-                setSavedCheckboxState("include_hidden");
-                setSavedCheckboxState("include_deleted");
+                setSavedCheckboxState("include_hidden", false);
+                setSavedCheckboxState("include_deleted", false);
             }
             
             
@@ -95,7 +96,7 @@ This is the Django template for the main page where the user chooses backup opti
         </div>
     {% endif %}
 
-    {% include "inc_mar_2019_subtasks_warning.html" %}
+    {# include "inc_mar_2019_subtasks_warning.html" #}
     
         <div class="break">
             

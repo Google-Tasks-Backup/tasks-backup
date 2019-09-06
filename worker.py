@@ -119,165 +119,178 @@ class ProcessTasksWorker(webapp2.RequestHandler):
     def post(self):
         fn_name = "ProcessTasksWorker.post(): "
         
-        logging.debug(fn_name + "<start> (app version %s)" %appversion.version)
-        logservice.flush()
-
-        self.prev_progress_timestamp = datetime.datetime.now() # pylint: disable=attribute-defined-outside-init
-        
-        self.user_email = self.request.get(settings.TASKS_QUEUE_KEY_NAME)
-        
-        self.is_test_user = shared.is_test_user(self.user_email)
-        
-        if self.user_email:
-            
-            # Retrieve the DB record for this user
-            self.process_tasks_job = model.ProcessTasksJob.get_by_key_name(self.user_email)
-            
-            if self.process_tasks_job is None:
-                logging.error(fn_name + "No DB record for " + self.user_email)
-                logservice.flush()
-                logging.debug(fn_name + "<End> No DB record")
-                # TODO: Find some way of notifying the user?????
-                # Could use memcache to relay a message which is displayed in ProgressHandler
-                return
-                
-                
-        
-            logging.debug(fn_name + "Retrieved process tasks job for " + str(self.user_email))
-            logging.debug(fn_name + "Job was requested at " + str(self.process_tasks_job.job_created_timestamp))
+        try:
+            logging.debug(fn_name + "<start> (app version %s)" %appversion.version)
             logservice.flush()
+
+            self.prev_progress_timestamp = datetime.datetime.now() # pylint: disable=attribute-defined-outside-init
             
-            if self.process_tasks_job.status != constants.ExportJobStatus.TO_BE_STARTED:
-                # Very occassionally, GAE starts a 2nd instance of the worker, so we check for that here.
+            self.user_email = self.request.get(settings.TASKS_QUEUE_KEY_NAME)
+            
+            self.is_test_user = shared.is_test_user(self.user_email)
+            
+            if self.user_email:
                 
-                # Check when job status was last updated. If it was less than settings.MAX_JOB_PROGRESS_INTERVAL
-                # seconds ago, assume that another instance is already running, log error and exit
-                time_since_last_update = datetime.datetime.now() - self.process_tasks_job.job_progress_timestamp
-                if time_since_last_update.seconds < settings.MAX_JOB_PROGRESS_INTERVAL:
-                    logging.error(fn_name + "It appears that worker was called whilst another job is already running for " + str(self.user_email))
-                    logging.error(fn_name + "Previous job requested at " + str(self.process_tasks_job.job_created_timestamp) + " UTC is still running.")
-                    logging.error(fn_name + "Previous worker started at " + str(self.process_tasks_job.job_start_timestamp) + " UTC and last job progress update was " + str(time_since_last_update.seconds) + " seconds ago, with status " + str(self.process_tasks_job.status) )
-                    logging.warning(fn_name + "<End> (Another worker is already running)")
+                # Retrieve the DB record for this user
+                self.process_tasks_job = model.ProcessTasksJob.get_by_key_name(self.user_email)
+                
+                if self.process_tasks_job is None:
+                    logging.error(fn_name + "No DB record for " + self.user_email)
                     logservice.flush()
+                    logging.debug(fn_name + "<End> No DB record")
+                    # TODO: Find some way of notifying the user?????
+                    # Could use memcache to relay a message which is displayed in ProgressHandler
                     return
-                
-                else:
-                    # A previous job hasn't completed, and hasn't updated progress for more than 
-                    # settings.MAX_JOB_PROGRESS_INTERVAL secons, so assume that previous worker
-                    # for this job has died.
-                    logging.error(fn_name + "It appears that a previous job requested by " + str(self.user_email) + " at " + str(self.process_tasks_job.job_created_timestamp) + " UTC has stalled.")
-                    logging.error(fn_name + "Previous worker started at " + str(self.process_tasks_job.job_start_timestamp) + " UTC and last job progress update was " + str(time_since_last_update.seconds) + " seconds ago, with status " + str(self.process_tasks_job.status) + ", progress = ")
                     
-                    if self.process_tasks_job.number_of_job_starts > settings.MAX_NUM_JOB_STARTS:
-                        logging.error(fn_name + "This job has already been started " + str(self.process_tasks_job.number_of_job_starts) + " times. Giving up")
-                        logging.warning(fn_name + "<End> (Multiple job restart failures)")
+                    
+            
+                logging.debug(fn_name + "Retrieved process tasks job for " + str(self.user_email))
+                logging.debug(fn_name + "Job was requested at " + str(self.process_tasks_job.job_created_timestamp))
+                logservice.flush()
+                
+                if self.process_tasks_job.status != constants.ExportJobStatus.TO_BE_STARTED:
+                    # Very occassionally, GAE starts a 2nd instance of the worker, so we check for that here.
+                    
+                    # Check when job status was last updated. If it was less than settings.MAX_JOB_PROGRESS_INTERVAL
+                    # seconds ago, assume that another instance is already running, log error and exit
+                    time_since_last_update = datetime.datetime.now() - self.process_tasks_job.job_progress_timestamp
+                    if time_since_last_update.seconds < settings.MAX_JOB_PROGRESS_INTERVAL:
+                        logging.error(fn_name + "It appears that worker was called whilst another job is already running for " + str(self.user_email))
+                        logging.error(fn_name + "Previous job requested at " + str(self.process_tasks_job.job_created_timestamp) + " UTC is still running.")
+                        logging.error(fn_name + "Previous worker started at " + 
+                                      str(self.process_tasks_job.job_start_timestamp) + 
+                                      " UTC and last job progress update was " + 
+                                      str(time_since_last_update.seconds) + 
+                                      " seconds ago, with status " + 
+                                      str(self.process_tasks_job.status))
+                        logging.warning(fn_name + "<End> (Another worker is already running)")
                         logservice.flush()
                         return
+                    
                     else:
-                        logging.info(fn_name + "Attempting to restart backup job. Attempt number " + 
-                            str(self.process_tasks_job.number_of_job_starts + 1))
-                        logservice.flush()
-            
-            
-            self.process_tasks_job.status = constants.ExportJobStatus.INITIALISING
-            self.process_tasks_job.number_of_job_starts = self.process_tasks_job.number_of_job_starts + 1
-            self.process_tasks_job.job_progress_timestamp = datetime.datetime.now()
-            self.process_tasks_job.job_start_timestamp = datetime.datetime.now()
-            self.process_tasks_job.message = "Validating background job ..."
-            self._log_progress("Initialising")
-            self.process_tasks_job.put()
-
-            time_since_job_request = datetime.datetime.now() - self.process_tasks_job.job_created_timestamp
-            logging.debug(fn_name + "Starting job that was requested " + str(time_since_job_request.seconds) + 
-                " seconds ago at " + str(self.process_tasks_job.job_created_timestamp) + " UTC")
-            
-            
-            user = self.process_tasks_job.user
-            if not user:
-                logging.error(fn_name + "No user object in DB record for " + str(self.user_email))
-                logservice.flush()
-                self.process_tasks_job.status = constants.ExportJobStatus.ERROR
-                self.process_tasks_job.message = ''
-                self.process_tasks_job.error_message = "Problem with user details. Please restart."
-                self.process_tasks_job.job_progress_timestamp = datetime.datetime.now()
-                self._log_progress("No user")
-                self.process_tasks_job.put()
-                logging.debug(fn_name + "<End> No user object")
-                return
-                  
-            # self.credentials = self.process_tasks_job.credentials
-            
-            # DEBUG: 2012-09-16; Trying a different method of retrieving credentials, to see if it
-            # allows retrieveal of credentials for TAFE account
-            self.credentials = StorageByKeyName(CredentialsModel, user.user_id(), 'credentials').get()
-            
-            if not self.credentials:
-                logging.error(fn_name + "No credentials in DB record for " + str(self.user_email))
-                logservice.flush()
-                self.process_tasks_job.status = constants.ExportJobStatus.ERROR
-                self.process_tasks_job.message = ''
-                self.process_tasks_job.error_message = "Problem with user credentials. Please restart."
-                self.process_tasks_job.job_progress_timestamp = datetime.datetime.now()
-                self._log_progress("No credentials")
-                self.process_tasks_job.put()
-                logging.debug(fn_name + "<End> No credentials")
-                return
-          
-            if self.credentials.invalid:
-                logging.error(fn_name + "Invalid credentials in DB record for " + str(self.user_email))
-                logservice.flush()
-                self.process_tasks_job.status = constants.ExportJobStatus.ERROR
-                self.process_tasks_job.message = ''
-                self.process_tasks_job.error_message = "Invalid credentials. Please restart and re-authenticate."
-                self.process_tasks_job.job_progress_timestamp = datetime.datetime.now()
-                self._log_progress("Credentials invalid")
-                logservice.flush()
-                self.process_tasks_job.put()
-                logging.debug(fn_name + "<End> Invalid credentials")
-                return
-          
-            if self.is_test_user:
-                logging.debug(fn_name + "User is test user %s" % self.user_email)
-                logservice.flush()
+                        # A previous job hasn't completed, and hasn't updated progress for more than 
+                        # settings.MAX_JOB_PROGRESS_INTERVAL secons, so assume that previous worker
+                        # for this job has died.
+                        logging.error(fn_name + "It appears that a previous job requested by " + str(self.user_email) + " at " + str(self.process_tasks_job.job_created_timestamp) + " UTC has stalled.")
+                        logging.error(fn_name + "Previous worker started at " + str(self.process_tasks_job.job_start_timestamp) + " UTC and last job progress update was " + str(time_since_last_update.seconds) + " seconds ago, with status " + str(self.process_tasks_job.status) + ", progress = ")
+                        
+                        if self.process_tasks_job.number_of_job_starts > settings.MAX_NUM_JOB_STARTS:
+                            logging.error(fn_name + "This job has already been started " + str(self.process_tasks_job.number_of_job_starts) + " times. Giving up")
+                            logging.warning(fn_name + "<End> (Multiple job restart failures)")
+                            logservice.flush()
+                            return
+                        else:
+                            logging.info(fn_name + "Attempting to restart backup job. Attempt number " + 
+                                str(self.process_tasks_job.number_of_job_starts + 1))
+                            logservice.flush()
                 
-            retry_count = settings.NUM_API_TRIES
-            while retry_count > 0:
-                retry_count = retry_count - 1
-                # Accessing tasklists & tasks services may take some time (especially if retries due to 
-                # DeadlineExceeded), so update progress so that job doesn't stall
-                self._update_progress("Connecting to server ...")  # Update progress so that job doesn't stall
-                try:
-                    # ---------------------------------------------------------
-                    #       Connect to the tasks and tasklists services
-                    # ---------------------------------------------------------
-                    http = httplib2.Http()
-                    http = self.credentials.authorize(http)
-                    service = discovery.build("tasks", "v1", http=http)
-                    self.tasklists_svc = service.tasklists() # pylint: disable=no-member
-                    self.tasks_svc = service.tasks() # pylint: disable=no-member
+                
+                self.process_tasks_job.status = constants.ExportJobStatus.INITIALISING
+                self.process_tasks_job.number_of_job_starts = self.process_tasks_job.number_of_job_starts + 1
+                self.process_tasks_job.job_progress_timestamp = datetime.datetime.now()
+                self.process_tasks_job.job_start_timestamp = datetime.datetime.now()
+                self.process_tasks_job.message = "Validating background job ..."
+                self._log_progress("Initialising")
+                self.process_tasks_job.put()
 
-                    # This will also throw DailyLimitExceededError BEFORE processing starts if no quota available.
-                    logging.debug(fn_name + "DEBUG: Retrieving dummy list of tasklists, to 'prep' the service")
-                    dummy_list = self.tasklists_svc.list().execute()
+                time_since_job_request = datetime.datetime.now() - self.process_tasks_job.job_created_timestamp
+                logging.debug(fn_name + "Starting job that was requested " + str(time_since_job_request.seconds) + 
+                    " seconds ago at " + str(self.process_tasks_job.job_created_timestamp) + " UTC")
+                
+                
+                user = self.process_tasks_job.user
+                if not user:
+                    logging.error(fn_name + "No user object in DB record for " + str(self.user_email))
+                    logservice.flush()
+                    self.process_tasks_job.status = constants.ExportJobStatus.ERROR
+                    self.process_tasks_job.message = ''
+                    self.process_tasks_job.error_message = "Problem with user details. Please restart."
+                    self.process_tasks_job.job_progress_timestamp = datetime.datetime.now()
+                    self._log_progress("No user")
+                    self.process_tasks_job.put()
+                    logging.debug(fn_name + "<End> No user object")
+                    return
+                      
+                # self.credentials = self.process_tasks_job.credentials
+                
+                # DEBUG: 2012-09-16; Trying a different method of retrieving credentials, to see if it
+                # allows retrieveal of credentials for TAFE account
+                self.credentials = StorageByKeyName(CredentialsModel, user.user_id(), 'credentials').get()
+                
+                if not self.credentials:
+                    logging.error(fn_name + "No credentials in DB record for " + str(self.user_email))
+                    logservice.flush()
+                    self.process_tasks_job.status = constants.ExportJobStatus.ERROR
+                    self.process_tasks_job.message = ''
+                    self.process_tasks_job.error_message = "Problem with user credentials. Please restart."
+                    self.process_tasks_job.job_progress_timestamp = datetime.datetime.now()
+                    self._log_progress("No credentials")
+                    self.process_tasks_job.put()
+                    logging.debug(fn_name + "<End> No credentials")
+                    return
+              
+                if self.credentials.invalid:
+                    logging.error(fn_name + "Invalid credentials in DB record for " + str(self.user_email))
+                    logservice.flush()
+                    self.process_tasks_job.status = constants.ExportJobStatus.ERROR
+                    self.process_tasks_job.message = ''
+                    self.process_tasks_job.error_message = "Invalid credentials. Please restart and re-authenticate."
+                    self.process_tasks_job.job_progress_timestamp = datetime.datetime.now()
+                    self._log_progress("Credentials invalid")
+                    logservice.flush()
+                    self.process_tasks_job.put()
+                    logging.debug(fn_name + "<End> Invalid credentials")
+                    return
+              
+                if self.is_test_user:
+                    logging.debug(fn_name + "User is test user %s" % self.user_email)
+                    logservice.flush()
                     
-                    break # Success, so break out of the retry loop
+                retry_count = settings.NUM_API_TRIES
+                while retry_count > 0:
+                    retry_count = retry_count - 1
+                    # Accessing tasklists & tasks services may take some time (especially if retries due to 
+                    # DeadlineExceeded), so update progress so that job doesn't stall
+                    self._update_progress("Connecting to server ...")  # Update progress so that job doesn't stall
+                    try:
+                        # ---------------------------------------------------------
+                        #       Connect to the tasks and tasklists services
+                        # ---------------------------------------------------------
+                        http = httplib2.Http()
+                        http = self.credentials.authorize(http)
+                        service = discovery.build("tasks", "v1", http=http)
+                        self.tasklists_svc = service.tasklists() # pylint: disable=no-member
+                        self.tasks_svc = service.tasks() # pylint: disable=no-member
 
-                except apiclient_errors.HttpError as http_err:
-                    self._handle_http_error(fn_name, http_err, retry_count, "Error connecting to Tasks services")
-                    
-                except Exception as ex: # pylint: disable=broad-except
-                    self._handle_general_error(fn_name, ex, retry_count, "Error connecting to Tasks services")
-            
-            
-            # =========================================
-            #   Retrieve tasks from the Google server
-            # =========================================
-            self._export_tasks()
+                        # This will also throw DailyLimitExceededError BEFORE processing starts if no quota available.
+                        logging.debug(fn_name + "DEBUG: Retrieving dummy list of tasklists, to 'prep' the service")
+                        dummy_list = self.tasklists_svc.list().execute()
+                        
+                        break # Success, so break out of the retry loop
 
-        else:
-            logging.error(fn_name + "No processing, as there was no user_email key")
-            logservice.flush()
-            
+                    except apiclient_errors.HttpError as http_err:
+                        self._handle_http_error(fn_name, http_err, retry_count, "HTTP error connecting to Tasks services")
+                        
+                    except Exception as ex: # pylint: disable=broad-except
+                        self._handle_general_error(fn_name, ex, retry_count, "Error connecting to Tasks services")
+                
+                
+                # =========================================
+                #   Retrieve tasks from the Google server
+                # =========================================
+                self._export_tasks()
+
+            else:
+                logging.error(fn_name + "No processing, as there was no user_email key")
+                logservice.flush()
+
+        except Exception as ex: # pylint: disable=broad-except
+            logging.exception(fn_name + "")
+            exception_msg = shared.get_exception_msg(ex)
+            self._report_error("Internal system error: " + exception_msg)
+            # The _report_error() should send an email to support, but we send it here just in case
+            shared.send_email_to_support("Worker, caught outer exception", exception_msg)
+        
         logging.debug(fn_name + "<End>")
         logservice.flush()
 
@@ -368,15 +381,15 @@ class ProcessTasksWorker(webapp2.RequestHandler):
                     logservice.flush()
 
                 if tasklists_data.has_key(u'items'):
-                  tasklists_list = tasklists_data[u'items']
+                    tasklists_list = tasklists_data[u'items']
                 else:
-                  # If there are no tasklists, then there will be no 'items' element. This could happen if
-                  # the user has deleted all their tasklists. Not sure if this is even possible, but
-                  # checking anyway, since it is possible to have a tasklist without 'items' (see issue #9)
-                  logging.debug(fn_name + "User has no tasklists.")
-                  logservice.flush()
-                  tasklists_list = []
-              
+                    # If there are no tasklists, then there will be no 'items' element. This could happen if
+                    # the user has deleted all their tasklists. Not sure if this is even possible, but
+                    # checking anyway, since it is possible to have a tasklist without 'items' (see issue #9)
+                    logging.debug(fn_name + "User has no tasklists.")
+                    logservice.flush()
+                    tasklists_list = []
+                  
                 # tasklists_list is a list containing the details of the user's tasklists. 
                 # We are only interested in the title
               
@@ -544,16 +557,15 @@ class ProcessTasksWorker(webapp2.RequestHandler):
                         "\n    " + included_options_str)
                     logservice.flush()
                     
-                    usage_stats = model.UsageStats(
-                        user_hash = hash(self.user_email),
-                        number_of_tasks = self.process_tasks_job.total_progress,
-                        number_of_tasklists = total_num_tasklists,
-                        tasks_per_tasklist = tasks_per_list,
-                        include_completed = include_completed,
-                        include_deleted = include_deleted,
-                        include_hidden = include_hidden,
-                        start_time = start_time,
-                        processing_time = processing_time)
+                    usage_stats = model.UsageStats(user_hash=hash(self.user_email),
+                                                   number_of_tasks=self.process_tasks_job.total_progress,
+                                                   number_of_tasklists=total_num_tasklists,
+                                                   tasks_per_tasklist=tasks_per_list,
+                                                   include_completed=include_completed,
+                                                   include_deleted=include_deleted,
+                                                   include_hidden=include_hidden,
+                                                   start_time=start_time,
+                                                   processing_time=processing_time)
                     usage_stats.put()
                     logging.debug(fn_name + "Saved stats")
                     logservice.flush()
@@ -634,7 +646,8 @@ class ProcessTasksWorker(webapp2.RequestHandler):
         logservice.flush()
             
     
-    def _get_tasks_in_tasklist(self, tasklist_title, tasklist_id, 
+    def _get_tasks_in_tasklist(self, # pylint: disable=too-many-arguments
+                               tasklist_title, tasklist_id, 
                                include_hidden, include_completed, include_deleted):
         """ Returns all the tasks in the tasklist 
         
@@ -652,7 +665,7 @@ class ProcessTasksWorker(webapp2.RequestHandler):
                 'tasks' is a list. Each element in the list is dictionary representing 1 task
               number of tasks
         """        
-        fn_name = "CreateBackupHandler._get_tasks_in_tasklist(): "
+        fn_name = "_get_tasks_in_tasklist(): "
         
         
         tasklist_dict = {} # Blank dictionary for this tasklist
@@ -690,12 +703,17 @@ class ProcessTasksWorker(webapp2.RequestHandler):
                         # This happens if there are more than 100 tasks in the list
                         # See http://code.google.com/apis/tasks/v1/using.html#api_params
                         #     "Maximum allowable value: maxResults=100"
-                        tasks_data = self.tasks_svc.list(tasklist = tasklist_id, pageToken=next_tasks_page_token, 
-                            showHidden=include_hidden, showCompleted=include_completed, showDeleted=include_deleted).execute()
+                        tasks_data = self.tasks_svc.list(tasklist=tasklist_id, 
+                                                         pageToken=next_tasks_page_token, 
+                                                         showHidden=include_hidden, 
+                                                         showCompleted=include_completed, 
+                                                         showDeleted=include_deleted).execute()
                     else:
                         # Get the first (or only) page of results for this tasklist
-                        tasks_data = self.tasks_svc.list(tasklist = tasklist_id, 
-                            showHidden=include_hidden, showCompleted=include_completed, showDeleted=include_deleted).execute()
+                        tasks_data = self.tasks_svc.list(tasklist=tasklist_id, 
+                                                         showHidden=include_hidden, 
+                                                         showCompleted=include_completed, 
+                                                         showDeleted=include_deleted).execute()
                             
                     # Succeeded, so break out of the retry loop
                     break
@@ -725,7 +743,7 @@ class ProcessTasksWorker(webapp2.RequestHandler):
                 logservice.flush()
             else:
                 try:
-                    tasks = tasks_data[u'items'] # Store all the tasks (List of Dict)
+                    tasks = tasks_data[u'items'] # Store all the tasks (List of Dict)                    
                 except Exception as ex: # pylint: disable=broad-except
                     logging.exception(fn_name, "Exception extracting items from tasks_data: " + 
                       shared.get_exception_msg(ex))
@@ -788,12 +806,37 @@ class ProcessTasksWorker(webapp2.RequestHandler):
                     self.process_tasks_job.tasklist_progress = num_tasks
                     self.process_tasks_job.job_progress_timestamp = datetime.datetime.now()
                     self.process_tasks_job.message = ''
-                    logging.debug(fn_name + "Processed page of tasklists. Updated job status: '" + 
-                        str(self.process_tasks_job.status) + "', updated progress = " + 
-                        str(self.process_tasks_job.tasklist_progress))
+                    logging.debug("%sProcessed page of tasks. Updated job; status = '%s', tasklist progress = %d, total progress = %d",
+                        fn_name,
+                        self.process_tasks_job.status,
+                        self.process_tasks_job.tasklist_progress,
+                        self.process_tasks_job.total_progress,
+                        )
                     logservice.flush()
                     self.process_tasks_job.put()
                     prev_progress_timestamp = datetime.datetime.now()
+                    
+
+                # TESTING +++
+                # JS 2019-06-03; A user had 8 of 10 tasklists not return all the tasks.
+                #   Tasks per list: [21, 152, 25, 267, 74, 20, 34, 81, 65, 243]     Successful
+                #   Tasks per list: [21,  75,  9,  28, 49, 20,  7, 53, 63,  43]     Failed
+                #                        ---  --  ---  --      --  --  --  ---
+                #                         77  16  239  25      27  28   2  200      Missing tasks
+                #
+                # There is a nextPageToken, so this page should be "full".
+                # According to https://developers.google.com/tasks/v1/reference/tasks/list,
+                # 20 tasks are returned for each page (unless 'maxResults' is set).
+                try:
+                    num_tasks_in_page = len(tasks)
+                    if num_tasks_in_page != 20:
+                        logging.error("%sDEBUG: Expected a 'full' page of 20 tasks, but got %d tasks",
+                            fn_name, num_tasks_in_page)
+                except: # pylint: disable=bare-except
+                    pass
+                # TESTING ---
+                    
+                    
             else:
                 # This is the last (or only) page of results (list of tasks) for this task lists
                 # Don't need to update here if no more pages, because calling method updates
