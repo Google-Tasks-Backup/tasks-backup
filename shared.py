@@ -19,15 +19,16 @@
 # This module contains code whis is common between classes, modules or related projects
 # Can't use the name common, because there is already a module named common
 
-import Cookie
+# import Cookie
 import cgi
 import sys
 import os
 import traceback
 import logging
 import datetime
-from urlparse import urljoin
+import base64
 import unicodedata
+from urlparse import urljoin
 
 
 from google.appengine.api import logservice # To flush logs
@@ -36,12 +37,16 @@ from google.appengine.api import urlfetch
 from google.appengine.api.app_identity import get_application_id
 from google.appengine.ext.webapp import template
 
+from Crypto.PublicKey import RSA
+from Crypto.Cipher import PKCS1_OAEP
+from Crypto.Cipher import AES
+from Crypto.Util import Counter
 
 # Project-specific imports
-import settings
-import constants
-import appversion # appversion.version is set before the upload process to keep the version number consistent
-import host_settings
+import settings # pylint: disable=relative-import
+import constants # pylint: disable=relative-import
+import appversion # appversion.version is set before the upload process to keep the version number consistent # pylint: disable=relative-import
+import host_settings # pylint: disable=relative-import
 
 
 # Fix for DeadlineExceeded, because "Pre-Call Hooks to UrlFetch Not Working"
@@ -68,42 +73,66 @@ class DailyLimitExceededError(Exception):
     def __init__(self, msg = None): # pylint: disable=super-init-not-called
         if msg:
             self.msg = msg
-            
+
+
+
+class GtbDecryptionError(Exception):
+    """ Indicates that encrypted tasks could not be decrypted.
+    
+        msg indicates why
+    """
+    
+    def __init__(self, msg): # pylint: disable=super-init-not-called
+        self.msg = msg
+        super(GtbDecryptionError, self).__init__(msg)
+
     
 
-def set_cookie(res, key, value='', max_age=None,
-                   path='/', domain=None, secure=None, httponly=False,
-                   version=None, comment=None):
+def set_cookie( # pylint: disable=too-many-arguments
+    req, name, val, use_request_path=False, path='/', cookie_name_prefix=''):
+    """ Sets a cookie on the client
+
+    Args:
+        req, RequestHandler: The 'self' value used in get() and post() methods
+        name, string: The name of the cookie
+        val, string: The value to be stored
+        use_request_path, bool: If True, use the request path, else use 'path' value
+        path, string: Specifies the cookie path (if 'use_request_path' is False)
+        cookie_name_prefix, string: Prefix to cookie_name
+
+    This method sets the appropriate values for Expires.
+    If the Domain and Path are not set, the cookie should be returned for all pages
+    on the same domain that set the cookie.
+
     """
-    Set (add) a cookie for the response
-    """
+    if not isinstance(val, str):
+        val = str(val)
+
+
+    if cookie_name_prefix and name:
+        name = cookie_name_prefix + '__' + name
+
+    if not isinstance(path, str):
+        path = str(path)
+
+    if use_request_path:
+        path = req.request.path
+
+    # Expires in 10 years
+    expires_dt = datetime.datetime.utcnow() + datetime.timedelta(days=10 * 365)
     
-    fn_name = "set_cookie(): "
-    
-    cookies = Cookie.SimpleCookie()
-    cookies[key] = value
-    for var_name, var_value in [
-        ('max-age', max_age),
-        ('path', path),
-        ('domain', domain),
-        ('secure', secure),
-        ('HttpOnly', httponly),
-        ('version', version),
-        ('comment', comment),
-        ]:
-        if var_value is not None and var_value is not False:
-            cookies[key][var_name] = str(var_value)
-        if max_age is not None:
-            cookies[key]['expires'] = max_age
-    header_value = cookies[key].output(header='').lstrip()
-    res.headers.add_header("Set-Cookie", header_value)
-    logging.debug(fn_name + "Writing cookie: '" + str(key) + "' = '" + str(value) + "', max age = '" + str(max_age) + "'")
-    logservice.flush()
-        
-        
-def delete_cookie(res, key):
-    logging.debug("Deleting cookie: " + str(key))
-    set_cookie(res, key, '', -1)
+    secure = True
+    # if is_dev_server():
+        # secure = False
+        # # From https://cloud.google.com/appengine/docs/python/config/appref#handlers_element
+        # #   "The development web server does not support HTTPS connections."
+        # if req._debug_level >= constants.DEBUG_LEVEL_VERY_DETAILED:
+            # logging.debug("Dev server, so not using secure cookie")
+    if is_dev_server() and req.request.scheme == 'http':
+        # Running locally without https
+        secure = False
+
+    req.response.set_cookie(name, val, expires=expires_dt, overwrite=True, secure=secure, path=path)
     
     
 def format_exception_info(max_tb_level=5):
@@ -203,7 +232,7 @@ def serve_quota_exceeded_page(self):
     serve_message_page(self, msg1, msg2, msg3)
     
     
-def serve_message_page(self, 
+def serve_message_page(self,  # pylint: disable=too-many-locals
         msg1, msg2 = None, msg3 = None, 
         show_back_button=False, 
         back_button_text="Back to previous page",
@@ -234,9 +263,14 @@ def serve_message_page(self,
     logservice.flush()
     
     try:
-        if custom_button_url == settings.MAIN_PAGE_URL:
+        if custom_button_url:
             # Relative URLs sometimes fail on Firefox, so convert the default relative URL to an absolute URL
-            custom_button_url = urljoin("https://" + self.request.host, settings.MAIN_PAGE_URL)
+            
+            if is_dev_server():
+                scheme = 'http://'
+            else:
+                scheme = 'https://'
+            custom_button_url = urljoin(scheme + self.request.host, custom_button_url)
     
         if msg1:
             logging.debug(fn_name + "Msg1: " + msg1)
@@ -261,6 +295,7 @@ def serve_message_page(self,
                            'product_name' : host_settings.PRODUCT_NAME,
                            'url_discussion_group' : settings.url_discussion_group,
                            'email_discussion_group' : settings.email_discussion_group,
+                           'SUPPORT_EMAIL_ADDRESS' : settings.SUPPORT_EMAIL_ADDRESS,
                            'url_issues_page' : settings.url_issues_page,
                            'url_source_code' : settings.url_source_code,
                            'app_version' : appversion.version,
@@ -337,7 +372,7 @@ def reject_non_test_user(self):
         show_heading_messages=False)
                     
                     
-def format_datetime_as_str(dt, format_str, date_only=False, prefix=''):
+def format_datetime_as_str(dt, format_str, date_only=False, prefix=''): # pylint: disable=invalid-name
     """ Attempts to convert datetime to a string.
     
         dt              datetime object
@@ -533,8 +568,24 @@ def set_timestamp(task, field_name, date_only=False):
 def convert_unicode_to_str(ustr):
     return unicodedata.normalize('NFKD', ustr).encode('ascii','ignore')                  
     
-    
-def since_msg(job_start_timestamp):
+
+def ago_msg(hrs):
+    """ Returns a string with "N hours ago" or "N days ago", depending how many hours """
+    days = int(hrs / 24.0)
+    minutes = int(hrs * 60)
+    hrs = int(hrs)
+    if minutes < 60:
+        return "{} minutes ago".format(minutes)
+    if hrs == 1:
+        return "1 hour ago"
+    if hrs < 24:
+        return "{} hours ago".format(hrs)
+    if days == 1:
+        return "1 day ago"
+    return "{} days ago".format(days)
+
+
+def since_msg(job_start_timestamp): # pylint: disable=too-many-branches,too-many-statements
     """ Returns a human-friendly string indicating how long ago job_start_timestamp was """
     
     msg = ""
@@ -603,14 +654,38 @@ def since_msg(job_start_timestamp):
     return msg
     
     
-def send_email_to_support(subject, msg):
+def send_email_to_support(subject, msg, job_created_timestamp=None):
+    """ Send an email to support.
+    
+        If possible 'subject' will be modified to make it unique to the current job,
+        by including 'job_created_timestamp' in the subject line.
+    """
+    
     fn_name = "send_email_to_support: "
     
     try:
-        # TODO: Add date & time (or some random, unique ID) to subject so each subject is unique,
-        # so that Gmail doesn't put them all in one conversation
-        subject=host_settings.APP_TITLE + u" ERROR - " + subject
-        
+        # Without a unique subject line, Gmail would put all GTB error reports in one conversation.
+        # Ideally, 'subject' should be common to a job, so that all errors relating to a single job
+        # will be grouped in a single conversation, so we try to include the job creation time
+        # in the subject line.
+        # If we don't have a job creation time, we use the current time to ensure a unique subject.
+        if job_created_timestamp:
+            subject = u"{} v{} ({}) - ERROR for job created at {} - {}".format(
+                settings.SUPPORT_EMAIL_ABBR_APP_NAME,
+                # host_settings.APP_TITLE,
+                appversion.version,
+                appversion.app_yaml_version,
+                job_created_timestamp.strftime("%Y-%m-%d %H:%M:%S"),
+                subject)
+        else:
+            subject = u"{} v{} ({}) - ERROR at {} - {}".format(
+                settings.SUPPORT_EMAIL_ABBR_APP_NAME,
+                # host_settings.APP_TITLE,
+                appversion.version,
+                appversion.app_yaml_version,
+                datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S"),
+                subject)
+                
         if not settings.SUPPORT_EMAIL_ADDRESS:
             logging.info(fn_name + "No support email address, so email not sent:")
             logging.info(fn_name + "    Subject = {}".format(subject))
@@ -662,3 +737,189 @@ def is_truthy(val):
     except: # pylint: disable=bare-except
         logging.warning("Unable to parse '%s', so returning False", str(val))
         return False
+
+
+def is_dev_server():
+    """ Returns True if app is running on the development server.
+
+    Note that according to
+        Detecting application runtime environment
+    at
+        https://cloud.google.com/appengine/docs/python/tools/using-local-server
+
+    "To find out whether your code is running in production or in the local development server, check if os.getenv('SERVER_SOFTWARE', '').startswith('Google App Engine/').
+    When this is True, you're running in production; otherwise, you're running in the local development server."
+
+    I am checking for "Dev" in case Google decides to change the name of GAE.
+
+    """
+    server_software = os.environ.get('SERVER_SOFTWARE', '')
+    return server_software.startswith('Dev')
+
+
+def data_is_encrypted(tasks_backup_job):
+    """ Returns True if the tasks data has been encrypted.
+    
+        This assumes that the worker stores the encrypted AES key in
+            tasks_backup_job.encrypted_aes_key_b64
+        when the tasks are encrypted.
+        
+        This will return False for any backup old jobs, which were created before GTB implemented
+        encryption of tasks data, as those job records won't have an 'encrypted_aes_key_b64'
+        property, or the property will be ''.
+    """
+    
+    try:
+        if tasks_backup_job.encrypted_aes_key_b64:
+            return True
+    except: # pylint: disable=bare-except
+        return False # Probably an old job record, which doesn't have the encrypted_aes_key_b64 property
+    return False # No AES key, so the data hasn't been encrypted
+
+
+def encryption_keys_are_valid(private_key_b64, tasks_backup_job): # pylint: disable=too-many-return-statements
+    """ Returns True if the encrypted AES key can be decrypted by the private RSA key.
+    
+        Returns False if;
+            either key doesn't have a value, OR
+            the strings are not valid Base64 strings
+    
+        If the RSA private key doesn't match the public key used to encrypt the AES key, attempting
+        to decrypt the encrypted AES key raises a "ValueError: Incorrect decryption"
+    """
+    
+    fn_name = "encryption_keys_are_valid(): "
+    
+    if not tasks_backup_job:
+        # A job record must be supplied
+        logging.debug("%sFALSE: No tasks_backup_job", fn_name)
+        return False
+    
+    # Both keys need to be set
+    if not private_key_b64:
+        logging.debug("%sFALSE: No private key", fn_name)
+        return False
+        
+    if not tasks_backup_job.encrypted_aes_key_b64:
+        logging.debug("%sFALSE: No encrypted AES key", fn_name)
+        return False
+
+    try:
+        # This will fail if private_key_b64 is not a Base64-encoded RSA key, the most likely
+        # cause is that the user has edited the cookie
+        rsa_decrypt_key = RSA.importKey(base64.b64decode(private_key_b64))
+        if not rsa_decrypt_key.has_private():
+            # The key is not a private key
+            logging.debug("%sFALSE: Not a private RSA key", fn_name)
+            return False
+            
+        rsa_decrypt_cipher = PKCS1_OAEP.new(rsa_decrypt_key)
+        
+        encrypted_aes_key = base64.b64decode(tasks_backup_job.encrypted_aes_key_b64)
+        
+        # This will raise "ValueError: Incorrect decryption" if the private key doesn't
+        # match the public key used to encrypt the AES key.
+        aes_key = rsa_decrypt_cipher.decrypt(encrypted_aes_key) # pylint: disable=unused-variable
+        logging.debug("%sTRUE: Encrypted AES key matches RSA private key", fn_name)
+        return True
+    
+    except ValueError as ve: # pylint: disable=invalid-name
+        logging.debug("%sFALSE: Keys don't match\n" +
+            "Unable to decrypt AES key using supplied RSA private key\n" +
+            "%s",
+            fn_name, get_exception_msg(ve))
+        return False
+        
+    except: # pylint: disable=bare-except
+        logging.exception("%sFALSE: Error attempting to decrypt AES key with RSA private key", 
+            fn_name)
+        return False
+
+
+def results_can_be_returned(self, tasks_backup_job):
+    """ Returns True if the results can be returned to the user.
+    
+        Returns True if:
+            - Tasks are not encrypted, OR
+            - Tasks are encrypted, and the keys all match
+    """
+    
+    fn_name = "results_can_be_returned(): "
+    
+    if not tasks_backup_job:
+        logging.error("%sFALSE: No job record", fn_name)
+        return False
+    
+    if tasks_backup_job.status != constants.ExportJobStatus.EXPORT_COMPLETED:
+        logging.error("%sFALSE: Job not completed; Status = '%s'", fn_name, tasks_backup_job.status)
+        return False
+    
+    if not data_is_encrypted(tasks_backup_job):
+        logging.debug("%sTRUE: Data is not encrypted", fn_name)
+        return True
+        
+    private_key_b64 = self.request.cookies.get('private_key_b64', '')
+        
+    if encryption_keys_are_valid(private_key_b64, tasks_backup_job):
+        logging.debug("%sTRUE: Encryption keys are valid", fn_name)
+        return True
+        
+    logging.error("%sFALSE: Encryption keys are not valid", fn_name)
+    return False
+
+
+
+def get_aes_decrypt_cipher(private_key_b64, tasks_backup_job):
+    """ Returns an AES decryprion cypher, which can be used to decrypt the user's encrypted tasks.
+    
+        Raises
+        ------
+        GtbDecryptionError
+            If an AES encryption cypher could not be created
+    """
+    
+    fn_name = "get_aes_decrypt_cipher(): "
+    
+    if not tasks_backup_job:
+        # A job record must be supplied
+        logging.warning("%sNo tasks_backup_job", fn_name)
+        raise GtbDecryptionError("No tasks_backup_job")
+    
+    # Both keys need to be set
+    if not private_key_b64:
+        logging.warning("%sNo private key", fn_name)
+        raise GtbDecryptionError("No private key")
+        
+    if not tasks_backup_job.encrypted_aes_key_b64:
+        logging.warning("%sNo encrypted AES key", fn_name)
+        raise GtbDecryptionError("No encrypted AES key")
+
+    try:
+        # This will fail if private_key_b64 is not a Base64-encoded RSA key, the most likely
+        # cause is that the user has edited the cookie
+        rsa_decrypt_key = RSA.importKey(base64.b64decode(private_key_b64))
+        if not rsa_decrypt_key.has_private():
+            # The key is not a private key
+            logging.warning("%sRSA key is not a private RSA key", fn_name)
+            raise GtbDecryptionError("RSA key is not a private RSA key")
+            
+        rsa_decrypt_cipher = PKCS1_OAEP.new(rsa_decrypt_key)
+        
+        encrypted_aes_key = base64.b64decode(tasks_backup_job.encrypted_aes_key_b64)
+        
+        # This will raise "ValueError: Incorrect decryption" if the private key doesn't
+        # match the public key used to encrypt the AES key.
+        aes_key = rsa_decrypt_cipher.decrypt(encrypted_aes_key) # pylint: disable=unused-variable
+        aes_decrypt_cipher = AES.new(aes_key, AES.MODE_CTR, counter=Counter.new(128))
+        logging.debug("%sReturning AES decrypt cypher", fn_name)
+        return aes_decrypt_cipher
+    
+    except ValueError as ve: # pylint: disable=invalid-name
+        logging.exception("%sUnable to decrypt AES key using RSA private key", fn_name)
+        raise GtbDecryptionError("Keys don't match. Unable to decrypt AES key using RSA private key: " +
+            get_exception_msg(ve))
+        
+    except Exception as ex: # pylint: disable=broad-except
+        logging.exception("%sError attempting to decrypt AES key with RSA private key", fn_name)
+        raise GtbDecryptionError("Error attempting to decrypt AES key with RSA private key: " +
+            get_exception_msg(ex))

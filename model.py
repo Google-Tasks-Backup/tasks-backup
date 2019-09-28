@@ -56,9 +56,12 @@ class ProcessTasksJob(db.Model):
     job_progress_timestamp = db.DateTimeProperty(auto_now_add=True, indexed=False) 
     
     # Job status, controls web page, worker and foreground app behaviour
-    status = db.StringProperty(indexed=False, choices=(constants.ExportJobStatus.ALL_VALUES), default=constants.ExportJobStatus.TO_BE_STARTED)
+    status = db.StringProperty(indexed=False, 
+        choices=(constants.ExportJobStatus.ALL_VALUES),
+        default=constants.ExportJobStatus.TO_BE_STARTED)
     
-    # Total number of tasks backed up. Used to display progress to user. Updated when an entire tasklist has been backed up
+    # Total number of tasks backed up. Used to display progress to user. 
+    # Updated when an entire tasklist has been backed up
     total_progress = db.IntegerProperty(indexed=False, default=0) 
     
     # Number of tasks in current tasklist. Used to display progress to user. Updated every 'n' seconds
@@ -74,9 +77,16 @@ class ProcessTasksJob(db.Model):
     # This is used to prevent infinite loops of a job keeps dying
     number_of_job_starts = db.IntegerProperty(indexed=False, default=0) 
 
+    # The RSA public key is used to encrypt the AES key
+    public_key_b64 = db.StringProperty(indexed=False, default='')
+    
+    # The AES key is encrypted using the RSA public key
+    # The decrypted AES key is used to decrypt the encrypted tasklist data
+    encrypted_aes_key_b64 = db.StringProperty(indexed=False, default='')
     
 
 class TasklistsData(db.Model):
+    """ The user's tasklists are pickled, encrypted and stored in 1 or more blobs """
     pickled_tasks_data = db.BlobProperty(indexed=False) # NOTE: Blob max size is just under 1MB
     idx = db.IntegerProperty(default=0, indexed=True) # To reassemble in order        
 

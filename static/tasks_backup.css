@@ -621,6 +621,26 @@ a.no-visited-highlight:visited{
     padding-top: 2px;
 }
 
+.cookie-required-msg {
+    display:none;
+}
+
+/* These 2 classes are used to wrap elements that are displayed based on whether cookies are 
+   enabled or not. Initially, elements of both classes are not displayed.
+   JS is used to display all elements on the page that have either one or the class, depending on
+   the value of navigator.cookieEnabled
+ */
+.display-if-cookies-enabled {
+    display:none;
+    margin: 0;
+}
+
+.display-if-cookies-disabled {
+    display:none;
+    margin: 0;
+}
+
+
 @media print {
     .print_keep_together {
         break-inside: avoid;

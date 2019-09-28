@@ -24,6 +24,7 @@ This is the Django template for the main page where the user chooses backup opti
         <link rel="shortcut icon" type="image/x-icon" href="/static/favicon.ico" />
         <script type="text/javascript" src="/static/jquery.js"></script>
         <script type="text/javascript" src="/static/popup.js"></script>
+        <script src="/static/gtb_cookie_check.js"></script>
         <script type="text/javascript">
 
             {% include "inc_cookies.js" %}
@@ -98,7 +99,7 @@ This is the Django template for the main page where the user chooses backup opti
 
     {# include "inc_mar_2019_subtasks_warning.html" #}
     
-        <div class="break">
+        <div class="display-if-cookies-enabled break">
             
             <form method="POST" action = "{{ start_backup_url }}" onsubmit="disableButton();" >
                 <fieldset>
@@ -226,7 +227,7 @@ This is the Django template for the main page where the user chooses backup opti
                 </fieldset>
             </form>
         </div>
-        
+        {% include "inc_cookies_disabled_warning.html" %}
     <br />
 
     {% include "inc_project_footer.html" %}

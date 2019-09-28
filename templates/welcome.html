@@ -29,6 +29,7 @@ Extensively modified by Julie Smith, 2012
         <link rel="stylesheet" type="text/css" href="/static/tasks_backup.css" />
         <link rel="shortcut icon" type="image/x-icon" href="/static/favicon.ico" />
         <meta name="keywords" content="Google Tasks Backup, Google Tasks, Backup Google Tasks">
+        <script src="/static/gtb_cookie_check.js"></script>
         <script type="text/javascript">
 
             function authorise() {
@@ -39,7 +40,7 @@ Extensively modified by Julie Smith, 2012
                 //alert("dest = '" + dest + "'");
                 window.location.href = dest;
             }
-
+            
         </script>
         
         {% include "inc_google_analytics.html" %}
@@ -135,16 +136,23 @@ Extensively modified by Julie Smith, 2012
         <input type="button" class="big-button" onClick="window.location.href = 'http://{{ production_server }}'" 
                value="Go to live server">
     {% else %}
+        
         <div class="break">
             This application uses Google authentication to access your Tasks data. The permission for this application will be displayed as "{{ product_name }} - Tasks" in your list of 
             <a href="https://www.google.com/accounts/IssuedAuthSubTokens">Authorised Sites, Apps, and Services</a>, and can be revoked there at any time.
         </div>
-        {% if user_email %}
-            <button id="authorise_button" class="big-button" type="button" 
-                    onclick="window.location.href = 'https://' + window.location.host + '{{ url_main_page }}'">Main menu</button>
-        {% else %}
-            <button id="authorise_button" class="big-button" type="button" onclick="authorise();">Authorise</button>
-        {% endif %}
+        
+        
+        <div class="display-if-cookies-enabled">
+            {% if user_email %}
+                <button id="authorise_button" class="big-button" type="button" 
+                        onclick="window.location.href = 'https://' + window.location.host + '{{ url_main_page }}'">Main menu</button>
+            {% else %}
+                <button id="authorise_button" class="big-button display-if-cookies-enabled" type="button" onclick="authorise();">Authorise</button>
+            {% endif %}
+        </div>
+        
+        {% include "inc_cookies_disabled_warning.html" %}
     {% endif %}
  
    

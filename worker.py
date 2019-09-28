@@ -1,23 +1,23 @@
 # -*- coding: utf-8 -*-
-#
-# Copyright 2012 Julie Smith.  All Rights Reserved.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
+""" Worker to retrieve tasks from Google Tasks server.
 
-"""Worker to retrieve tasks from Google Tasks server.
-
-    This worker is started by a taskqueue from tasks_backup
+    This worker is started by a taskqueue from tasks_backup.
+    
+    Copyright 2012 Julie Smith.  All Rights Reserved.
+    
+    Licensed under the Apache License, Version 2.0 (the "License");
+    you may not use this file except in compliance with the License.
+    You may obtain a copy of the License at
+    
+        http://www.apache.org/licenses/LICENSE-2.0
+    
+    Unless required by applicable law or agreed to in writing, software
+    distributed under the License is distributed on an "AS IS" BASIS,
+    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+    See the License for the specific language governing permissions and
+    limitations under the License.
 """
+# pylint: disable=too-many-lines
 
 __author__ = "julie.smith.1999@gmail.com (Julie Smith)"
 
@@ -27,8 +27,13 @@ import datetime
 import time
 import math
 import json
+import base64
 
-import webapp2
+from Crypto.PublicKey import RSA
+from Crypto.Cipher import PKCS1_OAEP
+from Crypto.Cipher import AES
+from Crypto.Util import Counter
+from Crypto import Random
 
 from google.appengine.api import urlfetch
 from google.appengine.api import urlfetch_errors
@@ -37,31 +42,32 @@ from google.appengine.ext import db
 from google.appengine.runtime import apiproxy_errors
 from google.appengine.runtime import DeadlineExceededError
 
+import webapp2
 
-import httplib2
+import httplib2 # pylint: disable=relative-import
 
 # OLD (pre google-api-python-client-gae-1.0)
 # from oauth2client import appengine
 # from oauth2client import client
 
 # JS 2012-09-16: Imports to enable credentials = StorageByKeyName()
-from oauth2client.appengine import StorageByKeyName
-from oauth2client.appengine import CredentialsModel
+from oauth2client.appengine import StorageByKeyName # pylint: disable=relative-import
+from oauth2client.appengine import CredentialsModel # pylint: disable=relative-import
 
 # To allow catching initial "error" : "invalid_grant" and logging as Info
 # rather than as a Warning or Error, because AccessTokenRefreshError seems
 # to happen quite regularly
-from oauth2client.client import AccessTokenRefreshError
+from oauth2client.client import AccessTokenRefreshError # pylint: disable=relative-import
 
-from apiclient import discovery
-from apiclient import errors as apiclient_errors
+from apiclient import discovery # pylint: disable=relative-import
+from apiclient import errors as apiclient_errors # pylint: disable=relative-import
 
-import model
-import settings
-import appversion # appversion.version is set before the upload process to keep the version number consistent
-import shared # Code whis is common between tasks-backup.py and worker.py
-from shared import DailyLimitExceededError
-import constants
+import model # pylint: disable=relative-import
+import settings # pylint: disable=relative-import
+import appversion # appversion.version is set before the upload process to keep the version number consistent  # pylint: disable=relative-import
+import shared # Code which is common between tasks-backup.py and worker.py  # pylint: disable=relative-import
+from shared import DailyLimitExceededError # pylint: disable=relative-import
+import constants # pylint: disable=relative-import
 
 
 logservice.AUTOFLUSH_EVERY_SECONDS = 5
@@ -116,7 +122,7 @@ class ProcessTasksWorker(webapp2.RequestHandler):
         logservice.flush()
         
     
-    def post(self):
+    def post(self): # pylint: disable=too-many-branches,too-many-statements
         fn_name = "ProcessTasksWorker.post(): "
         
         try:
@@ -289,13 +295,13 @@ class ProcessTasksWorker(webapp2.RequestHandler):
             exception_msg = shared.get_exception_msg(ex)
             self._report_error("Internal system error: " + exception_msg)
             # The _report_error() should send an email to support, but we send it here just in case
-            shared.send_email_to_support("Worker, caught outer exception", exception_msg)
+            shared.send_email_to_support("WORKER: caught outer exception", exception_msg)
         
         logging.debug(fn_name + "<End>")
         logservice.flush()
 
 
-    def _export_tasks(self):
+    def _export_tasks(self):# pylint: disable=too-many-branches,too-many-locals,too-many-statements
     
         fn_name = "_export_tasks: "
         
@@ -502,6 +508,55 @@ class ProcessTasksWorker(webapp2.RequestHandler):
             
             # logging.debug(fn_name + "Pickling tasks data ...")
             pickled_tasklists = pickle.dumps(tasklists)
+            
+            if self.process_tasks_job.public_key_b64:
+                try:
+                    # Create a random AES encryption key
+                    aes_key = Random.new().read(32) # 32 bytes for AES-256
+                    aes_ctr_cipher = AES.new(aes_key, AES.MODE_CTR, counter=Counter.new(128))
+
+                    # Create an RSA cipher using the public key
+                    rsa_key = RSA.importKey(base64.b64decode(self.process_tasks_job.public_key_b64))
+                    rsa_cipher = PKCS1_OAEP.new(rsa_key)
+                    
+                    # Encrypt the AES key with the RSA public key, to be stored in the job record
+                    encrypted_aes_key = rsa_cipher.encrypt(aes_key)
+                    
+                    
+                except Exception as ex: # pylint: disable=broad-except
+                    # Handle encryption key failure
+                    # Display "Start a new backup" page to user
+                    logging.exception("%sError creating or encrypting AES key", fn_name)
+                    self.process_tasks_job.status = constants.ExportJobStatus.ERROR
+                    self.process_tasks_job.error_message = "Error creating or encrypting AES key"
+                    self.process_tasks_job.put()
+                    shared.send_email_to_support("WORKER: Error creating or encrypting AES key",
+                        shared.get_exception_msg(ex),
+                        job_created_timestamp=self.process_tasks_job.job_created_timestamp)
+                    logging.debug(fn_name + "<End> (Error creating or encrypting AES key)")
+                    return
+                    
+                # Encrypt the data
+                try:
+                    # Encrypt the pickled tasks
+                    logging.debug("%sEncrypting tasks", fn_name)
+                    pickled_tasklists = aes_ctr_cipher.encrypt(pickled_tasklists)
+                    # Store the encrypted AES key in the job record
+                    self.process_tasks_job.encrypted_aes_key_b64 = base64.b64encode(encrypted_aes_key)
+                except Exception as ex: # pylint: disable=broad-except
+                    # TODO: Handle encryption failure
+                    logging.exception("%sError creating or encrypting AES key", fn_name)
+                    self.process_tasks_job.status = constants.ExportJobStatus.ERROR
+                    self.process_tasks_job.error_message = "Error encrypting tasks"
+                    self.process_tasks_job.put()
+                    shared.send_email_to_support("WORKER: Error encrypting tasks",
+                        shared.get_exception_msg(ex),
+                        job_created_timestamp=self.process_tasks_job.job_created_timestamp)
+                    logging.debug(fn_name + "<End> (Error encrypting tasks)")
+                    return
+            else:
+                logging.error("%sUnable to encrypt tasks; No public_key_b64", fn_name)
+                
             # logging.debug(fn_name + "Pickled data size = " + str(len(pickled_tasklists)))
             data_len = len(pickled_tasklists)
             
@@ -646,7 +701,7 @@ class ProcessTasksWorker(webapp2.RequestHandler):
         logservice.flush()
             
     
-    def _get_tasks_in_tasklist(self, # pylint: disable=too-many-arguments
+    def _get_tasks_in_tasklist(self, # pylint: disable=too-many-arguments,too-many-locals,too-many-branches,too-many-statements
                                tasklist_title, tasklist_id, 
                                include_hidden, include_completed, include_deleted):
         """ Returns all the tasks in the tasklist 
@@ -977,9 +1032,13 @@ class ProcessTasksWorker(webapp2.RequestHandler):
                 
         self._log_progress("Error")
         
-        shared.send_email_to_support("Worker - error msg to user", 
-            self.process_tasks_job.error_message)
-
+        if self.process_tasks_job:
+            shared.send_email_to_support("WORKER: Error msg to user", 
+                self.process_tasks_job.error_message,
+                job_created_timestamp=self.process_tasks_job.job_created_timestamp)
+        else:
+            shared.send_email_to_support("WORKER: Error msg to user", 
+                self.process_tasks_job.error_message)
 
 
 app = webapp2.WSGIApplication([ # pylint: disable=invalid-name

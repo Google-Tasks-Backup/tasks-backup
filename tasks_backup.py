@@ -36,9 +36,15 @@ import gc
 import time
 import operator
 import datetime
-
+import base64
 from collections import Counter
 # from urlparse import urljoin
+
+from Crypto.PublicKey import RSA
+# from Crypto.Cipher import PKCS1_OAEP
+# from Crypto.Cipher import AES
+# from Crypto.Util import Counter
+# from Crypto import Random
 
 
 # ------------------------
@@ -59,6 +65,7 @@ import webapp2
 # ----------------------------
 # Application-specific imports
 # ----------------------------
+import constants # pylint: disable=relative-import
 import model # pylint: disable=relative-import
 import settings # pylint: disable=relative-import
 # appversion.version is set before the upload process to keep the version number consistent
@@ -66,7 +73,8 @@ import appversion # pylint: disable=relative-import
 import host_settings # pylint: disable=relative-import
 # The shared module contains code which is common between tasks-backup.py and worker.py
 import shared # pylint: disable=relative-import
-import constants # pylint: disable=relative-import
+from shared import data_is_encrypted, encryption_keys_are_valid, results_can_be_returned # pylint: disable=relative-import
+from shared import GtbDecryptionError, send_email_to_support, ago_msg, set_cookie, get_exception_msg # pylint: disable=relative-import
 
 # ---------------------
 # Local library imports
@@ -344,27 +352,27 @@ def fix_tasks_order(tasklists): # pylint:disable=too-many-locals,too-many-statem
                         child_task_parent_id = child_task.get('parent', '') # Should be '' for root tasks
                         if child_task_id in parent_ids:
                             if child_task_parent_id:
-                                logging.info("{}DEBUG: Child task '{}' in group of tasks with parent ID '{}' is a parent, and has a parent '{}'".format(
+                                logging.info("%sDEBUG: Child task '%s' in group of tasks with parent ID '%s' is a parent, and has a parent '%s'",
                                     fn_name,
                                     child_task_id,
                                     parent_id,
-                                    child_task_parent_id))
+                                    child_task_parent_id)
                             else:
-                                logging.info("{}DEBUG: Child task '{}' in group of tasks with parent ID '{}' is a parent".format(
+                                logging.info("%sDEBUG: Child task '%s' in group of tasks with parent ID '%s' is a parent",
                                     fn_name,
                                     child_task_id,
-                                    parent_id))
+                                    parent_id)
                     # Check if there is a task with ID == parent_id
                     if not any(d['id'] == parent_id for d in tasks_unsorted):
-                        logging.error("{}DEBUG: {} tasks have parent ID '{}', but no task with that ID exists in this tasklist".format(
+                        logging.error("%sDEBUG: %s tasks have parent ID '%s', but no task with that ID exists in this tasklist",
                             fn_name,
                             len(tasks_grouped_by_parent_id[parent_id]),
-                            parent_id))
+                            parent_id)
                     # TODO: Check if a task with that parent task ID exists in another tasklist (should never happen)
                     
                     
             except Exception as ex: # pylint: disable=broad-except
-                logging.exception(fn_name + "Error logging details of tasklist with no root tasks: " + shared.get_exception_msg(ex))
+                logging.exception(fn_name + "Error logging details of tasklist with no root tasks: " + get_exception_msg(ex))
                 
             # -------------------------------------
             # KLUDGE: Set 'depth' of all tasks to 0
@@ -506,6 +514,7 @@ class WelcomeHandler(webapp2.RequestHandler): # pylint: disable=too-few-public-m
                                'logout_url': users.create_logout_url(settings.WELCOME_PAGE_URL),
                                'url_discussion_group' : settings.url_discussion_group,
                                'email_discussion_group' : settings.email_discussion_group,
+                               'SUPPORT_EMAIL_ADDRESS' : settings.SUPPORT_EMAIL_ADDRESS,
                                'url_issues_page' : settings.url_issues_page,
                                'url_source_code' : settings.url_source_code,
                                'app_version' : appversion.version,
@@ -576,6 +585,7 @@ class MainHandler(webapp2.RequestHandler):
                                'msg': self.request.get('msg'),
                                'logout_url': users.create_logout_url(settings.WELCOME_PAGE_URL),
                                'url_discussion_group' : settings.url_discussion_group,
+                               'SUPPORT_EMAIL_ADDRESS' : settings.SUPPORT_EMAIL_ADDRESS,
                                'email_discussion_group' : settings.email_discussion_group,
                                'url_issues_page' : settings.url_issues_page,
                                'url_source_code' : settings.url_source_code,
@@ -604,12 +614,13 @@ class StartBackupHandler(webapp2.RequestHandler):
             The user will land on the GET handler if they go direct to /startbackup
             In that case, there should be no backup job record, or that job will not 
             have status of TO_BE_STARTED, so we silently redirect user to /main
-            so that they can choose the backup opgtions and start a backup job
+            so that they can choose the backup options and start a backup job.
         
-            The user may also be redirected here after auth_decorator authenticated a user in the post() method,
-            because the post-authorisation redirection lands on the GET, not the POST. In that case,
-            there should be a backup job record, and its status should be TO_BE_STARTED, so we call
-            _start_backup() from here to start the export.
+            The user may also be redirected here after auth_decorator authenticated a user in the 
+            post() method, because the post-authorisation redirection is a GET (rather than a POST),
+            so has to be handled by this GET handler. In that case, there should be a backup job 
+            record, and its status should be TO_BE_STARTED, so we call _start_backup() from here to 
+            start the backup job.
             
         """
         
@@ -654,20 +665,29 @@ class StartBackupHandler(webapp2.RequestHandler):
                 # logservice.flush()
                 # return
             
-            # This should be a new backup request, created in the POST handler, 
-            # and the job status should be TO_BE_STARTED
+            # There is backup job record for the user. 
+            # This should be a new backup request, created in the POST handler, and the job status 
+            # should be TO_BE_STARTED.
+            # If status == TO_BE_STARTED:
+            #   start the job
+            # else:
+            #   if this is a stalled job:
+            #
             if tasks_backup_job.status != constants.ExportJobStatus.TO_BE_STARTED:
                 # Check when job status was last updated. If it was less than settings.MAX_JOB_PROGRESS_INTERVAL
                 # seconds ago, assume that another instance is already running,
                 # log warning and redirect to progress page
                 time_since_last_update = datetime.datetime.now() - tasks_backup_job.job_progress_timestamp
-                if time_since_last_update.seconds < settings.MAX_JOB_PROGRESS_INTERVAL:
+                if time_since_last_update.total_seconds() < settings.MAX_JOB_PROGRESS_INTERVAL:
                     logging.info(fn_name + 
                         "User attempted to start backup whilst another job is already running for " + str(user_email))
-                    logging.info(fn_name + "Previous job requested at " + str(tasks_backup_job.job_created_timestamp) + 
+                    logging.info(fn_name + "Previous job requested at " + 
+                        str(tasks_backup_job.job_created_timestamp) + 
                         " is still running.")
-                    logging.info(fn_name + "Previous worker started at " + str(tasks_backup_job.job_start_timestamp) + 
-                        " and last job progress update was " + str(time_since_last_update.seconds) + 
+                    logging.info(fn_name + "Previous worker started at " + 
+                        str(tasks_backup_job.job_start_timestamp) + 
+                        " and last job progress update was " + 
+                        str(time_since_last_update.total_seconds()) + 
                         " seconds ago, with status " +
                         str(tasks_backup_job.status))
                     # shared.serve_message_page(self, 
@@ -686,11 +706,16 @@ class StartBackupHandler(webapp2.RequestHandler):
                 else:
                     # A previous job hasn't completed, and hasn't updated progress for more than 
                     # settings.MAX_JOB_PROGRESS_INTERVAL seconds, so assume that previous worker
-                    # for this job has died, so log an error and start a new backup job.
-                    logging.error(fn_name + "It appears that a previous job requested by " + str(user_email) + 
-                        " at " + str(tasks_backup_job.job_created_timestamp) + " has stalled.")
-                    logging.info(fn_name + "Previous worker started at " + str(tasks_backup_job.job_start_timestamp) + " and last job progress update was " + str(time_since_last_update.seconds) + " seconds ago.")
-                    logging.info(fn_name + "Starting a new backup job")
+                    # for this job has died, so log an error and start a new worker to
+                    # continue this backup job.
+                    logging.error(fn_name + "It appears that a previous job requested by " + 
+                        str(user_email) + " at " + str(tasks_backup_job.job_created_timestamp) + 
+                        " has stalled.")
+                    logging.info(fn_name + "Previous worker started at " + 
+                        str(tasks_backup_job.job_start_timestamp) + 
+                        " and last job progress update was " + 
+                        str(time_since_last_update.total_seconds()) + " seconds ago.")
+                    logging.info(fn_name + "Starting a new worker to continue the backup job")
                     logservice.flush()
                 
             self._start_backup(tasks_backup_job)
@@ -743,14 +768,14 @@ class StartBackupHandler(webapp2.RequestHandler):
                     # seconds ago, assume that another instance is already running, 
                     # log warning and redirect to progress page
                     time_since_last_update = datetime.datetime.now() - tasks_backup_job.job_progress_timestamp
-                    if time_since_last_update.seconds < settings.MAX_JOB_PROGRESS_INTERVAL:
+                    if time_since_last_update.total_seconds() < settings.MAX_JOB_PROGRESS_INTERVAL:
                         logging.warning(fn_name + 
                             "User attempted to start backup whilst another job is already running for " + str(user_email))
                         logging.info(fn_name + "Previous job requested at " + 
                             str(tasks_backup_job.job_created_timestamp) + " is still running.")
                         logging.info(fn_name + "Previous worker started at " + 
                             str(tasks_backup_job.job_start_timestamp) + " and last job progress update was " + 
-                            str(time_since_last_update.seconds) + " seconds ago, with status " +
+                            str(time_since_last_update.total_seconds()) + " seconds ago, with status " +
                             str(tasks_backup_job.status))
                         logging.info(fn_name + "Redirecting to " + settings.PROGRESS_URL)
                         self.redirect(settings.PROGRESS_URL)
@@ -762,19 +787,51 @@ class StartBackupHandler(webapp2.RequestHandler):
                         # A previous job hasn't completed, and hasn't updated progress for more than 
                         # settings.MAX_JOB_PROGRESS_INTERVAL seconds, so assume that previous worker
                         # for this job has died, so log an error and start a new backup job.
-                        logging.error(fn_name + "It appears that a previous job requested by " + str(user_email) + 
+                        logging.error(fn_name + "It appears that a previous job requested by " + 
+                            str(user_email) + 
                             " at " + str(tasks_backup_job.job_created_timestamp) + " has stalled.")
-                        logging.info(fn_name + "Previous worker started at " + str(tasks_backup_job.job_start_timestamp) + " and last job progress update was " + str(time_since_last_update.seconds) + " seconds ago.")
+                        logging.info(fn_name + "Previous worker started at " + 
+                            str(tasks_backup_job.job_start_timestamp) + 
+                            " and last job progress update was " + 
+                            str(time_since_last_update.total_seconds()) + " seconds ago.")
                         logging.info(fn_name + "Starting a new backup job")
                         logservice.flush()
-                    
+                        
+            # NOTE: A cookie is required to store the RSA private key
+            # Javascript in main.html only displays a [Start backup] link if cookies are enabled
+            
             # ===================================
             #   Create new backup job for user
             # ===================================
-            logging.debug(fn_name + "Storing job details for " + str(user_email))
-      
-            # Create a DB record, using the user's email address as the key
+            logging.info(fn_name + "Creating a new backup job for " + str(user_email))
+
+            # Create a (new) job record, using the user's email address as the key
+            # As per the model, the status of a new job record is
+            # constants.ExportJobStatus.TO_BE_STARTED
             tasks_backup_job = model.ProcessTasksJob(key_name=user_email)
+                                    
+            logging.debug("%sGenerating new RSA private and public keys", fn_name)
+            key = RSA.generate(2048)
+            private_key_b64 = base64.b64encode(key.exportKey(format='PEM'))
+            public_key_b64 = base64.b64encode(key.publickey().exportKey(format='PEM'))
+            
+            # Save the RSA private key to the RSA_PRIVATE_KEY_COOKIE_NAME cookie
+            set_cookie(self, constants.RSA_PRIVATE_KEY_COOKIE_NAME, private_key_b64)
+            
+            # Save the RSA public key to the job record
+            tasks_backup_job.public_key_b64 = public_key_b64
+            
+            # In ProcessTasksWorker, when the worker has retrieved all the tasks:
+            # - The worker generates a random AES key 
+            # - The AES key is used to encrypt the retrieved tasks
+            # - The worker encrypts the AES key using the user's RSA public key
+            # - The worker stores the encrypted AES key in the job record
+            
+            # In ReturnResultsHandler:
+            # - The user's private RSA key is retrieved from the RSA_PRIVATE_KEY_COOKIE_NAME cookie
+            # - The user's private RSA key is used to decrypt the AES key
+            # - The decrypted AES key is used to decrypt the data so that it can be exported for the user.
+                        
             tasks_backup_job.user = user
             tasks_backup_job.job_type = 'export'
             tasks_backup_job.include_completed = shared.is_truthy(self.request.get('include_completed'))
@@ -821,7 +878,9 @@ class StartBackupHandler(webapp2.RequestHandler):
             # Add the request to the tasks queue, passing in the user's email so that the task can access the
             # database record
             tq_q = taskqueue.Queue(settings.PROCESS_TASKS_REQUEST_QUEUE_NAME)
-            tq_t = taskqueue.Task(url=settings.WORKER_URL, params={settings.TASKS_QUEUE_KEY_NAME : user_email}, method='POST')
+            tq_t = taskqueue.Task(url=settings.WORKER_URL, 
+                params={settings.TASKS_QUEUE_KEY_NAME : user_email}, 
+                method='POST')
             logging.debug(fn_name + "Adding task to " + str(settings.PROCESS_TASKS_REQUEST_QUEUE_NAME) + 
                 " queue, for " + str(user_email))
             logservice.flush()
@@ -840,7 +899,7 @@ class StartBackupHandler(webapp2.RequestHandler):
                     if retry_count > 0:
                         
                         logging.warning(fn_name + "Exception adding job to taskqueue, " +
-                            str(retry_count) + " attempts remaining: "  + shared.get_exception_msg(e))
+                            str(retry_count) + " attempts remaining: "  + get_exception_msg(e))
                         logservice.flush()
                         
                         # Give taskqueue some time before trying again
@@ -865,7 +924,7 @@ class StartBackupHandler(webapp2.RequestHandler):
                         tasks_backup_job.status = constants.ExportJobStatus.ERROR
                         tasks_backup_job.message = ''
                         tasks_backup_job.error_message = "Error starting export process: " + \
-                            shared.get_exception_msg(e)
+                            get_exception_msg(e)
                         
                         logging.debug(fn_name + "Job status: '" + str(tasks_backup_job.status) + ", progress: " + 
                             str(tasks_backup_job.total_progress) + ", msg: '" + 
@@ -875,7 +934,7 @@ class StartBackupHandler(webapp2.RequestHandler):
                         
                         shared.serve_message_page(self, "Error creating tasks export job.",
                             "Please report the following error using the link below",
-                            shared.get_exception_msg(e),
+                            get_exception_msg(e),
                             show_custom_button=True, custom_button_text="Return to main menu")
                         
                         logging.debug(fn_name + "<End> (error adding job to taskqueue)")
@@ -903,7 +962,9 @@ class ShowProgressHandler(webapp2.RequestHandler):
     
     @auth_decorator.oauth_required
     def get(self): # pylint: disable=too-many-locals,too-many-branches,too-many-statements
-        """Display the progress page, which includes a refresh meta-tag to recall this page every n seconds"""
+        """ Display the progress page, which includes a refresh meta-tag to reload this page every 
+            PROGRESS_PAGE_REFRESH_INTERVAL seconds
+        """
         
         fn_name = "ShowProgressHandler.get(): "
     
@@ -972,120 +1033,176 @@ class ShowProgressHandler(webapp2.RequestHandler):
                 logservice.flush()
                 self.redirect(settings.WELCOME_PAGE_URL)
                 return
-            else:            
-                # total_progress is only updated once all the tasks have been retrieved in a single tasklist.
-                # tasklist_progress is updated every settings.PROGRESS_UPDATE_INTERVAL seconds within the retrieval process
-                # for each tasklist. This ensures progress updates happen at least every
-                # settings.PROGRESS_UPDATE_INTERVAL seconds,
-                # which wouldn't happen if it takes a long time to retrieve a large number of tasks in a single tasklist.
-                # So, the current progress = total_progress + tasklist_progress
-                status = tasks_backup_job.status
-                error_message = tasks_backup_job.error_message
-                progress = tasks_backup_job.total_progress + tasks_backup_job.tasklist_progress
-                job_start_timestamp = tasks_backup_job.job_start_timestamp
-                if job_start_timestamp:
-                    time_since_job_started = datetime.datetime.now() - job_start_timestamp
-                    job_start_timestamp_str = job_start_timestamp.strftime('%H:%M UTC on %a %d %b %Y')
-                    since_msg = shared.since_msg(job_start_timestamp)
-                    hrs_since_job_started = time_since_job_started.total_seconds() / 3600.0
-                    
-                    if hrs_since_job_started > settings.POSSIBLY_VERY_STALE_WARNING_HOURS:
-                        # WARNING: Data is more than POSSIBLY_VERY_STALE_WARNING_HOURS hours old
-                        logging.info("{} POSSIBLY VERY STALE DATA: Tasks were retrieved from server {} for {}".format(
-                            fn_name, since_msg, user_nickname))
-                        logging.debug("{} hrs_since_job_started = {}, POSSIBLY_VERY_STALE_WARNING_HOURS = {}".format(
-                            fn_name, hrs_since_job_started, settings.POSSIBLY_VERY_STALE_WARNING_HOURS))
-                        # The progress page will display a caution, telling the user that data is old
-                        possibly_very_stale_data = True
-                    elif hrs_since_job_started > settings.POSSIBLY_STALE_WARNING_HOURS:
-                        # CAUTION: Data is more than POSSIBLY_STALE_WARNING_HOURS hours old
-                        logging.info("{} POSSIBLY STALE DATA: Tasks were retrieved from server {} for {}".format(
-                            fn_name, since_msg, user_nickname))
-                        logging.debug("{} hrs_since_job_started = {}, POSSIBLY_STALE_WARNING_HOURS = {}".format(
-                            fn_name, hrs_since_job_started, settings.POSSIBLY_STALE_WARNING_HOURS))
-                        # The progress page will display a note, telling the user that data is old
-                        possibly_stale_data = True
-                else:
-                    time_since_job_started = None
-                time_since_job_was_requested = datetime.datetime.now() - tasks_backup_job.job_created_timestamp
-                include_completed = tasks_backup_job.include_completed
-                include_deleted = tasks_backup_job.include_deleted
-                include_hidden = tasks_backup_job.include_hidden
-                job_msg = tasks_backup_job.message
-
-                # -----------------------------------
-                #   Check job status and progress
-                # -----------------------------------
                 
-                if status == constants.ExportJobStatus.TO_BE_STARTED:
-                    logging.debug(fn_name + "Waiting for worker to start. Job was requested " +
-                        str(time_since_job_was_requested.seconds) + " seconds ago at " +
-                        str(tasks_backup_job.job_created_timestamp))
-                    # Check if job has been started within settings.MAX_TIME_ALLOWED_FOR_JOB_TO_START 
-                    # If job hasn't started yet by then, log error and display msg to user
-                    if time_since_job_was_requested.seconds > settings.MAX_TIME_ALLOWED_FOR_JOB_TO_START:
-                        # Job hasn't started withing maximum allowed time
-                        logging.error(fn_name + "Backup has not started within maximum allowed " + 
-                            str(settings.MAX_TIME_ALLOWED_FOR_JOB_TO_START) + " seconds")
-                        # -------------------------------------------------------------
-                        #   Display message to user and don't display progress page
-                        # -------------------------------------------------------------
-                        shared.serve_message_page(self, 
-                            "Backup was not started within maximum startup time. Please try running your backup again.",
-                            error_message,
-                            "If you believe this to be an error, or if this has happened before, please report this at the issues link below",
-                            show_custom_button=True, custom_button_text='Go to main menu')
-                            
-                        logging.warning(fn_name + "<End> (Job didn't start)")
-                        logservice.flush()
-                        return
+            # Various properties of the job record (tasks_backup_job) are updated at different
+            # times by the worker
+            # - total_progress is updated when all the tasks in a tasklist have been retrieved.
+            # - tasklist_progress is updated every settings.PROGRESS_UPDATE_INTERVAL seconds
+            #   for each tasklist. This ensures progress updates happen at least every 
+            #   settings.PROGRESS_UPDATE_INTERVAL seconds
+            # So, the current progress = total_progress + tasklist_progress
+            status = tasks_backup_job.status
+            error_message = tasks_backup_job.error_message
+            progress = tasks_backup_job.total_progress + tasks_backup_job.tasklist_progress
+            job_start_timestamp = tasks_backup_job.job_start_timestamp
+            if job_start_timestamp:
+                time_since_job_started = datetime.datetime.now() - job_start_timestamp
+                job_start_timestamp_str = job_start_timestamp.strftime('%H:%M UTC on %a %d %b %Y')
+                since_msg = shared.since_msg(job_start_timestamp)
+                hrs_since_job_started = time_since_job_started.total_seconds() / 3600.0
+                
+                if hrs_since_job_started > settings.POSSIBLY_VERY_STALE_WARNING_HOURS:
+                    # WARNING: Data is more than POSSIBLY_VERY_STALE_WARNING_HOURS hours old
+                    logging.info("%sPOSSIBLY VERY STALE DATA: Tasks were retrieved from server %s for %s",
+                        fn_name, since_msg, user_nickname)
+                    logging.debug("%shrs_since_job_started = %s, POSSIBLY_VERY_STALE_WARNING_HOURS = %s",
+                        fn_name, hrs_since_job_started, settings.POSSIBLY_VERY_STALE_WARNING_HOURS)
+                    # The progress page will display a caution, telling the user that data is old
+                    possibly_very_stale_data = True
+                elif hrs_since_job_started > settings.POSSIBLY_STALE_WARNING_HOURS:
+                    # CAUTION: Data is more than POSSIBLY_STALE_WARNING_HOURS hours old
+                    logging.info("%sPOSSIBLY STALE DATA: Tasks were retrieved from server %s for %s",
+                        fn_name, since_msg, user_nickname)
+                    logging.debug("%shrs_since_job_started = %s, POSSIBLY_STALE_WARNING_HOURS = %s",
+                        fn_name, hrs_since_job_started, settings.POSSIBLY_STALE_WARNING_HOURS)
+                    # The progress page will display a note, telling the user that data is old
+                    possibly_stale_data = True
+            else:
+                time_since_job_started = None
+            time_since_job_was_requested = datetime.datetime.now() - tasks_backup_job.job_created_timestamp
+            include_completed = tasks_backup_job.include_completed
+            include_deleted = tasks_backup_job.include_deleted
+            include_hidden = tasks_backup_job.include_hidden
+            job_msg = tasks_backup_job.message
+
+            # -----------------------------------
+            #   Check job status and progress
+            # -----------------------------------
+            
+            if status == constants.ExportJobStatus.TO_BE_STARTED:
+                logging.debug("%sWaiting for worker to start. Job was requested %s seconds ago at %s",
+                    fn_name,
+                    int(time_since_job_was_requested.total_seconds()),
+                    tasks_backup_job.job_created_timestamp)
+                # Check if job has been started within settings.MAX_TIME_ALLOWED_FOR_JOB_TO_START 
+                # If job hasn't started yet by then, log error and display msg to user
+                if time_since_job_was_requested.seconds > settings.MAX_TIME_ALLOWED_FOR_JOB_TO_START:
+                    # Job hasn't started withing maximum allowed time
+                    logging.error(fn_name + "Backup has not started within maximum allowed " + 
+                        str(settings.MAX_TIME_ALLOWED_FOR_JOB_TO_START) + " seconds")
+                    # -------------------------------------------------------------
+                    #   Display message to user and don't display progress page
+                    # -------------------------------------------------------------
+                    shared.serve_message_page(self, 
+                        "Backup was not started within maximum startup time. Please try running your backup again.",
+                        error_message,
+                        "If you believe this to be an error, or if this has happened before, please report this at the issues link below",
+                        show_custom_button=True, custom_button_text='Go to main menu')
                         
-                elif not status in constants.ExportJobStatus.STOPPED_VALUES:
-                    # Check if the job has updated progress within the maximum progress update time.
-                    time_since_last_update = datetime.datetime.now() - tasks_backup_job.job_progress_timestamp
-                    if time_since_last_update.seconds > settings.MAX_JOB_PROGRESS_INTERVAL:
-                        # Job status has not been updated recently, so consider job to have stalled.
-                        logging.error(fn_name + "Job created at " + str(tasks_backup_job.job_created_timestamp) + " appears to have stalled. Status was " + tasks_backup_job.status + ", progress = " + str(progress))
-                        logging.error(fn_name + "Last job progress update was " + str(time_since_last_update.seconds) +
-                            " seconds ago.")
-                            
-                        if time_since_job_started:
-                            logging.info(fn_name + "Job was started by worker " + str(time_since_job_started.seconds) + 
-                                " seconds ago at " + str(job_start_timestamp) + " UTC")
-                        else:
-                            logging.error(fn_name + "Job has not been started yet by worker")
-                        logservice.flush()
+                    logging.warning(fn_name + "<End> (Job didn't start)")
+                    logservice.flush()
+                    return
+                    
+            elif status not in constants.ExportJobStatus.STOPPED_VALUES:
+                # Check if the job has updated progress within the maximum progress update time.
+                time_since_last_update = datetime.datetime.now() - tasks_backup_job.job_progress_timestamp
+                if time_since_last_update.total_seconds() > settings.MAX_JOB_PROGRESS_INTERVAL:
+                    # Job status has not been updated recently, so consider job to have stalled.
+                    logging.error("%sJob created at %s appears to have stalled. " +
+                        "Last job progress update was %s seconds ago at %s\n" +
+                        "Status = '%s'\n" +
+                        "Progress = %s",
+                        fn_name,
+                        tasks_backup_job.job_created_timestamp,
+                        int(time_since_last_update.total_seconds()),
+                        tasks_backup_job.job_progress_timestamp,
+                        status,
+                        progress)
                         
-                        if tasks_backup_job.error_message:
-                            error_message = tasks_backup_job.error_message + " - Status was " + tasks_backup_job.status + ", progress = " + str(progress)
-                        else:
-                            error_message = "Status was " + tasks_backup_job.status + ", progress = " + str(progress)
-                        # -------------------------------------------------------------
-                        #   Display message to user and don't display progress page
-                        # -------------------------------------------------------------
-                        shared.serve_message_page(self, 
-                            "Retrieval of tasks appears to have stalled. Please try running your backup again.",
-                            error_message,
-                            "If you believe this to be an error, or if this has happened before, please report this at the issues link below",
-                            show_custom_button=True, custom_button_text='Go to main menu')
-                            
-                        logging.warning(fn_name + "<End> (Job stalled)")
-                        logservice.flush()
-                        return
+                    if time_since_job_started:
+                        logging.info("%sJob was started by worker %s seconds ago at %s UTC",
+                            fn_name,
+                            int(time_since_job_started.total_seconds()),
+                            job_start_timestamp)
+                    else:
+                        logging.error("%sJob has not been started yet by worker", fn_name)
+                    logservice.flush()
+                    
+                    if tasks_backup_job.error_message:
+                        error_message = tasks_backup_job.error_message + " - Status was " + tasks_backup_job.status + ", progress = " + str(progress)
+                    else:
+                        error_message = "Status was " + tasks_backup_job.status + ", progress = " + str(progress)
+                    # -------------------------------------------------------------
+                    #   Display message to user and don't display progress page
+                    # -------------------------------------------------------------
+                    shared.serve_message_page(self, 
+                        "Retrieval of tasks appears to have stalled. Please try running your backup again.",
+                        error_message,
+                        "If you believe this to be an error, or if this has happened before, please report this at the issues link below",
+                        show_custom_button=True, custom_button_text='Go to main menu')
+                        
+                    logging.warning(fn_name + "<End> (Job stalled)")
+                    logservice.flush()
+                    return
             
             if status == constants.ExportJobStatus.EXPORT_COMPLETED:
-                logging.info(fn_name + "Snapshot contains " + str(progress) + " tasks for " + str(user_nickname))
+                logging.info("%sSnapshot contains %s tasks for %s",
+                    fn_name, progress, user_nickname)
+                # If data is encrypted, check if the keys match, so that the tasks can be exported
+                if data_is_encrypted(tasks_backup_job):
+                    private_key_b64 = self.request.cookies.get(constants.RSA_PRIVATE_KEY_COOKIE_NAME, '')
+                    if not encryption_keys_are_valid(private_key_b64, tasks_backup_job):
+                        # We can't decrypt the user's tasks, so user needs to start a new backup
+                        time_since_job_finished = (
+                            datetime.datetime.now() - tasks_backup_job.job_progress_timestamp)
+                        hrs_since_job_finished = time_since_job_finished.total_seconds() / 3600.0
+                        logging.error("%sEKNV: Data is encrypted for %s, but encryption keys " +
+                            "are not valid.\n" +
+                            "Unable to decrypt encrypted AES key with RSA private key from cookie\n" +
+                            "Tasks were last retrieved from the Google Tasks server %s",
+                            fn_name,
+                            user_nickname,
+                            ago_msg(hrs_since_job_finished))
+                        msg1 = "Please start a new backup to retrieve and export tasks"
+                        msg2 = "If you believe this to be an error, please report error 'EKNV' using one of the issues links below"
+                        shared.serve_message_page(self, 
+                            msg1, 
+                            msg2, 
+                            custom_button_url = settings.MAIN_PAGE_URL,
+                            show_custom_button=True, 
+                            custom_button_text='Start a new backup')
+                        send_email_to_support("EKNV: Encryption keys are not valid", 
+                            ("{}\nEKNV: Data is encrypted, but encryption keys are not valid.\n" +
+                             "Unable to decrypt encrypted AES key with RSA private key from cookie\n" +
+                             "Tasks were last retrieved from the Google Tasks server {}\n\n" +
+                             "'Start a new backup' page displayed").format(
+                                fn_name,
+                                ago_msg(hrs_since_job_finished)),
+                                job_created_timestamp=tasks_backup_job.job_created_timestamp)
+                        logging.warning(fn_name + "<End> (Invalid encryption keys)")
+                        logservice.flush()
+                        return
+                else:
+                    logging.debug("%sData is not encrypted", fn_name)
+                    
             elif status == constants.ExportJobStatus.TO_BE_STARTED:
                 # Job hasn't been started yet, so no progress or job start time
-                logging.debug(fn_name + "Backup for " + str(user_nickname) + ", requested at " + str(tasks_backup_job.job_created_timestamp) + " UTC, hasn't started yet.")
+                logging.debug("%sBackup for %s, requested at %s UTC, hasn't started yet.",
+                    fn_name,
+                    user_nickname,
+                    tasks_backup_job.job_created_timestamp)
             else:
-                logging.debug(fn_name + "Status = " + str(status) + ", progress = " + str(progress) + 
-                    " for " + str(user_nickname) + ", worker started at " + str(job_start_timestamp) + " UTC")
+                logging.debug("%sStatus = '%s', progress = %s for %s, worker started at %s UTC",
+                    fn_name,
+                    status,
+                    progress,
+                    user_nickname,
+                    job_start_timestamp)
             
             if error_message:
-                logging.warning(fn_name + "Error message: " + str(error_message))
+                logging.warning("%sError message: %s", fn_name, error_message)
             if job_msg:
-                logging.debug(fn_name + "Job msg: " + str(job_msg))
+                logging.debug("%sJob msg: %s", fn_name, job_msg)
                 
             logservice.flush()
             
@@ -1120,6 +1237,7 @@ class ShowProgressHandler(webapp2.RequestHandler):
                                'logout_url': users.create_logout_url(settings.WELCOME_PAGE_URL),
                                'url_discussion_group' : settings.url_discussion_group,
                                'email_discussion_group' : settings.email_discussion_group,
+                               'SUPPORT_EMAIL_ADDRESS' : settings.SUPPORT_EMAIL_ADDRESS,
                                'url_issues_page' : settings.url_issues_page,
                                'url_source_code' : settings.url_source_code,
                                'app_version' : appversion.version,
@@ -1141,14 +1259,15 @@ class ReturnResultsHandler(webapp2.RequestHandler):
         
     @auth_decorator.oauth_required
     def get(self):
-        """ If user attempts to go direct to /results, they come in a a GET request, 
+        """ If a user attempts to go direct to /results, they arrive as a GET request, 
             so we redirect to /progress so user can choose format.
         
-            The user may also be redirected here after auth_decorator authenticated a user in the post() method,
-            because the post-authorisation redirection lands on the GET, not the POST
+            The user may also be redirected here after auth_decorator authenticated a user in the
+            post() method, because the post-authorisation redirection lands on the GET, 
+            not the POST.
             
             If we are here due to re-authentication, the /progress web page uses JavaScript 
-            to action the user's original selection
+            to action the user's original selection (as a new POST)
         """
         fn_name = "ReturnResultsHandler.get(): "
         logging.debug(fn_name + "<Start>")
@@ -1191,7 +1310,8 @@ class ReturnResultsHandler(webapp2.RequestHandler):
         # except Exception, e: # pylint: disable=broad-except,invalid-name
             # logging.exception(fn_name + "Exception retrieving request headers")
             # logservice.flush()
-            
+        
+        job_created_timestamp=None
       
         try: # pylint: disable=too-many-nested-blocks
             user = users.get_current_user()
@@ -1217,8 +1337,8 @@ class ReturnResultsHandler(webapp2.RequestHandler):
                     return
             
             
-            # Performing the user's action, so delete the cookie (set negative age)
-            shared.delete_cookie(self.response, 'actionId')
+            # Performing the user's action, so clear the cookie
+            self.response.set_cookie('actionId', None)
             
             # Retrieve the DB record for this user
             tasks_backup_job = model.ProcessTasksJob.get_by_key_name(user_email)
@@ -1231,12 +1351,43 @@ class ReturnResultsHandler(webapp2.RequestHandler):
                 logservice.flush()
                 self.redirect(settings.WELCOME_PAGE_URL)
                 return
+            
+            job_created_timestamp = tasks_backup_job.job_created_timestamp
+            time_since_job_finished = (
+                datetime.datetime.now() - 
+                tasks_backup_job.job_progress_timestamp
+            )
+            hrs_since_job_finished = time_since_job_finished.total_seconds() / 3600.0
                 
-            else:            
-                include_completed = tasks_backup_job.include_completed
-                include_deleted = tasks_backup_job.include_deleted
-                include_hidden = tasks_backup_job.include_hidden
-                total_progress = tasks_backup_job.total_progress
+            logging.debug("%sTasks were retrieved from the Google Tasks server %s",
+                fn_name,
+                ago_msg(hrs_since_job_finished))
+
+            if not results_can_be_returned(self, tasks_backup_job):
+                msg1 = "Please start a new backup to retrieve and export tasks"
+                msg2 = "If you believe this to be an error, please report error 'EKNV' using one of the issues links below"
+                shared.serve_message_page(self, 
+                    msg1, 
+                    msg2, 
+                    custom_button_url = settings.MAIN_PAGE_URL,
+                    show_custom_button=True, 
+                    custom_button_text='Start a new backup')
+                send_email_to_support("EKNV: Encryption keys are not valid", 
+                    ("{}\nEKNV: Data is encrypted, but encryption keys are not valid.\n" +
+                     "Unable to decrypt encrypted AES key with RSA private key from cookie\n" +
+                     "Tasks were last retrieved from the Google Tasks server {}\n\n" +
+                     "'Start a new backup' page displayed").format(
+                        fn_name,
+                        ago_msg(hrs_since_job_finished)),
+                    job_created_timestamp=tasks_backup_job.job_created_timestamp)
+                logging.warning(fn_name + "<End> (Invalid encryption keys)")
+                logservice.flush()
+                return
+                
+            include_completed = tasks_backup_job.include_completed
+            include_deleted = tasks_backup_job.include_deleted
+            include_hidden = tasks_backup_job.include_hidden
+            total_progress = tasks_backup_job.total_progress
 
             time_since_job_started = None
             job_start_timestamp_str = ''
@@ -1252,18 +1403,18 @@ class ReturnResultsHandler(webapp2.RequestHandler):
                 
                 if hrs_since_job_started > settings.POSSIBLY_VERY_STALE_WARNING_HOURS:
                     # WARNING: Data is more than POSSIBLY_VERY_STALE_WARNING_HOURS hours old
-                    logging.info("{} POSSIBLY VERY STALE DATA: Tasks were retrieved from server {} for {}".format(
-                        fn_name, since_msg, user_nickname))
-                    logging.debug("{} hrs_since_job_started = {}, POSSIBLY_VERY_STALE_WARNING_HOURS = {}".format(
-                        fn_name, hrs_since_job_started, settings.POSSIBLY_VERY_STALE_WARNING_HOURS))
+                    logging.info("%sPOSSIBLY VERY STALE DATA: Tasks were retrieved from server %s for %s",
+                        fn_name, since_msg, user_nickname)
+                    logging.debug("%shrs_since_job_started = %s, POSSIBLY_VERY_STALE_WARNING_HOURS = %s",
+                        fn_name, hrs_since_job_started, settings.POSSIBLY_VERY_STALE_WARNING_HOURS)
                     # The progress page will display a caution, telling the user that data is old
                     possibly_very_stale_data = True
                 elif hrs_since_job_started > settings.POSSIBLY_STALE_WARNING_HOURS:
                     # CAUTION: Data is more than POSSIBLY_STALE_WARNING_HOURS hours old
-                    logging.info("{} POSSIBLY STALE DATA: Tasks were retrieved from server {} for {}".format(
-                        fn_name, since_msg, user_nickname))
-                    logging.debug("{} hrs_since_job_started = {}, POSSIBLY_STALE_WARNING_HOURS = {}".format(
-                        fn_name, hrs_since_job_started, settings.POSSIBLY_STALE_WARNING_HOURS))
+                    logging.info("%sPOSSIBLY STALE DATA: Tasks were retrieved from server %s for %s",
+                        fn_name, since_msg, user_nickname)
+                    logging.debug("%shrs_since_job_started = %s, POSSIBLY_STALE_WARNING_HOURS = %s",
+                        fn_name, hrs_since_job_started, settings.POSSIBLY_STALE_WARNING_HOURS)
                     # The progress page will display a note, telling the user that data is old
                     possibly_stale_data = True
             else:
@@ -1297,16 +1448,54 @@ class ReturnResultsHandler(webapp2.RequestHandler):
             
             num_records = tasklists_records.count()
             
-            rebuilt_pkl = ""
+            pickled_tasklists = ""
             for tasklists_record in tasklists_records:
                 #logging.debug("Reassembling blob number " + str(tasklists_record.idx))
-                rebuilt_pkl = rebuilt_pkl + tasklists_record.pickled_tasks_data
+                pickled_tasklists += tasklists_record.pickled_tasks_data
                 
-            logging.debug(fn_name + "Reassembled " + str(len(rebuilt_pkl)) + " bytes from " + str(num_records) + " blobs")
-            logservice.flush()
+            logging.debug("%sReassembled %s bytes from %s blobs",
+                fn_name,
+                len(pickled_tasklists),
+                num_records)
+                
+            if data_is_encrypted(tasks_backup_job):
+                logging.debug("%sTasklist are encrypted", fn_name)
+                try:
+                    private_key_b64 = self.request.cookies.get(constants.RSA_PRIVATE_KEY_COOKIE_NAME, '')
+                    aes_decrypt_cipher = shared.get_aes_decrypt_cipher(private_key_b64, tasks_backup_job)
+                except GtbDecryptionError as gde:
+                    logging.error("%sEKNV: Unable to create AES decryption cypher using " +
+                        "private RSA key from '%s' cookie",
+                        fn_name,
+                        constants.RSA_PRIVATE_KEY_COOKIE_NAME)
+                    # The outer GtbDecryptionError exception handler will handle this
+                    raise gde                    
+                except Exception as ex:
+                    logging.exception("%sError decrypting encrypted tasks", fn_name)
+                    # The outer GtbDecryptionError exception handler will handle this
+                    raise GtbDecryptionError("Error creating AES decryption cypher: " +
+                        get_exception_msg(ex))
             
-            tasklists = pickle.loads(rebuilt_pkl)
-            rebuilt_pkl = None # Not needed, so release it
+                try:
+                    # Decrypt the encrypted, picked tasklists
+                    pickled_tasklists = aes_decrypt_cipher.decrypt(pickled_tasklists)
+                except Exception as ex:
+                    logging.exception("%sError decrypting encrypted tasks", fn_name)
+                    # The outer GtbDecryptionError exception handler will handle this
+                    raise GtbDecryptionError("Error decrypting encrypted tasks: " +
+                        get_exception_msg(ex))
+            
+            # Unpickle in a try/except, in case the pickled data is corrupt,
+            # possibly because it was incorrectly decrypted (or decrypted with the wrong AES key).
+            try:
+                tasklists = pickle.loads(pickled_tasklists)
+            except Exception as ex:
+                logging.exception("%sError unpickling pickled tasklists", fn_name)
+                # The outer GtbDecryptionError exception handler will handle this
+                raise GtbDecryptionError("Error unpickling pickled tasklists: " +
+                    get_exception_msg(ex))
+                
+            pickled_tasklists = None # Not needed, so release it
             
             # ==========================================================
             # Fix the order of tasks, and add 'depth' value to each task
@@ -1381,7 +1570,7 @@ class ReturnResultsHandler(webapp2.RequestHandler):
                 except Exception, e: # pylint: disable=broad-except,invalid-name
                     # Should never happen, because the value is set by <option> values on the HTML form 
                     logging.error(fn_name + "Error converting offset hours form value [" +
-                        str(offset_hours_str) + "] to a float value, so using zero offset: " + shared.get_exception_msg(e))
+                        str(offset_hours_str) + "] to a float value, so using zero offset: " + get_exception_msg(e))
                     logservice.flush()
                     offset_hours = 0.0
             else:
@@ -1691,6 +1880,7 @@ class ReturnResultsHandler(webapp2.RequestHandler):
                                'url_home_page' : settings.WELCOME_PAGE_URL,
                                'url_discussion_group' : settings.url_discussion_group,
                                'email_discussion_group' : settings.email_discussion_group,
+                               'SUPPORT_EMAIL_ADDRESS' : settings.SUPPORT_EMAIL_ADDRESS,
                                'url_issues_page' : settings.url_issues_page,
                                'url_source_code' : settings.url_source_code,
                                'app_version' : appversion.version,
@@ -1726,8 +1916,9 @@ class ReturnResultsHandler(webapp2.RequestHandler):
             gc.collect()
             logging.debug(fn_name + "<End>")
             logservice.flush()
-        except Exception, e: # pylint: disable=broad-except,invalid-name
-            logging.exception(fn_name + "Caught top-level exception")
+            
+        except GtbDecryptionError as gde:
+            logging.exception(fn_name + "Caught top-level GtbDecryptionError")
             
             self.response.headers["Content-Type"] = "text/html; charset=utf-8"
             try:
@@ -1737,9 +1928,41 @@ class ReturnResultsHandler(webapp2.RequestHandler):
                 if self.response.headers and "Content-Disposition" in self.response.headers:
                     del self.response.headers["Content-Disposition"]
             except Exception, ie: # pylint: disable=broad-except,invalid-name
-                logging.debug(fn_name + "Error deleting 'Content-Disposition' from headers: " + shared.get_exception_msg(ie))
+                logging.debug(fn_name + "Error deleting 'Content-Disposition' from headers: " + get_exception_msg(ie))
+            self.response.clear()
+            
+            # Display message to the user            
+            msg1 = "Please start a new backup to retrieve and export tasks"
+            msg2 = "If you believe this to be an error, please report error 'EKNV' using one of the issues links below"
+            shared.serve_message_page(self, 
+                msg1, 
+                msg2, 
+                custom_button_url = settings.MAIN_PAGE_URL,
+                show_custom_button=True, 
+                custom_button_text='Start a new backup')
+            send_email_to_support("EKNV: Encryption keys are not valid",
+                "Outer GtbDecryptionError exception handler\n" +
+                gde.msg + "\n\n'Start a new backup' page displayed",
+                job_created_timestamp=job_created_timestamp) 
+            
+            logging.debug(fn_name + "<End> (Decryption error)")
+            logservice.flush()
+            
+        except Exception as ex: # pylint: disable=broad-except,invalid-name
+            logging.exception(fn_name + "Caught top-level exception")
+            
+            self.response.headers["Content-Type"] = "text/html; charset=utf-8"
+            try:
+                # Clear "Content-Disposition" so user will see error in browser.
+                # If not removed, output goes to file (if error generated after "Content-Disposition" was set),
+                # and user would not see the error message!
+                if self.response.headers and "Content-Disposition" in self.response.headers:
+                    del self.response.headers["Content-Disposition"]
+            except Exception as iex: # pylint: disable=broad-except,invalid-name
+                logging.debug(fn_name + "Error deleting 'Content-Disposition' from headers: " + 
+                    get_exception_msg(iex))
             self.response.clear() 
-            shared.serve_outer_exception_message(self, e)
+            shared.serve_outer_exception_message(self, ex)
             logging.debug(fn_name + "<End> due to exception")
             logservice.flush()
 
@@ -1825,18 +2048,18 @@ class ReturnResultsHandler(webapp2.RequestHandler):
                     logging.exception(fn_name + "Unable to send email")
                     logservice.flush()
                     msg1 = "Sorry, unable to send email"
-                    msg2 = shared.get_exception_msg(e)
+                    msg2 = get_exception_msg(e)
             
             except Exception, e: # pylint: disable=broad-except,invalid-name
                 if send_try_count < MAX_SEND_TRY_COUNT:
                     logging.warning(fn_name + "Unable to send email from " + unicode(sender) +
-                        " Will try again ... [" + shared.get_exception_msg(e) + "]")
+                        " Will try again ... [" + get_exception_msg(e) + "]")
                     logservice.flush()
                 else:
                     logging.exception(fn_name + "Unable to send email")
                     logservice.flush()
                     msg1 = "Sorry, unable to send email"
-                    msg2 = shared.get_exception_msg(e)
+                    msg2 = get_exception_msg(e)
                 
             if send_try_count >= MAX_SEND_TRY_COUNT:
                 shared.serve_message_page(self, msg1, msg2,
@@ -2238,7 +2461,7 @@ class ReturnResultsHandler(webapp2.RequestHandler):
                             <ul>
                                 <li>via Github at <a href="http://{url_issues_page}">{url_issues_page}</a></li>
                                 <li>or via the discussion group at <a href="http://{url_discussion_group}">{url_discussion_group}</a></li> 
-                                <li>or via email to <a href="mailto:{email_discussion_group}">{email_discussion_group}</a></li>
+                                <li>or via email to <a href="mailto:{support_email_address}">{support_email_address}</a></li>
                             </ul>
                             so that it can be fixed. Thank you.
                         </div>
@@ -2247,7 +2470,7 @@ class ReturnResultsHandler(webapp2.RequestHandler):
                                 sort_err_msg=sort_err_msg,
                                 url_issues_page=settings.url_issues_page,
                                 url_discussion_group=settings.url_discussion_group,
-                                email_discussion_group=settings.email_discussion_group))
+                                support_email_address=settings.SUPPORT_EMAIL_ADDRESS))
             else:
                 if html_sort_order_str:
                     # Human friendly value; e.g. "by due date" or "alphabetically, by task title"

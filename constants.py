@@ -36,6 +36,8 @@ MAX_BLOB_SIZE = 1000000
 # Name of folder containg templates. Do not include path separator characters, as they are inserted by os.path.join()
 PATH_TO_TEMPLATES = "templates"
 
+RSA_PRIVATE_KEY_COOKIE_NAME = 'private_key_b64'
+
 
 # Sometimes the 'completed' timestamp is '0000-01-01T00:00:00.000Z', which cannot be converted
 # to a datetime object.

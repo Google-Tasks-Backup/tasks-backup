@@ -40,6 +40,7 @@ the selections that the user made when they started the backup.
         
         <script type="text/javascript" src="/static/jquery.js"></script>
         <script type="text/javascript" src="/static/popup.js"></script>
+        <script src="/static/gtb_cookie_check.js"></script>
         <script language="javascript" type="text/javascript" src="/static/datetimepicker.js">
             //Date Time Picker script- by TengYong Ng of http://www.rainforestnet.com
             //Script featured on JavaScript Kit (http://www.javascriptkit.com)
@@ -236,6 +237,7 @@ the selections that the user made when they started the backup.
                         //         then the user's selection was NOT actioned, so we do it here.
                         var actionId = getCookie('actionId');
                         if (actionId) {
+                            console.log("pageLoadActions(): Actioning actionId '" + actionId + "'");
                             eraseCookie('actionId');
                             // Perform the action that the user selected
                             $('#' + actionId).click();
@@ -289,6 +291,7 @@ the selections that the user made when they started the backup.
 <body onload="pageLoadActions();" > 
     {% include "inc_user_header.html" %}
     
+  <div class="display-if-cookies-enabled">
     {% if display_link_to_production_server %}
         {% include "inc_limited_access_server_msg.html" %}
     {% endif %}
@@ -359,12 +362,14 @@ the selections that the user made when they started the backup.
                 </div>
             {% else %}
                 {% if possibly_stale_data %}
-                    <div class="take-note-larger medium-gap-top small-break">
-                        NOTE: This backup snapshot was made {{ since_msg }}.
-                    </div>
-                    <div class="take-note nice-gap-top">
-                        If you want to export or display tasks created or modified since {{ job_start_timestamp_str }},<br> 
-                        please <a class="no-visited-highlight" href="{{ url_main_page }}">click here to create a new backup</a>
+                    <div class="notice-box medium-gap-top small-break">
+                        <div class="take-note-larger">
+                            NOTE: This backup snapshot was made {{ since_msg }}.
+                        </div>
+                        <div class="take-note nice-gap-top">
+                            If you want to export or display tasks created or modified since {{ job_start_timestamp_str }},<br> 
+                            please <a class="no-visited-highlight" href="{{ url_main_page }}">click here to create a new backup</a>
+                        </div>
                     </div>
                 {% endif %}
             {% endif %}
@@ -1075,8 +1080,9 @@ the selections that the user made when they started the backup.
         </div>
 
     {% endif %}
-
-
+  </div>
+    {% include "inc_cookies_disabled_warning.html" %}
+    
     {% include "inc_project_footer.html" %}
 
 	<div class="backgroundPopup"></div>

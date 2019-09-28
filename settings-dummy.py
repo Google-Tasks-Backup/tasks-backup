@@ -43,6 +43,10 @@ url_source_code = "code.google.com/p/MY-APP-ID/source/browse/"
 # If blank, no email will be sent
 SUPPORT_EMAIL_ADDRESS = ""
 
+# This is used (instead of host_settings.APP_TITLE), so that the subject is shorter, so more
+# of the subject is visible in Gmail
+SUPPORT_EMAIL_ABBR_APP_NAME = "GTB"
+
 
 
 # List of hostname(s) of the production server(s). Used to identify if app is running on production server.

@@ -7,20 +7,26 @@
 			or email <a href="mailto:{{ email_discussion_group }}">{{ email_discussion_group }}</a>
 		</div>
 		<div class="break">
-            You can submit bugs using GitHub at <a href="http://{{ url_issues_page }}">{{ url_issues_page }}</a>, then click on [New issue]
-            <div class="comment">
-                If you do not have a GitHub account (and do not wish to create one), you can submit bugs through the discussion group at
-                <br />
-                <a href="http://{{ url_discussion_group }}">{{ url_discussion_group }}</a>
-                or email <a href="mailto:{{ email_discussion_group }}">{{ email_discussion_group }}</a>
+            You can submit errors using GitHub at <a href="http://{{ url_issues_page }}">{{ url_issues_page }}</a>, then click on [New issue]
+            <div>
+                <ul>
+                    <li>
+                        If you do not have a GitHub account (and do not wish to create one), you can report errors through the discussion group at <a href="http://{{ url_discussion_group }}">{{ url_discussion_group }}</a>
+                    </li>
+                    <li>
+                        If you prefer to report an error privately, you can email support directly at 
+                        <a href="mailto:{{ SUPPORT_EMAIL_ADDRESS }}">{{ SUPPORT_EMAIL_ADDRESS }}</a>
+                    </li>
+                </ul>
             </div>
 		</div>
 		<div class="break">
 			Source code for this project is at <a href="http://{{ url_source_code }}">{{ url_source_code }}</a>
 		</div>
         <div class="break">
-            {{ app_title }} uses cookies for three purposes;
+            {{ app_title }} uses cookies for 4 purposes;
             <ul>
+                <li>Tasks are encrypted, so that they can only be accessed by you. The encryption key is stored in a cookie in your browser. If cookies are not enabled, you cannot use {{ app_title }} to export or view your tasks.</li>
                 <li>Google uses cookies to track your authorisation credentials between pages. This ensure that you (and only you) can get the results of your backup request.</li>
                 <li><a href="http://www.google.com/analytics/">Google Analytics</a> is used to track usage such as; number of unique visitors, location, browser type, operating system. </li>
                 <li>To manage user selection of export type, timezone and tasks display settings.</li>
