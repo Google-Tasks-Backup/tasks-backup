@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <title>GTB Privacy Policy</title>
+        <style>
+            div > ul {
+                margin-top: 3px;
+            }
+        </style>
+    </head>
+    <body>
+        <h1>Privacy Policy</h1>
+
+
+        <p>Effective date: 1 October 2019</p>
+        
+        
+        <h2>Summary</h2>
+        <ul>
+            <li>
+                I will never share your data with anyone.
+            </li>
+            <li>
+                By using the Service, you agree to the collection and use of information in accordance with this policy.
+            </li>
+            <li>
+                If you have any questions, please email <a href="mailto:gtb.gti.help@gmail.com?subject=GTI Privacy">GTB.GTI.Help@gmail.com </a>
+            </li>
+        </ul>
+        
+        <h2>The service</h2>
+        <p>
+            Julie Smith ("me", "I") operates the Google Tasks Import ("GTI") and Google Tasks Backup ("GTB") websites at <a href="https://import-tasks.appspot.com">https://import-tasks.appspot.com</a> and <a href="https://tasks-backup.appspot.com">https://tasks-backup.appspot.com</a>
+            <ul>
+                <li>
+                    GTI allows a user to import tasks from a correctly formatted user-uploaded file to the Google Tasks server. 
+                    <ul>
+                        <li>GTI suppports the GTB "Import/Export" GTBack and CSV file formats.</li>
+                    </ul>
+                </li>
+                <li>
+                    GTB allows a user to retrieve their tasks from the Google Tasks server, and view or export their tasks in a number of different formats.
+                    <ul>
+                        <li>
+                            The "Import/Export" GTBack and CSV formats are specifically designed to be used by GTI.
+                        </li>
+                    </ul>
+                </li>
+            </ul>
+        </p>
+                
+        <p>
+            These services are provided free of charge, as they are running as free Google App Engine applications.
+            Google have generously extended the free quota for GTI and GTB, so that other people can use GTI and GTB.
+        </p>
+        
+        <p>
+            This privacy policy covers GTB. 
+            The privacy policy for GTI is at <a href="https://import-tasks.appspot.com/privacy">https://import-tasks.appspot.com/privacy</a>
+        </p>
+
+        <!-- <h2>Details</h2> -->
+        <h2>Collection and usage of data</h2>
+        
+        <div>
+            In order to provide this service, the user is authenticated with Google, which provides GTB with the following;
+            <ul>
+                <li>Temporary access to be able to retrieve tasks for the user
+                    <ul>
+                        <li>Access to a user's tasks automatically expires, as specified during the Google authentication process</li>
+                    </ul>
+                </li>
+                <li>The user's name and email address
+                    <ul>
+                        <li>This is the name and email address associated with the Google account that is used when the user authenticates with Google</li>
+                        <li>The account name and email address is stored in logs, which may be used by the system administrator to investigate user-reported problems</li>
+                    </ul>
+                </li>           
+            </ul>
+        </div>
+        
+        <div>
+            Once authorized by the user, GTB retrieves the user's tasks from the Google Tasks server, then encrypts and stores the tasks in a local data store to enable fast display or export of tasks.
+        </div>
+        
+        <h3>Data security</h3>
+        <div>
+            GTB uses standard HTTPS for all communications between the browser and the GTB application. 
+        </div>
+        
+        <p>
+            Each user's tasks are encrypted with a user-specific key whilst they are stored in GTB, and can only be decrypted with the specific key stored in the user's browser. See "Encryption details" below for more details.
+        </p>
+        
+        
+        <h3>Server logs</h3>
+        
+        <div>
+            Google App Engine automatically logs information about each request to GTB. This information includes;
+            <ul>
+                <li>Time of the request</li>
+                <li>IP address</li>
+                <li>User name</li>
+                <li>Browser version</li>
+                <li>Operating system</li>
+            </ul>
+        </div>
+        
+        <p>
+            Only system administrators have access to server logs. The user's tasks, name and email address will not be shared with anyone.
+        </p>
+        
+        <h3>Cookies</h3>
+        
+        <div>
+            Cookies are used for four purposes in GTB;
+            <ul>
+                <li>Tasks are encrypted, so that they can only be accessed by you. The encryption key is stored in a cookie in your browser. If cookies are not enabled, you cannot use GTB to export or view your tasks.</li>
+                <li>To manage user selections such as export type, timezone and tasks display settings.</li>
+                <li>Google uses cookies to track your authorisation credentials between pages. This ensure that you (and only you) can get the results of your backup request.</li>
+                <li><a href="http://www.google.com/analytics/">Google Analytics</a> is used to track usage such as; number of unique visitors, location, browser type, operating system. </li>
+            </ul>
+        </div>
+        
+        <h3>Location</h3>
+        <div>
+            Your data is stored and processed on Google servers, on the Google App Engine platform, and using Google APIs, and as such your data may be processed outside the country in which you reside, and may subject to different jurisdiction. Google's privacy policy is at <a href="http://www.google.com/policies/privacy">http://www.google.com/policies/privacy</a>
+        </div>
+        
+        <h3>Disclosure of data</h3>
+        <div>
+            I will only disclose your data if legally required.
+        </div>
+        
+        <h2>Changes</h2>
+        <p>
+            Any changes to the privacy policy will be posted to this page. The effective date of this policy is shown at the top of this page.
+        </p>
+        <h2>Appendix: Encryption details</h2>
+        <ul>
+            <li>For each new backup job, GTB generates a random RSA key, and a random AES key</li>
+            <li>
+                The RSA private key is stored as a cookie in the user's browser
+                <ul>
+                    <li>The RSA private key is not stored by GTB</li>
+                </ul>
+            </li>
+            <li>The user's tasks are encrypted using the AES key</li>
+            <li>The AES key is then encrypted with the RSA public key</li>
+            
+            <li>When the user chooses a display or export option, the private RSA key is used to decrypt the AES key</li>
+            <li>The decrypted AES key is used to decrypt the users tasks, which are then displayed or exported</li>
+            <li>
+                Without the private key, the tasks cannot be decrypted, and the user will need to start a new backup job
+            </li>
+        </ul>
+    </body>
+</html>

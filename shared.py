@@ -685,7 +685,9 @@ def send_email_to_support(subject, msg, job_created_timestamp=None):
                 appversion.app_yaml_version,
                 datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S"),
                 subject)
-                
+        msg = "Timestamp = {} UTC\n{}",format(
+            datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S"),
+            msg)
         if not settings.SUPPORT_EMAIL_ADDRESS:
             logging.info(fn_name + "No support email address, so email not sent:")
             logging.info(fn_name + "    Subject = {}".format(subject))
