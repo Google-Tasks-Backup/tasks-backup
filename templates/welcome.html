@@ -33,9 +33,19 @@ Extensively modified by Julie Smith, 2012
         <script type="text/javascript">
 
             function authorise() {
-                document.getElementById("authorise_button").value = "Authorising, please wait (this may take up to one minute) ...";
-                document.getElementById("authorise_button").innerHTML = "Authorising, please wait (this may take up to one minute) ...";
-                document.getElementById("authorise_button").disabled = true;
+            
+                try {
+                    let signInEl = document.getElementById("sign-in-msg");
+                    let signingInEl = document.getElementById("signing-in-msg");
+                    signingInEl.style.display = 'block';
+                    // signInEl.disabled = true;
+                    signInEl.style.display = 'none';
+                }
+                catch (error) {
+                    console.error("Error changing elements to indicate signin: " +
+                        error);
+                }
+            
                 dest = "https://" + window.location.host + "{{ url_main_page }}";
                 //alert("dest = '" + dest + "'");
                 window.location.href = dest;
@@ -138,17 +148,35 @@ Extensively modified by Julie Smith, 2012
     {% else %}
         
         <div class="break">
-            This application uses Google authentication to access your Tasks data. The permission for this application will be displayed as "{{ product_name }} - Tasks" in your list of 
+            This application uses Google authentication to access your Tasks data. The permission for this application will be displayed as "{{ product_name }}" in your list of 
             <a href="https://www.google.com/accounts/IssuedAuthSubTokens">Authorised Sites, Apps, and Services</a>, and can be revoked there at any time.
         </div>
         
+        <div class="take-note-para notice-box">
+            <p>
+                I am currently waiting on Google app verification. Until the app has been verified, you may see a page displaying "This app isn't verified".
+            </p>
+            <p>
+                This app is still safe to use. Just click on the "Advanced" link under "This app isn't verified", and then click on the link to "Go to tasks-backup.appspot.com"
+            </p>
+        </div>
         
         <div class="display-if-cookies-enabled">
             {% if user_email %}
                 <button id="authorise_button" class="big-button" type="button" 
-                        onclick="window.location.href = 'https://' + window.location.host + '{{ url_main_page }}'">Main menu</button>
+                        onclick="window.location.href = 'https://' + window.location.host + '{{ url_main_page }}'">Go to main menu</button>
             {% else %}
-                <button id="authorise_button" class="big-button display-if-cookies-enabled" type="button" onclick="authorise();">Authorise</button>
+                <div id="sign-in-msg">
+                    <span>In order to use this application to export or display your tasks, you must be signed in: </span>
+                    <button id="authorise_button" class="signin-button" type="button" onclick="authorise();">
+                        <img title="Sign in with Google" alt="Sign in with Google" 
+                            class="signin-button" 
+                            src="/static/btn_google_signin_dark_normal_web.png">
+                    </button>
+                </div>
+                <div id="signing-in-msg" class="no-display">
+                    Authorising, please wait (this may take up to one minute) ...
+                </div>
             {% endif %}
         </div>
         

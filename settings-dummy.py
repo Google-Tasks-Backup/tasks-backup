@@ -143,6 +143,14 @@ FRONTEND_API_RETRY_SLEEP_DURATION = 18
 MAX_TIME_ALLOWED_FOR_JOB_TO_START = 900
 
 
+# The number of seconds to sleep if the worker receives an AccessTokenRefreshError.
+# If a user starts a job, but has not (yet) approved access to Google Tasks, Google displays
+# several screens, all of which the user must acknowledge before Google grants access to tasks.
+# Attempts to access Tasks during this time results in 'invalid_grant'
+# This delay is to allow the user to go through the multi-page approval process.
+WORKER_INVALID_GRANT_SLEEP_DURATION = 90
+
+
 # If the user has more than this number of tasks, display a warning message that
 # displaying as an HTML page may fail
 LARGE_LIST_HTML_WARNING_LIMIT = 20000

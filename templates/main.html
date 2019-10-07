@@ -216,13 +216,24 @@ This is the Django template for the main page where the user chooses backup opti
                     </div>-->
                     <input type="submit" value="Retrieve tasks" id="start_backup" class="big-button" ></input> 
                     <div class="instructions">
-                        When you click the button to start the export, you will be redirected to a page which will update regularly to show progress of the background process as it retrieves tasks from the Google server
+                        When you click the button to retrieve tasks, you may be redirected to a Google sign in page, to authorise access for this application to view your Google Tasks. You must grant permission to allow this application to view your tasks. You can revoke this permission at any time from the Google permissions page at <a href="https://myaccount.google.com/permissions?pli=1">https://myaccount.google.com/permissions</a> 
+                    </div>
+                    <div class="instructions">
+                        Once authorised, you will be redirected to a page which will update regularly to show progress of the background process as it retrieves tasks from the Google Tasks server.
+                    </div>
+                    <div class="take-note-para notice-box">
+                        <p>
+                            I am currently waiting on Google app verification. Until the app has been verified, you may see a page displaying "This app isn't verified".
+                        </p>
+                        <p>
+                            This app is still safe to use. Just click on the "Advanced" link under "This app isn't verified", and then click on the link to "Go to tasks-backup.appspot.com"
+                        </p>
                     </div>
                     <div class="instructions">
                         The amount of time taken to retrieve all the tasks from the server depends on various factors, 
-                        including server load and the total number of tasks. 
+                        including server load and the total number of tasks. <br>
                         At a rough estimate, the system processes 50-150 tasks per second. 
-                        This means that a task list with 5,000 tasks could take around 2 minutes.
+                        This means that a task list with 5,000 tasks could take several minutes.
                     </div>
                 </fieldset>
             </form>

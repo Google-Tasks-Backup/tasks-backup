@@ -640,6 +640,32 @@ a.no-visited-highlight:visited{
     margin: 0;
 }
 
+.no-display {
+    display:none;
+    margin: 0;
+}
+
+.signin-button {
+    cursor: pointer;
+    padding: 0;
+    margin: 0;
+    border: 0;
+    height:      46px; 
+}
+
+#sign-in-msg {
+    height:      46px;  
+    line-height: 46px; /* Same as height  */
+}
+
+#sign-in-msg span {
+    font-weight: bold;
+    vertical-align:middle;
+}
+
+#sign-in-msg button {
+    vertical-align:middle;
+}
 
 @media print {
     .print_keep_together {

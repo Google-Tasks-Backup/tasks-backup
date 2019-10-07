@@ -475,10 +475,14 @@ class WelcomeHandler(webapp2.RequestHandler): # pylint: disable=too-few-public-m
         try:
             display_link_to_production_server = False # pylint: disable=invalid-name
             if not self.request.host in settings.PRODUCTION_SERVERS and settings.DISPLAY_LINK_TO_PRODUCTION_SERVER:
-                logging.debug(fn_name + "Running on limited-access server '" + unicode(self.request.host) + 
-                    "', displaying link to production server")
+                logging.debug("%sRunning on limited-access server '%s'",
+                    fn_name,
+                    unicode(self.request.host))
                 logservice.flush()
                 display_link_to_production_server = True # pylint: disable=invalid-name
+                # Allow test user to see normal page (by setting display_link_to_production_server = False);
+                    # - if logged in user is a test user OR
+                    # - Query arg 'test_welcome_page' is set (to allow non logged in user to see welcome page)
             
             user = users.get_current_user()
             user_email = None
@@ -487,11 +491,10 @@ class WelcomeHandler(webapp2.RequestHandler): # pylint: disable=too-few-public-m
                 user_email = user.email()
                 
                 if not self.request.host in settings.PRODUCTION_SERVERS:
-                    # logging.debug(fn_name + "DEBUG: Running on limited-access server")
+                    logging.debug(fn_name + "DEBUG: Running on limited-access server")
                     if shared.is_test_user(user_email):
                         # Allow test user to see normal page content
-                        logging.debug(fn_name + "TEST: Allow test user [" + unicode(user_email) + "] to see normal page content")
-                        logservice.flush()
+                        logging.debug(fn_name + "TESTING: Allow test user [" + unicode(user_email) + "] to see normal page content")
                         display_link_to_production_server = False # pylint: disable=invalid-name
                 
                 logging.debug(fn_name + "User is logged in, so displaying username and logout link")
@@ -499,6 +502,15 @@ class WelcomeHandler(webapp2.RequestHandler): # pylint: disable=too-few-public-m
             else:
                 logging.debug(fn_name + "User is not logged in, so won't display logout link")
             logservice.flush()
+                    
+            if not self.request.host in settings.PRODUCTION_SERVERS and self.request.get("test_welcome_page"):
+                display_link_to_production_server = False # pylint: disable=invalid-name
+                logging.info(fn_name + "TESTING: Displaying normal Welcome page because 'test_welcome_page' query arg is set")
+                logservice.flush()                
+                    
+                    
+            if display_link_to_production_server:
+                logging.debug(fn_name + "Displaying link to production server")
                     
                     
             template_values = {'app_title' : host_settings.APP_TITLE,
@@ -553,12 +565,12 @@ class MainHandler(webapp2.RequestHandler):
             
             display_link_to_production_server = False # pylint: disable=invalid-name
             if not self.request.host in settings.PRODUCTION_SERVERS:
+                # Allow test user to see normal page (if logged in user is a test user)
                 logging.debug(fn_name + "Running on limited-access server: " + unicode(self.request.host))
                 logservice.flush()
                 if settings.DISPLAY_LINK_TO_PRODUCTION_SERVER:
                     display_link_to_production_server = True # pylint: disable=invalid-name
                 if shared.is_test_user(user_email):
-                    # Allow test user to see normal page
                     display_link_to_production_server = False # pylint: disable=invalid-name
                     logging.info(fn_name + "Allowing test user [" + unicode(user_email) + "] on limited access server")
                     logservice.flush()
